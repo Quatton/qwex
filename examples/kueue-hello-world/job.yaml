@@ -1,0 +1,21 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sample-job
+  labels:
+    kueue.x-k8s.io/queue-name: user-queue
+spec:
+  parallelism: 1
+  completions: 1
+  suspend: true
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: main
+          image: busybox:latest
+          command: ["sh", "-c", "echo 'Hello from Kueue!' && sleep 5"]
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
