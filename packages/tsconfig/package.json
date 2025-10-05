@@ -1,8 +1,0 @@
-{
-  "name": "@roam/tsconfig",
-  "type": "module",
-  "private": true,
-  "peerDependencies": {
-    "typescript": "^5"
-  }
-}
