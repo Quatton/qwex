@@ -1,0 +1,21 @@
+{
+  "name": "@roam/contract",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "openapi:generate": "node ./src/openapi.ts"
+  },
+  "devDependencies": {
+    "@roam/tsconfig": "workspace:*",
+    "@types/bun": "^1.2.23"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@orpc/contract": "^1.9.3",
+    "@orpc/openapi": "^1.9.3",
+    "@orpc/zod": "^1.9.3",
+    "@roam/consts": "workspace:*"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "roam",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/bun": "^1.2.23"
+  }
+}
