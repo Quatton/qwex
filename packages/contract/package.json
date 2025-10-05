@@ -16,6 +16,7 @@
     "@orpc/contract": "^1.9.3",
     "@orpc/openapi": "^1.9.3",
     "@orpc/zod": "^1.9.3",
-    "@roam/consts": "workspace:*"
+    "@roam/consts": "workspace:*",
+    "zod": "^4.1.11"
   }
 }

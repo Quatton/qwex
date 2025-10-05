@@ -15,3 +15,7 @@ kueue-uninstall:
   kubectl delete -k infra/kueue
 
 setup: k3d-up kueue-install
+
+openapi-gen:
+  bun run --filter=@roam/contract openapi:generate
+  go generate ./packages/gen/...

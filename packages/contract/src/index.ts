@@ -1,1 +1,5 @@
-export const contract = {};
+import { controllerContract } from "./controller";
+
+export const contract = {
+  controller: controllerContract,
+};

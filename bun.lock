@@ -24,6 +24,7 @@
         "@orpc/openapi": "^1.9.3",
         "@orpc/zod": "^1.9.3",
         "@roam/consts": "workspace:*",
+        "zod": "^4.1.11",
       },
       "devDependencies": {
         "@roam/tsconfig": "workspace:*",
