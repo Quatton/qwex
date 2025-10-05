@@ -3,7 +3,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "openapi:generate": "node ./src/openapi.ts"
+    "openapi:generate": "bun run ./src/openapi.ts"
   },
   "devDependencies": {
     "@roam/tsconfig": "workspace:*",
