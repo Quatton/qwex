@@ -7,6 +7,12 @@ k3d-down:
 k3d-secret:
   docker exec k3d-roam-cluster-server-0 cat /var/lib/rancher/k3s/server/node-token
 
+k3d-status:
+  k3d cluster list
+
+k3d-pods:
+  kubectl get pods -n=kueue-system
+
 kueue-install:
   kubectl apply -k infra/kueue
   kubectl wait --for=condition=available --timeout=300s deployment/kueue-controller-manager -n kueue-system
