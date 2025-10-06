@@ -1,0 +1,23 @@
+{
+  "folders": [
+    {
+      "name": "root",
+      "path": ".."
+    },
+    {
+      "name": "infra",
+      "path": "../infra"
+    },
+    {
+      "name": "controller",
+      "path": "../controller"
+    },
+    {
+      "name": "cli",
+      "path": "../cli"
+    }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
+  }
+}

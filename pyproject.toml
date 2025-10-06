@@ -5,3 +5,6 @@ description = "Run On Another Machine"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
+
+[tool.uv.workspace]
+members = ["apps/controller"]
