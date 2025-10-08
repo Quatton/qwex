@@ -49,14 +49,9 @@ lima-agent-up:
 lima-secret:
   limactl shell roam-server sudo cat /var/lib/rancher/k3s/server/node-token
 
-lima-tailscale-install:
-  ./infra/lima/install-tailscale.sh roam-server
-
-lima-tailscale-up ARGS="":
-  ./infra/lima/tailscale-up.sh roam-server {{ARGS}}
-
-lima-tailscale-status:
-  limactl shell roam-server sudo tailscale status
+lima-agent-down:
+  limactl stop -f roam-agent
+  limactl delete roam-agent
 
 kueue-install:
   kubectl apply --server-side=true --force-conflicts -k infra/kueue
