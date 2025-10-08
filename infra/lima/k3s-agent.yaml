@@ -54,7 +54,7 @@ provision:
       # Wait for Tailscale to connect and get an IP address
       echo "Waiting for Tailscale to connect..."
       for i in {1..30}; do
-        TS_IP=$(tailscale ip -4 | head -n 1)
+        TS_IP=$(sudo tailscale ip -4 | head -n 1)
         if [ -n "${TS_IP}" ]; then
           echo "Tailscale connected with IP: ${TS_IP}"
           break
@@ -74,11 +74,12 @@ provision:
 
       INSTALL_K3S_EXEC="agent \
         ${VPN_AUTH_ARG} \
-        --server=https://${K3S_SERVER_TAILSCALE_IP}:6443 \
+        --server=http://${K3S_SERVER_TAILSCALE_IP}:6443 \
         --token=${K3S_TOKEN} \
         --node-ip=${TS_IP} \
-        --node-external-ip=${TS_IP}" \
-        curl -sfL https://get.k3s.io | sh -
+        --node-external-ip=${TS_IP}"
+
+      curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="${INSTALL_K3S_EXEC}" sh -
 
 probes:
   - description: "system to be ready"
