@@ -83,6 +83,8 @@ provision:
 
       curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="${INSTALL_K3S_EXEC}" sh -
 
+      sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+
 probes:
   - description: "system to be ready"
     script: |

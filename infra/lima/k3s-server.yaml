@@ -89,6 +89,8 @@ provision:
         systemctl restart k3s
       fi
 
+      sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+
 probes:
   - script: |
       #!/bin/bash
