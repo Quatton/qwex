@@ -12,17 +12,19 @@ containerd:
   system: false
   user: false
 
+env:
+  K3S_TOKEN: ${K3S_TOKEN}
+  K3S_SERVER_TAILSCALE_IP: ${K3S_SERVER_TAILSCALE_IP}
+  K3S_VPN_AUTH_KEY: ${K3S_VPN_AUTH_KEY}
+
 # Provision script to install k3s agent
 # Note: This requires the server to be running and the token to be available
 provision:
   - mode: system
-    env:
-      K3S_VPN_AUTH_KEY: '{{ env "K3S_VPN_AUTH_KEY" }}'
-      K3S_SERVER_TAILSCALE_IP: '{{ env "K3S_SERVER_TAILSCALE_IP" }}'
-      K3S_TOKEN: '{{ env "K3S_TOKEN" }}'
     script: |
       #!/bin/bash
       set -euo pipefail
+
 
       if [ -z "${K3S_VPN_AUTH_KEY:-}" ]; then
         echo "K3S_VPN_AUTH_KEY environment variable must be set before starting the Lima instance." >&2
@@ -39,26 +41,32 @@ provision:
         exit 1
       fi
 
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update -qq
-      apt-get install -y -qq curl jq
-
       if ! command -v tailscale >/dev/null 2>&1; then
         curl -fsSL https://tailscale.com/install.sh | sh
       fi
 
-      systemctl enable --now tailscaled
+      sudo tailscale up \
+        --auth-key="${K3S_VPN_AUTH_KEY}" \
+        --hostname="$(hostname)" \
+        --ssh \
+        --accept-routes
 
-      if ! tailscale status --json | jq -e '.Self.Online' >/dev/null 2>&1; then
-        tailscale up \
-          --auth-key="${K3S_VPN_AUTH_KEY}" \
-          --hostname="$(hostname)" \
-          --accept-routes
-      fi
+      # Wait for Tailscale to connect and get an IP address
+      echo "Waiting for Tailscale to connect..."
+      for i in {1..30}; do
+        TS_IP=$(tailscale ip -4 | head -n 1)
+        if [ -n "${TS_IP}" ]; then
+          echo "Tailscale connected with IP: ${TS_IP}"
+          break
+        fi
+        echo "Attempt $i/30: Waiting for Tailscale connection..."
+        sleep 2
+      done
 
-      TS_IP=$(tailscale ip -4 | head -n 1)
       if [ -z "${TS_IP}" ]; then
-        echo "Failed to determine Tailscale IPv4 address" >&2
+        echo "Failed to determine Tailscale IPv4 address after 60 seconds" >&2
+        echo "Tailscale status:"
+        sudo tailscale status || true
         exit 1
       fi
 

@@ -1,4 +1,9 @@
-# Lima VM + k3s Setup for Cross-Machine Access
+# Lima VM + k3s Setup for Cross-Machin   The repo's `.gitignore` already excludes `.env`. `just` is configured with `dotenv-load`, so the
+   variables you store in `.env` are available to every recipe. Prefer a proper secrets manager for
+   multi-user environments (e.g. `direnv + 1password`, `doppler run -- just lima-up`, etc.).
+
+   Lima uses `param` to inject these values into the VM configuration without exposing them as
+   environment variables inside the guest.ccess
 
 This directory contains Lima VM configurations for running k3s clusters that support cross-machine access, replacing the k3d setup.
 
@@ -23,12 +28,22 @@ The provisioning scripts now use the built-in `--vpn-auth` integration in k3s (a
 v1.27.3+, v1.26.6+, v1.25.11+). Every node uses Tailscale to join a secure mesh; no manual
 `tailscale up` or kubeconfig rewrites are required beyond specifying the Tailscale endpoint.
 
-1. **Prepare env vars on the host (export _before_ running any `just` target):**
+1. **Populate your environment (happens automatically for every `just` run):**
 
    ```bash
-   export K3S_VPN_AUTH_KEY=tskey-123...        # required for every node
-   export K3S_TOKEN=super-secret-token         # optional; otherwise k3s will auto-generate one
+   cp .env.example .env    # then edit .env with your favourite editor
    ```
+
+   Fill in:
+
+   - `K3S_VPN_AUTH_KEY` (required) – a valid reusable Tailscale auth key that is allowed to
+     advertise your cluster podCIDR routes.
+   - `K3S_TOKEN` (optional) – set if you prefer a pre-defined cluster token; otherwise the server
+     will generate one.
+
+   The repo’s `.gitignore` already excludes `.env`. `just` is configured with `dotenv-load`, so the
+   variables you store in `.env` are available to every recipe. Prefer a proper secrets manager for
+   multi-user environments (e.g. `direnv + 1password`, `doppler run -- just lima-up`, etc.).
 
 2. **Start the control-plane VM:**
 
@@ -50,11 +65,14 @@ v1.27.3+, v1.26.6+, v1.25.11+). Every node uses Tailscale to join a secure mesh;
    exit
    ```
 
-   Export it for later:
+   Export it for later (if you use `fish`, replace `export` with `set -x`):
 
    ```bash
    export K3S_SERVER_TAILSCALE_IP=100.x.y.z
    ```
+
+   You can also persist it in `.env` (especially if you rely on MagicDNS hostnames) so future
+   `just` runs pick it up automatically.
 
 4. **Start one or more worker VMs (each needs the same env vars plus the server address):**
 
@@ -93,6 +111,18 @@ v1.27.3+, v1.26.6+, v1.25.11+). Every node uses Tailscale to join a secure mesh;
    ```bash
    just kueue-install
    ```
+
+## Managing secrets & environment variables
+
+- The easiest local workflow is a `.env` file loaded by `just`. Keep it out of source control (it
+   already is) and protect it with filesystem permissions or disk encryption.
+- For team usage, lean on a secrets manager. Examples: `op run -- just lima-up`, `doppler run`, or
+   `aws-vault exec -- just lima-up`. Each injects the required env vars at invocation time without
+   persisting them on disk.
+- Fish shell users can export ad-hoc overrides with `set -x VAR value`. Bash/zsh users can use
+   `export VAR=value` or prefix a command with `VAR=value just lima-up`.
+- Sensitive values like `K3S_VPN_AUTH_KEY` expire or can be revoked; if provisioning fails with the
+   error surfaced above, generate a fresh key before retrying.
 
 ## Cross-Machine Access
 

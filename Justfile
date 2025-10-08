@@ -1,3 +1,5 @@
+set dotenv-load := true
+
 k3d-up:
   k3d cluster create --config infra/k3d/config.yaml
 
@@ -14,12 +16,13 @@ k3d-pods:
   kubectl get pods -n=kueue-system
 
 # Lima VM commands for cross-machine k3s setup
-# Required env vars (export before running just targets):
+# Required env vars (loaded from .env or exported):
 #   K3S_VPN_AUTH_KEY   - tailscale auth key used by all nodes
 #   K3S_TOKEN          - optional shared cluster token
+# Params are set via --set automatically.
 # Start the control-plane VM (requires K3S_VPN_AUTH_KEY, optional K3S_TOKEN)
-lima-up:
-  limactl start infra/lima/k3s-server.yaml --name roam-server
+lima-up: 
+  envsubst '$K3S_VPN_AUTH_KEY,$K3S_TOKEN' < infra/lima/k3s-server.yaml | limactl start --name roam-server -
 
 lima-down:
   limactl stop -f roam-server
@@ -41,8 +44,8 @@ lima-kubeconfig-tailscale HOST:
 #   K3S_SERVER_TAILSCALE_IP - tailscale IPv4 or hostname of the server node
 # Start a worker VM (requires K3S_VPN_AUTH_KEY, K3S_TOKEN, K3S_SERVER_TAILSCALE_IP)
 lima-agent-up:
-  limactl start infra/lima/k3s-agent.yaml --name roam-agent
-
+  envsubst '$K3S_VPN_AUTH_KEY,$K3S_TOKEN,$K3S_SERVER_TAILSCALE_IP' < infra/lima/k3s-agent.yaml | limactl start --name roam-agent -
+  
 lima-secret:
   limactl shell roam-server sudo cat /var/lib/rancher/k3s/server/node-token
 
