@@ -12,10 +12,6 @@ containerd:
   system: false
   user: false
 
-# Network configuration for cross-machine access
-networks:
-  - lima: shared
-
 # Port forwarding for k3s API server
 portForwards:
   - guestPort: 6443
@@ -54,4 +50,5 @@ message: |
   export KUBECONFIG="{{.Dir}}/copied-from-guest/kubeconfig.yaml"
   kubectl ...
   ------
-  For cross-machine access, the k3s API server is available at host port 6443.
+  The API server is forwarded to port 6443 on the host. Share that port (for example via your
+  host machine's IP) for cross-machine access.

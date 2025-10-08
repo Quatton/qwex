@@ -12,10 +12,6 @@ containerd:
   system: false
   user: false
 
-# Network configuration
-networks:
-  - lima: shared
-
 # Provision script to install k3s agent
 # Note: This requires the server to be running and the token to be available
 provision:

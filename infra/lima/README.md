@@ -2,6 +2,14 @@
 
 This directory contains Lima VM configurations for running k3s clusters that support cross-machine access, replacing the k3d setup.
 
+## Prerequisites
+
+- macOS 13+
+- [Homebrew](https://brew.sh)
+- Lima (install with `brew install lima`)
+
+No additional networking packages are required—port forwarding exposes the API server on the host.
+
 ## Files
 
 - `k3s-server.yaml` - Lima configuration for the k3s server node
@@ -32,10 +40,8 @@ just setup-lima
 
 ## Cross-Machine Access
 
-The lima VM is configured with:
-- Port forwarding: k3s API server (6443) is accessible from the host
-- Shared networking: VM can be accessed from other machines on the same network
-- External IP configuration: k3s is configured for external access
+The VM forwards the k3s API server to port 6443 on the host. Share the host's IP address with
+other machines on your network so they can connect to the cluster through that port.
 
 ### Accessing from Another Machine
 
@@ -94,5 +100,5 @@ The Justfile now includes both k3d and lima commands. To migrate:
 ## Networking Details
 
 - **Host port 6443** → VM port 6443 (k3s API)
-- **VM networking:** Uses lima shared network for cross-machine access
+- **VM networking:** Uses Lima's default user-mode networking
 - **Kubeconfig:** Automatically copied to `~/.lima/roam-server/copied-from-guest/kubeconfig.yaml`
