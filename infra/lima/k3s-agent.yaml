@@ -1,0 +1,33 @@
+# Lima VM configuration for k3s agent/worker node
+# This can be used to add worker nodes to the cluster
+
+minimumLimaVersion: 1.1.0
+
+base: template://_images/ubuntu-lts
+
+# Mounts are disabled in this template, but can be enabled optionally.
+mounts: []
+# containerd is managed by k3s, not by Lima, so the values are set to false here.
+containerd:
+  system: false
+  user: false
+
+# Network configuration
+networks:
+  - lima: shared
+
+# Provision script to install k3s agent
+# Note: This requires the server to be running and the token to be available
+provision:
+  - mode: system
+    script: |
+      #!/bin/sh
+      echo "k3s agent ready for installation"
+      echo "To join this node to the cluster, run:"
+      echo "limactl shell roam-agent 'curl -sfL https://get.k3s.io | K3S_URL=https://SERVER_IP:6443 K3S_TOKEN=TOKEN sh -'"
+
+probes:
+  - description: "system to be ready"
+    script: |
+      #!/bin/bash
+      which curl && which wget
