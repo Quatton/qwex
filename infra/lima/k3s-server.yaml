@@ -20,10 +20,60 @@ portForwards:
 
 provision:
   - mode: system
+    env:
+      K3S_VPN_AUTH_KEY: '{{ env "K3S_VPN_AUTH_KEY" }}'
+      K3S_TOKEN: '{{ env "K3S_TOKEN" }}'
     script: |
-      #!/bin/sh
+      #!/bin/bash
+      set -euo pipefail
+
+      if [ -z "${K3S_VPN_AUTH_KEY:-}" ]; then
+        echo "K3S_VPN_AUTH_KEY environment variable must be set before starting the Lima instance." >&2
+        exit 1
+      fi
+
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -qq
+      apt-get install -y -qq curl jq
+
+      if ! command -v tailscale >/dev/null 2>&1; then
+        curl -fsSL https://tailscale.com/install.sh | sh
+      fi
+
+      systemctl enable --now tailscaled
+
+      if ! tailscale status --json | jq -e '.Self.Online' >/dev/null 2>&1; then
+        tailscale up \
+          --auth-key="${K3S_VPN_AUTH_KEY}" \
+          --hostname="$(hostname)" \
+          --accept-routes
+      fi
+
+      TS_IP=$(tailscale ip -4 | head -n 1)
+      if [ -z "${TS_IP}" ]; then
+        echo "Failed to determine Tailscale IPv4 address" >&2
+        exit 1
+      fi
+
+      VPN_AUTH_ARG="--vpn-auth=name=tailscale,joinKey=${K3S_VPN_AUTH_KEY}"
+      INSTALL_ARGS="server \
+        --write-kubeconfig-mode=644 \
+        --disable=traefik,servicelb,metrics-server \
+        ${VPN_AUTH_ARG} \
+        --advertise-address=${TS_IP} \
+        --node-ip=${TS_IP} \
+        --node-external-ip=${TS_IP} \
+        --tls-san=${TS_IP}"
+
+      if [ -n "${K3S_TOKEN:-}" ]; then
+        INSTALL_ARGS="${INSTALL_ARGS} --token=${K3S_TOKEN}"
+      fi
+
       if [ ! -d /var/lib/rancher/k3s ]; then
-              curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --write-kubeconfig-mode 644 --disable=traefik,servicelb,metrics-server" sh -
+        INSTALL_K3S_EXEC="${INSTALL_ARGS}" \
+          curl -sfL https://get.k3s.io | sh -
+      else
+        systemctl restart k3s
       fi
 
 probes:

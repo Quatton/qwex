@@ -16,11 +16,61 @@ containerd:
 # Note: This requires the server to be running and the token to be available
 provision:
   - mode: system
+    env:
+      K3S_VPN_AUTH_KEY: '{{ env "K3S_VPN_AUTH_KEY" }}'
+      K3S_SERVER_TAILSCALE_IP: '{{ env "K3S_SERVER_TAILSCALE_IP" }}'
+      K3S_TOKEN: '{{ env "K3S_TOKEN" }}'
     script: |
-      #!/bin/sh
-      echo "k3s agent ready for installation"
-      echo "To join this node to the cluster, run:"
-      echo "limactl shell roam-agent 'curl -sfL https://get.k3s.io | K3S_URL=https://SERVER_IP:6443 K3S_TOKEN=TOKEN sh -'"
+      #!/bin/bash
+      set -euo pipefail
+
+      if [ -z "${K3S_VPN_AUTH_KEY:-}" ]; then
+        echo "K3S_VPN_AUTH_KEY environment variable must be set before starting the Lima instance." >&2
+        exit 1
+      fi
+
+      if [ -z "${K3S_SERVER_TAILSCALE_IP:-}" ]; then
+        echo "K3S_SERVER_TAILSCALE_IP environment variable must be set before starting the Lima instance." >&2
+        exit 1
+      fi
+
+      if [ -z "${K3S_TOKEN:-}" ]; then
+        echo "K3S_TOKEN environment variable must be set before starting the Lima instance." >&2
+        exit 1
+      fi
+
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -qq
+      apt-get install -y -qq curl jq
+
+      if ! command -v tailscale >/dev/null 2>&1; then
+        curl -fsSL https://tailscale.com/install.sh | sh
+      fi
+
+      systemctl enable --now tailscaled
+
+      if ! tailscale status --json | jq -e '.Self.Online' >/dev/null 2>&1; then
+        tailscale up \
+          --auth-key="${K3S_VPN_AUTH_KEY}" \
+          --hostname="$(hostname)" \
+          --accept-routes
+      fi
+
+      TS_IP=$(tailscale ip -4 | head -n 1)
+      if [ -z "${TS_IP}" ]; then
+        echo "Failed to determine Tailscale IPv4 address" >&2
+        exit 1
+      fi
+
+      VPN_AUTH_ARG="--vpn-auth=name=tailscale,joinKey=${K3S_VPN_AUTH_KEY}"
+
+      INSTALL_K3S_EXEC="agent \
+        ${VPN_AUTH_ARG} \
+        --server=https://${K3S_SERVER_TAILSCALE_IP}:6443 \
+        --token=${K3S_TOKEN} \
+        --node-ip=${TS_IP} \
+        --node-external-ip=${TS_IP}" \
+        curl -sfL https://get.k3s.io | sh -
 
 probes:
   - description: "system to be ready"
