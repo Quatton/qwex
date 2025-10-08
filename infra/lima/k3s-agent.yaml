@@ -78,8 +78,7 @@ provision:
         --token=${K3S_TOKEN} \
         --node-ip=${TS_IP} \
         --node-external-ip=${TS_IP} \
-        --bind-address=${TS_IP}" \
-        --with-node-id
+        --bind-address=${TS_IP}"
 
       curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="${INSTALL_K3S_EXEC}" sh -
 
