@@ -5,6 +5,7 @@ set -euo pipefail
 
 LIMA_INSTANCE_NAME="${1:-roam-server}"
 LOCAL_KUBECONFIG="${2:-$HOME/.kube/config-roam}"
+SERVER_HOST_OVERRIDE="${3:-}"
 
 echo "Setting up kubeconfig for lima k3s cluster..."
 
@@ -26,6 +27,15 @@ fi
 
 # Copy kubeconfig to local location
 cp "$KUBECONFIG_PATH" "$LOCAL_KUBECONFIG"
+
+# Optionally override the server host (useful for Tailscale or other network bridges)
+if [[ -n "$SERVER_HOST_OVERRIDE" ]]; then
+    tmpfile="${LOCAL_KUBECONFIG}.bak"
+    cp "$LOCAL_KUBECONFIG" "$tmpfile"
+    sed -E "s|^(\s*server:\s+https://)[^:/]+(:[0-9]+)|\\1${SERVER_HOST_OVERRIDE}\\2|" "$tmpfile" > "$LOCAL_KUBECONFIG"
+    rm -f "$tmpfile"
+    echo "Server endpoint updated to use host: $SERVER_HOST_OVERRIDE"
+fi
 
 echo "Kubeconfig saved to: $LOCAL_KUBECONFIG"
 echo "To use this config:"

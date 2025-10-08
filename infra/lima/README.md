@@ -43,6 +43,60 @@ just setup-lima
 The VM forwards the k3s API server to port 6443 on the host. Share the host's IP address with
 other machines on your network so they can connect to the cluster through that port.
 
+### Join from Another Machine (Same Network)
+
+1. Copy the kubeconfig to the host (already done by `just lima-kubeconfig`).
+2. Copy `~/.kube/config-roam` to the remote machine.
+3. Edit the copied kubeconfig so the `server` field points to the host's LAN IP, e.g.
+   `https://192.168.1.10:6443`.
+4. On the remote machine:
+   ```bash
+   export KUBECONFIG=/path/to/config-roam
+   kubectl cluster-info
+   ```
+
+### Join via Tailscale
+
+If machines are on different networks, you can run Tailscale inside the Lima VM and on the remote
+machine:
+
+1. Install Tailscale inside the VM:
+   ```bash
+   just lima-tailscale-install
+   ```
+
+2. Authenticate Tailscale (opens an auth URL or use an auth key):
+    ```bash
+    just lima-tailscale-up
+    ```
+    - Provide an auth key either by setting an environment variable (`TS_AUTHKEY=tskey-123 just 
+       lima-tailscale-up`) or by passing flags (`ARGS="--auth-key=tskey-123 --hostname=roam-k3s"`).
+    - The command runs interactively; follow the on-screen instructions (or use an auth key) to
+       complete login.
+
+3. Retrieve the VM's Tailscale IP:
+   ```bash
+   just lima-tailscale-status
+   # or to get the raw IPs:
+   just lima-shell
+   tailscale ip -4
+   exit
+   ```
+
+4. Generate a kubeconfig that targets the Tailscale IP:
+   ```bash
+   just lima-kubeconfig-tailscale <tailscale-ip>
+   ```
+
+5. Share the kubeconfig with other machines on the tailnet. On each remote machine:
+   ```bash
+   export KUBECONFIG=/path/to/config-roam
+   kubectl cluster-info
+   ```
+
+Make sure the remote machine is also connected to the same tailnet (install the Tailscale client
+and run `tailscale up`).
+
 ### Accessing from Another Machine
 
 1. Find the host machine's IP:
@@ -100,5 +154,6 @@ The Justfile now includes both k3d and lima commands. To migrate:
 ## Networking Details
 
 - **Host port 6443** → VM port 6443 (k3s API)
-- **VM networking:** Uses Lima's default user-mode networking
+- **VM networking:** Uses Lima's default user-mode networking; optional Tailscale interface if
+   enabled
 - **Kubeconfig:** Automatically copied to `~/.lima/roam-server/copied-from-guest/kubeconfig.yaml`

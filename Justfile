@@ -30,6 +30,9 @@ lima-shell:
 lima-kubeconfig:
   ./infra/lima/setup-kubeconfig.sh roam-server
 
+lima-kubeconfig-tailscale HOST:
+  ./infra/lima/setup-kubeconfig.sh roam-server $HOME/.kube/config-roam {{HOST}}
+
 lima-agent-up:
   limactl start infra/lima/k3s-agent.yaml --name roam-agent
 
@@ -38,6 +41,15 @@ lima-agent-join TOKEN SERVER_IP:
 
 lima-secret:
   limactl shell roam-server sudo cat /var/lib/rancher/k3s/server/node-token
+
+lima-tailscale-install:
+  ./infra/lima/install-tailscale.sh roam-server
+
+lima-tailscale-up ARGS="":
+  ./infra/lima/tailscale-up.sh roam-server {{ARGS}}
+
+lima-tailscale-status:
+  limactl shell roam-server sudo tailscale status
 
 kueue-install:
   kubectl apply --server-side=true --force-conflicts -k infra/kueue
