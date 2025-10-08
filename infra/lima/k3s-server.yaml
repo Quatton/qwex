@@ -75,6 +75,7 @@ provision:
         --advertise-address=${TS_IP} \
         --node-ip=${TS_IP} \
         --node-external-ip=${TS_IP} \
+        --bind-address=${TS_IP} \
         --tls-san=${TS_IP}"
 
       if [ -n "${K3S_TOKEN:-}" ]; then
