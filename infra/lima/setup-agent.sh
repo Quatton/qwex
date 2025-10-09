@@ -61,23 +61,24 @@ fi
 
 echo "=== Installing k3s Agent ==="
 
-curl -sfL https://get.k3s.io | \
-        K3S_URL="https://${CONTROL_PLANE_IP}:6443" \
-        K3S_TOKEN="${K3S_JOIN_TOKEN}" \
-
 # Build k3s agent args using an array to avoid quoting problems
 K3S_ARG_LIST=(
     agent
     --node-ip "${TAILSCALE_IP}"
     --node-external-ip "${TAILSCALE_IP}"
     --vpn-auth="name=tailscale,joinKey=${K3S_VPN_AUTH_KEY}"
-    --flannel-iface=tailscale0
 )
 
 # Join into single string for INSTALL_K3S_EXEC
 K3S_ARGS="${K3S_ARG_LIST[*]}"
+echo "Running k3s agent installer"
+# Pipe the remote installer into sh while exporting the required env vars
+curl -sfL https://get.k3s.io | \
+    K3S_URL="https://${CONTROL_PLANE_IP}:6443" \
+    K3S_TOKEN="${K3S_JOIN_TOKEN}" \
+    INSTALL_K3S_EXEC="${K3S_ARGS}" \
+    sh -
 
-INSTALL_K3S_EXEC="${K3S_ARGS}" sh -
 echo "=== Agent Setup Complete ==="
 echo "  Worker IP: ${TAILSCALE_IP}"
 echo "  Connected to: ${CONTROL_PLANE_IP}"

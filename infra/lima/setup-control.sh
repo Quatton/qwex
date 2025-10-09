@@ -47,16 +47,7 @@ K3S_ARG_LIST=(
     --disable servicelb
     --node-ip "${TAILSCALE_IP}"
     --node-external-ip "${TAILSCALE_IP}"
-    --advertise-address "${TAILSCALE_IP}"
     --bind-address=0.0.0.0
-    --tls-san "${TAILSCALE_IP}"
-    --tls-san "${TAILSCALE_HOSTNAME}"
-    --tls-san "${K3S_SERVER_TAILSCALE_HOST}"
-    --tls-san=localhost
-    --tls-san=127.0.0.1
-    --flannel-iface=tailscale0
-    --kube-apiserver-arg=bind-address=0.0.0.0
-    --kube-apiserver-arg="advertise-address=${TAILSCALE_IP}"
     --vpn-auth="name=tailscale,joinKey=${K3S_VPN_AUTH_KEY:-}"
 )
 
@@ -69,7 +60,8 @@ fi
 # Join list into a single string safe for INSTALL_K3S_EXEC
 K3S_ARGS="${K3S_ARG_LIST[*]}"
 
-# Install k3s
+echo "Running k3s server installer"
+# Pipe the remote installer into sh while exporting INSTALL_K3S_EXEC
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="${K3S_ARGS}" sh -
 
 echo "=== Waiting for k3s API Server ==="
@@ -101,7 +93,7 @@ chmod 644 /tmp/k3s.yaml
 
 # Use MagicDNS hostname in kubeconfig (portable sed: create a temp and overwrite)
 tmp_kube="/tmp/k3s.yaml.tmp"
-sed "s|https://127.0.0.1:6443|https://${TAILSCALE_HOSTNAME}:6443|g" /tmp/k3s.yaml > "$tmp_kube" && mv "$tmp_kube" /tmp/k3s.yaml
+sed "s|https://.*:6443|https://${TAILSCALE_HOSTNAME}:6443|g" /tmp/k3s.yaml > "$tmp_kube" && mv "$tmp_kube" /tmp/k3s.yaml
 
 # Save token for workers
 if [[ -f /var/lib/rancher/k3s/server/node-token ]]; then
