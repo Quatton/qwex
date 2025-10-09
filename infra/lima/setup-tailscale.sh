@@ -28,6 +28,7 @@ until TAILSCALE_IP=$(tailscale ip -4 2>/dev/null); do
     sleep 2
 done
 
-echo "Tailscale IP: ${TAILSCALE_IP}"
 echo "Tailscale Status:"
 tailscale status
+echo "Your Tailscale IP is: $TAILSCALE_IP"
+echo "Your Tailscale Hostname is: $HOSTNAME"

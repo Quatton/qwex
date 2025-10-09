@@ -18,9 +18,12 @@ vm-agent-down:
     limactl stop k3s-agent || true
     limactl delete k3s-agent || true
 
-tailscale NAME:
+vm-tailscale NAME:
     limactl copy ./infra/lima/setup-tailscale.sh {{NAME}}:~/setup-tailscale.sh
     limactl shell {{NAME}} -- bash -c "chmod +x ~/setup-tailscale.sh && sudo K3S_VPN_AUTH_KEY=$K3S_VPN_AUTH_KEY ~/setup-tailscale.sh && rm ~/setup-tailscale.sh"
+
+self-tailscale:
+    chmod +x ./infra/lima/setup-tailscale.sh && K3S_VPN_AUTH_KEY=$K3S_VPN_AUTH_KEY ./infra/lima/setup-tailscale.sh
 
 k3sup-server TAILSCALE_HOST:
     TAILSCALE_ADDR=$(tailscale ip --4 {{TAILSCALE_HOST}} 2>/dev/null) && \
