@@ -17,6 +17,14 @@ mounts:
     mountPoint: /home/user.linux
     writable: false
 
+provision:
+  - mode: system
+    script: |
+      #!/usr/bin/env bash
+      set -xe
+
+      sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+
 message: |
   VM is ready!
 
