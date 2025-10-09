@@ -22,7 +22,3 @@ provision:
 
 message: |
   VM is ready!
-
-  Next steps:
-    1. Setup Tailscale: just tailscale-agent 
-    2. Install k3s: just k3s-agent-up

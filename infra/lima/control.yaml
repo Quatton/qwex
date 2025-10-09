@@ -22,8 +22,3 @@ provision:
 
 message: |
   VM is ready!
-
-  Next steps:
-    1. Setup Tailscale: just tailscale-control
-    2. Install k3s: just k3s-control-up
-    3. Get kubeconfig: just kubeconfig
