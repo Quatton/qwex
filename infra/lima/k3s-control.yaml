@@ -1,3 +1,5 @@
+base: template://_images/ubuntu-lts
+
 vmType: "vz"
 rosetta:
   enabled: true
@@ -9,12 +11,6 @@ disk: "50GiB"
 
 networks:
   - vzNAT: true
-
-mountType: "virtiofs"
-mounts:
-  - location: "~"
-    mountPoint: /home/user.linux
-    writable: false
 
 provision:
   - mode: system

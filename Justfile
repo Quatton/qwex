@@ -16,11 +16,11 @@ default:
 
 # Start control plane VM (minimal, no k3s)
 vm-control-up:
-    limactl start --name=k3s-control lima-control.yaml
+    limactl start --name=k3s-control infra/lima/k3s-control.yaml
 
 # Start agent VM (minimal, no k3s)
 vm-agent-up NAME="k3s-worker":
-    limactl start --name={{NAME}} lima-agent.yaml
+    limactl start --name={{NAME}} infra/lima/k3s-agent.yaml
 
 # Stop VM
 vm-stop NAME:
@@ -40,28 +40,17 @@ vm-shell NAME:
 
 # Setup Tailscale on control plane
 tailscale-control:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ -z "${K3S_VPN_AUTH_KEY}" ]; then
-        echo "Error: K3S_VPN_AUTH_KEY must be set"
-        exit 1
-    fi
     echo "Setting up Tailscale on control plane..."
-    limactl copy setup-tailscale.sh k3s-control:/tmp/
-    limactl shell k3s-control sudo K3S_VPN_AUTH_KEY="${K3S_VPN_AUTH_KEY}" HOSTNAME="${K3S_SERVER_TAILSCALE_HOST}" /tmp/setup-tailscale.sh
+    limactl copy infra/lima/setup-tailscale.sh k3s-control:/tmp/
+    limactl shell k3s-control chmod +x /tmp/setup-tailscale.sh
+    limactl shell k3s-control sudo HOSTNAME="k3s-control" K3S_VPN_AUTH_KEY="${K3S_VPN_AUTH_KEY}" /tmp/setup-tailscale.sh
 
 # Setup Tailscale on agent
-tailscale-agent NAME:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ -z "${K3S_VPN_AUTH_KEY}" ]; then
-        echo "Error: K3S_VPN_AUTH_KEY must be set"
-        exit 1
-    fi
-    WORKER_HOSTNAME="${NAME}"
-    echo "Setting up Tailscale on ${WORKER_HOSTNAME}..."
-    limactl copy setup-tailscale.sh {{NAME}}:/tmp/
-    limactl shell {{NAME}} sudo K3S_VPN_AUTH_KEY="${K3S_VPN_AUTH_KEY}" HOSTNAME="${WORKER_HOSTNAME}" /tmp/setup-tailscale.sh
+tailscale-agent NAME="k3s-worker":
+    echo "Setting up Tailscale on {{NAME}}..."
+    limactl copy infra/lima/setup-tailscale.sh {{NAME}}:/tmp/
+    limactl shell {{NAME}} chmod +x /tmp/setup-tailscale.sh
+    limactl shell {{NAME}} sudo HOSTNAME="{{NAME}}" K3S_VPN_AUTH_KEY="${K3S_VPN_AUTH_KEY}" K3S_SERVER_TAILSCALE_HOST="${K3S_SERVER_TAILSCALE_HOST}" /tmp/setup-tailscale.sh
 
 # ============================================================================
 # K3s Management (can restart independently)
@@ -69,19 +58,17 @@ tailscale-agent NAME:
 
 # Install k3s on control plane
 k3s-control-up:
-    #!/usr/bin/env bash
-    set -euo pipefail
     echo "Installing k3s on control plane..."
-    limactl copy setup-k3s-control.sh k3s-control:/tmp/
-    limactl shell k3s-control sudo K3S_TOKEN="${K3S_TOKEN}" K3S_SERVER_TAILSCALE_HOST="${K3S_SERVER_TAILSCALE_HOST}" /tmp/setup-k3s-control.sh
+    limactl copy infra/lima/setup-control.sh k3s-control:/tmp/
+    limactl shell k3s-control chmod +x /tmp/setup-control.sh
+    limactl shell k3s-control sudo K3S_TOKEN="${K3S_TOKEN}" K3S_VPN_AUTH_KEY="${K3S_VPN_AUTH_KEY}" K3S_SERVER_TAILSCALE_HOST="${K3S_SERVER_TAILSCALE_HOST}" /tmp/setup-control.sh
 
 # Install k3s on agent
-k3s-agent-up NAME:
-    #!/usr/bin/env bash
-    set -euo pipefail
+k3s-agent-up NAME="k3s-worker":
     echo "Installing k3s agent on {{NAME}}..."
-    limactl copy setup-k3s-agent.sh {{NAME}}:/tmp/
-    limactl shell {{NAME}} sudo K3S_TOKEN="${K3S_TOKEN}" K3S_SERVER_TAILSCALE_HOST="${K3S_SERVER_TAILSCALE_HOST}" /tmp/setup-k3s-agent.sh
+    limactl copy infra/lima/setup-agent.sh {{NAME}}:/tmp/
+    limactl shell {{NAME}} chmod +x /tmp/setup-agent.sh
+    limactl shell {{NAME}} sudo K3S_TOKEN="${K3S_TOKEN}" K3S_VPN_AUTH_KEY="${K3S_VPN_AUTH_KEY}" K3S_SERVER_TAILSCALE_HOST="${K3S_SERVER_TAILSCALE_HOST}" /tmp/setup-agent.sh
 
 # Restart k3s on control plane
 k3s-control-restart:

@@ -5,9 +5,14 @@ echo "=== K3s Agent Setup ==="
 
 K3S_SERVER_TAILSCALE_HOST="${K3S_SERVER_TAILSCALE_HOST:-k3s-control}"
 
-# Verify Tailscale is running
+if [ -z "${K3S_VPN_AUTH_KEY:-}" ]; then
+    echo "Error: K3S_VPN_AUTH_KEY not set"
+    exit 1
+fi
+
+# Verify Tailscale is running (exit if not)
 if ! tailscale status > /dev/null 2>&1; then
-    echo "Error: Tailscale not connected. Run: just tailscale-agent "
+    echo "Error: Tailscale not connected."
     exit 1
 fi
 
@@ -57,24 +62,22 @@ fi
 echo "=== Installing k3s Agent ==="
 
 curl -sfL https://get.k3s.io | \
-    K3S_URL="https://${CONTROL_PLANE_IP}:6443" \
-    K3S_TOKEN="${K3S_JOIN_TOKEN}" \
-    INSTALL_K3S_EXEC="agent \
-        --node-ip=${TAILSCALE_IP} \
-        --node-external-ip=${TAILSCALE_IP} \
-        --flannel-iface=tailscale0" sh -
+        K3S_URL="https://${CONTROL_PLANE_IP}:6443" \
+        K3S_TOKEN="${K3S_JOIN_TOKEN}" \
 
-echo "=== Configuring k3s-agent systemd unit ==="
-# Ensure k3s-agent starts after Tailscale
-mkdir -p /etc/systemd/system/k3s-agent.service.d
-cat > /etc/systemd/system/k3s-agent.service.d/tailscale.conf <<EOF
-[Unit]
-After=tailscaled.service
-Requires=tailscaled.service
-EOF
+# Build k3s agent args using an array to avoid quoting problems
+K3S_ARG_LIST=(
+    agent
+    --node-ip "${TAILSCALE_IP}"
+    --node-external-ip "${TAILSCALE_IP}"
+    --vpn-auth="name=tailscale,joinKey=${K3S_VPN_AUTH_KEY}"
+    --flannel-iface=tailscale0
+)
 
-systemctl daemon-reload
+# Join into single string for INSTALL_K3S_EXEC
+K3S_ARGS="${K3S_ARG_LIST[*]}"
 
+INSTALL_K3S_EXEC="${K3S_ARGS}" sh -
 echo "=== Agent Setup Complete ==="
 echo "  Worker IP: ${TAILSCALE_IP}"
 echo "  Connected to: ${CONTROL_PLANE_IP}"
