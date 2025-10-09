@@ -3,6 +3,6 @@ kind: Kustomization
 
 resources:
   - https://github.com/kubernetes-sigs/kueue/releases/download/v0.14.0/manifests.yaml
+  - ./resource-flavor.yaml
   - ./cluster-queue.yaml
   - ./local-queue.yaml
-  - ./resource-flavor.yaml

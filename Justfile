@@ -60,3 +60,5 @@ clean: vm-control-down vm-agent-down
 
 # KUEUE
 
+kueue-install:
+    kubectl apply --server-side -k infra/kueue/base

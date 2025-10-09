@@ -10,6 +10,6 @@ spec:
         - name: default-flavor
           resources:
             - name: "cpu"
-              nominalQuota: 8
+              nominalQuota: 2
             - name: "memory"
-              nominalQuota: 16Gi
+              nominalQuota: 4Gi

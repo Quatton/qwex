@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: sample-job
+  generateName: sample-job-
   labels:
     kueue.x-k8s.io/queue-name: user-queue
 spec:
@@ -13,8 +13,19 @@ spec:
       restartPolicy: Never
       containers:
         - name: main
-          image: busybox:latest
-          command: ["sh", "-c", "echo 'Hello from Kueue!' && sleep 5"]
+          image: ghcr.io/astral-sh/uv:debian
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              uv venv
+              . .venv/bin/activate
+              uv pip install numpy
+              echo "Running python script..."
+              python -c "import numpy as np; print('Numpy version:', np.__version__); print('Random number:', np.random.rand(3))"
+              uname -a
+              echo "Job completed successfully."
           resources:
             requests:
               cpu: "100m"
