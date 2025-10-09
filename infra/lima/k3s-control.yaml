@@ -1,12 +1,11 @@
-# lima-agent.yaml
 vmType: "vz"
 rosetta:
   enabled: true
   binfmt: true
 
 cpus: 2
-memory: "4GiB"
-disk: "30GiB"
+memory: "2GiB"
+disk: "50GiB"
 
 networks:
   - vzNAT: true
@@ -21,5 +20,6 @@ message: |
   VM is ready!
 
   Next steps:
-    1. Setup Tailscale: just tailscale-agent 
-    2. Install k3s: just k3s-agent-up
+    1. Setup Tailscale: just tailscale-control
+    2. Install k3s: just k3s-control-up
+    3. Get kubeconfig: just kubeconfig
