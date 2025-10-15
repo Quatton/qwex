@@ -53,7 +53,8 @@ k3sup-agent TAILSCALE_HOST SERVER_HOST:
     --server-ip $SERVER_ADDR \
     --k3s-extra-args "--flannel-iface tailscale0 \
         --node-ip $TAILSCALE_ADDR \
-        --node-external-ip $TAILSCALE_ADDR" \
+        --node-external-ip $TAILSCALE_ADDR \
+        --node-name {{TAILSCALE_HOST}}" \
     --k3s-channel latest
 
 clean: vm-control-down vm-agent-down
