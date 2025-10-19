@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: controller-sa
+  namespace: controller
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: controller-role
+  namespace: controller
+rules:
+  # Namespaced resources the controller commonly needs. Tighten these to the minimum set your
+  # controller actually requires.
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "patch"]
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources: ["workloads"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources: ["workloads/status"]
+    verbs: ["get", "update", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: controller-clusterrole
+rules:
+  # Cluster-scoped reads that many controllers need. Keep these minimal.
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "patch"]
+  # If your controller manages CRDs, replace or extend the following with the exact API group
+  # and resource names for the CRDs (don't use glob '*' in production unless necessary):
+  # - apiGroups: ["mygroup.example.com"]
+  #   resources: ["myresources"]
+  #   verbs: ["get","list","watch","create","update","patch","delete"]
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources: ["workloads"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources: ["workloads/status"]
+    verbs: ["get", "update", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: controller-rolebinding
+  namespace: controller
+subjects:
+  - kind: ServiceAccount
+    name: controller-sa
+    namespace: controller
+roleRef:
+  kind: Role
+  name: controller-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: controller-clusterrolebinding
+subjects:
+  - kind: ServiceAccount
+    name: controller-sa
+    namespace: controller
+roleRef:
+  kind: ClusterRole
+  name: controller-clusterrole
+  apiGroup: rbac.authorization.k8s.io
