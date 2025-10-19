@@ -2,6 +2,35 @@
 
 FastAPI-based job submission and management API for Kubernetes + Kueue.
 
+## Development
+
+### Prerequisites
+- Python 3.12+
+- Access to a Kubernetes cluster with Kueue installed
+- kubectl configured
+
+### Setup
+
+```bash
+# Install dependencies
+uv sync
+
+# For dev: run kubectl proxy in a separate terminal
+kubectl proxy --port=8001
+
+# Run the controller (automatically uses proxy on localhost:8001)
+K8S_PROXY=http://127.0.0.1:8001 fastapi dev src/controller/main.py
+```
+
+The controller automatically detects your environment:
+- **Dev**: Set `K8S_PROXY` to use kubectl proxy (no auth needed)
+- **Prod**: Runs in-cluster with ServiceAccount (deployed in Kubernetes)
+
+### RBAC
+
+The controller requires a ServiceAccount with permissions to manage Kueue Workloads.
+See `infra/controller/` for RBAC manifests.
+
 ## 🎯 **Purpose**
 
 The Controller is the core API server that:
