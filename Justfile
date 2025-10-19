@@ -59,6 +59,9 @@ k3sup-agent TAILSCALE_HOST SERVER_HOST:
 
 clean: vm-control-down vm-agent-down
 
+clean-python:
+    find . -type d \( -name "__pycache__" -o -name ".venv" \) -exec rm -rf {} +
+
 # KUEUE
 
 kueue-install:

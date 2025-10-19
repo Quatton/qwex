@@ -10,11 +10,11 @@
     },
     {
       "name": "controller",
-      "path": "../controller"
+      "path": "../apps/controller"
     },
     {
       "name": "cli",
-      "path": "../cli"
+      "path": "../apps/cli"
     },
     {
       "name": "examples",
