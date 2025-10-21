@@ -4,7 +4,7 @@ requires-python = ">=3.12"
 [manifest]
 members = [
     "controller",
-    "roam",
+    "qwex",
 ]
 
 [[package]]
@@ -890,6 +890,11 @@ wheels = [
 ]
 
 [[package]]
+name = "qwex"
+version = "0.1.0"
+source = { virtual = "." }
+
+[[package]]
 name = "requests"
 version = "2.32.5"
 source = { registry = "https://pypi.org/simple" }
@@ -943,11 +948,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/67/33/1a18839aaa8feef79
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/49/42821d55ead7b5a87c8d121edf323cb393d8579f63e933002ade900b784f/rich_toolkit-0.15.1-py3-none-any.whl", hash = "sha256:36a0b1d9a135d26776e4b78f1d5c2655da6e0ef432380b5c6b523c8d8ab97478", size = 29412 },
 ]
-
-[[package]]
-name = "roam"
-version = "0.1.0"
-source = { virtual = "." }
 
 [[package]]
 name = "rsa"
