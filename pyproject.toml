@@ -1,7 +1,7 @@
 [project]
-name = "roam"
+name = "qwex"
 version = "0.1.0"
-description = "Run On Another Machine"
+description = "Queue-based Workload EXecution"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []

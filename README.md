@@ -1,4 +1,4 @@
-# ROAM - Run On Another Machine
+# QWEX - Queue-based Workload EXecution
 
 A distributed job execution platform built on Kubernetes and Kueue, designed for running workloads across multiple machines with seamless cross-machine networking via Tailscale.
 
@@ -68,11 +68,11 @@ A distributed job execution platform built on Kubernetes and Kueue, designed for
 #### CLI Client
 - [ ] **Auto-generated CLI** - From OpenAPI specification
 - [ ] **Job Management Commands**
-  - [ ] `roam submit <job-spec>`
-  - [ ] `roam status <job-id>`
-  - [ ] `roam logs <job-id> --follow`
-  - [ ] `roam cancel <job-id>`
-  - [ ] `roam list --user=me --status=running`
+  - [ ] `qwex submit <job-spec>`
+  - [ ] `qwex status <job-id>`
+  - [ ] `qwex logs <job-id> --follow`
+  - [ ] `qwex cancel <job-id>`
+  - [ ] `qwex list --user=me --status=running`
 - [ ] **Interactive Mode** - REPL for job management
 - [ ] **Configuration Management** - API endpoint configuration
 
@@ -126,12 +126,12 @@ kubectl get jobs -w
 ## 📁 **Project Structure**
 
 ```
-roam-v2/
+qwex/
 ├── apps/
 │   ├── controller/          # FastAPI job API server
 │   └── cli/                # Command-line client
 ├── packages/
-│   └── roam-client/        # Generated Python client library
+│   └── qwex-client/        # Generated Python client library
 ├── infra/
 │   ├── kueue/             # Kueue configurations
 │   ├── lima/              # VM configurations

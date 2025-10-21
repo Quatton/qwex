@@ -100,9 +100,9 @@ v1.27.3+, v1.26.6+, v1.25.11+). Every node uses Tailscale to join a secure mesh;
    needed):**
 
    ```bash
-   just lima-kubeconfig                       # copies ~/.lima/roam-server/... into ~/.kube/config-roam
+   just lima-kubeconfig                       # copies ~/.lima/qwex-server/... into ~/.kube/config-qwex
    just lima-kubeconfig-tailscale $K3S_SERVER_TAILSCALE_IP   # optional, accepts IP or hostname
-   export KUBECONFIG=~/.kube/config-roam
+   export KUBECONFIG=~/.kube/config-qwex
    kubectl get nodes
    ```
 
@@ -161,8 +161,8 @@ The Justfile now includes both k3d and lima commands. To migrate:
 
 - **Check VM status:** `just lima-status`
 - **Access VM shell:** `just lima-shell`
-- **View k3s logs:** `limactl shell roam-server sudo journalctl -u k3s`
-- **Restart k3s:** `limactl shell roam-server sudo systemctl restart k3s`
+- **View k3s logs:** `limactl shell qwex-server sudo journalctl -u k3s`
+- **Restart k3s:** `limactl shell qwex-server sudo systemctl restart k3s`
 - **Inspect Tailscale:** `just lima-tailscale-status` (or `tailscale status --json` inside the VM)
 
 ## Networking Details
@@ -170,4 +170,4 @@ The Justfile now includes both k3d and lima commands. To migrate:
 - **Host port 6443** → VM port 6443 (k3s API)
 - **VM networking:** Uses Lima's default user-mode networking plus the Tailscale interface (k3s
    advertises the Tailscale IPs by default)
-- **Kubeconfig:** Automatically copied to `~/.lima/roam-server/copied-from-guest/kubeconfig.yaml`
+- **Kubeconfig:** Automatically copied to `~/.lima/qwex-server/copied-from-guest/kubeconfig.yaml`

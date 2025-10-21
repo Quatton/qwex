@@ -1,4 +1,4 @@
-# ROAM Controller
+# QWEX Controller
 
 FastAPI-based job submission and management API for Kubernetes + Kueue.
 
@@ -174,17 +174,17 @@ CMD ["fastapi", "run", "src/main.py", "--host", "0.0.0.0"]
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: roam-controller
+  name: qwex-controller
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: roam-controller
+      app: qwex-controller
   template:
     spec:
       containers:
       - name: controller
-        image: roam/controller:latest
+        image: qwex/controller:latest
         ports:
         - containerPort: 8000
         env:
@@ -201,9 +201,9 @@ KUBECONFIG=/path/to/kubeconfig        # If running outside cluster
 KUBERNETES_NAMESPACE=default         # Default namespace for jobs
 
 # API configuration
-ROAM_HOST=0.0.0.0                    # Server bind address
-ROAM_PORT=8000                       # Server port
-ROAM_LOG_LEVEL=info                  # Logging level
+QWEX_HOST=0.0.0.0                    # Server bind address
+QWEX_PORT=8000                       # Server port
+QWEX_LOG_LEVEL=info                  # Logging level
 
 # Kueue configuration
 DEFAULT_QUEUE=user-queue             # Default queue name
@@ -231,7 +231,7 @@ GET /health/live   # Liveness probe
 ### With CLI
 ```python
 # Generated client usage
-from roam_client import JobsAPI
+from qwex_client import JobsAPI
 
 client = JobsAPI(base_url="http://controller.local:8000")
 job = await client.submit_job(
