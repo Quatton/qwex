@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "roam",
+      "name": "qwex",
       "devDependencies": {
         "@types/bun": "^1.2.23",
       },
