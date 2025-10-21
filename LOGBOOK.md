@@ -15,8 +15,21 @@
     - This makes actual distributed computing impossible.
     - Having to suspend someone else's job is not feasible in a client-side only model.
 - We will stick to the motto of "let's use great technologies to build accessible applications", rather than "let's use accessible technologies to build great applications".
+- Renamed to Qwex
   
 ### Activities
 
 - Add RBAC manifests for the controller to manage kueue workloads.
   > Since this RBAC manifests only live in side the 
+
+## What is Qwex?
+
+Queued Workspace-Aware EXecutor (Qwex) is a modular run-this-on-another-machine system that consists of:
+
+1. Backend-agnostic Zero-config Command Relay: Backend-agnostic is quite a scam because you need to setup an SSH server first. The idea is that once you have an SSH server, you can run `qwex batch python main.py` and it will run that job, and streams the output back to you. Wait, but do I need `scp`? No. `rsync`? No. `rsshfs`? No. Qwex will handle file transfer for you, so you don't need to worry about it.
+2. Kueue-based Job Scheduling: While you can use Slurm as a backend, we propose another architectural design using [Kueue](https://kueue.sigs.k8s.io/). Kueue is a Kubernetes-native job scheduler that allows fine-grained control over job scheduling and resource allocation. Qwex leverages Kueue to manage job queues across multiple nodes, ensuring efficient resource utilization and job prioritization.
+
+So can you just use `kubectl`? Yes.
+Can you use `qwex` without Kueue? Yes.
+Can you use `qwex`'s SDK to access your jobs programmatically? Yes.
+It's modular and flexible.
