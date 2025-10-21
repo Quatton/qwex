@@ -13,8 +13,8 @@
       "path": "../apps/controller"
     },
     {
-      "name": "cli",
-      "path": "../apps/cli"
+      "name": "qwex-cli",
+      "path": "../apps/qwex-cli"
     },
     {
       "name": "examples",
