@@ -7,3 +7,7 @@ default:
 # Create k3d cluster with apps directory mounted at /mnt/apps
 k3d-create:
     k3d cluster create  --config infra/k3d-config.yaml
+
+# Run controller locally for development
+ctrl-dev:
+    cd apps/controller && go run main.go
