@@ -33,3 +33,14 @@ So can you just use `kubectl`? Yes.
 Can you use `qwex` without Kueue? Yes.
 Can you use `qwex`'s SDK to access your jobs programmatically? Yes.
 It's modular and flexible.
+
+## Week 6: Nov 6 - Nov 12, 2025
+
+### Reevaluate Project Direction
+
+- I'm using Kubernetes.
+- It's easier to set up (trust me)
+- It scales better.
+- Easier to deploy.
+
+Architecture: not yet finalized
