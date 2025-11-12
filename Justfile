@@ -11,3 +11,7 @@ k3d-create:
 # Run controller locally for development
 ctrl-dev:
     cd apps/controller && go run main.go
+
+# Run controller with hot reload
+ctrl-watch:
+    air

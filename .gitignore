@@ -41,3 +41,17 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/  
+
+# Go
+
+## Air (hot reload) temporary directory
+tmp/
+
+## Build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
