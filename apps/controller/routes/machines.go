@@ -20,7 +20,6 @@ type MachineResponse struct {
 }
 
 func RegisterMachines(api huma.API) {
-	// Initialize machine service
 	var err error
 	machineService, err = machines.NewService()
 	if err != nil {
@@ -28,7 +27,6 @@ func RegisterMachines(api huma.API) {
 		fmt.Println("Machine endpoints will return errors until k8s is configured")
 	}
 
-	// POST /api/machines - Create a new machine
 	huma.Register(api, huma.Operation{
 		OperationID: "create-machine",
 		Method:      "POST",
@@ -38,7 +36,6 @@ func RegisterMachines(api huma.API) {
 		Tags:        []string{"Machines"},
 	}, handleCreateMachine)
 
-	// DELETE /api/machines/{machine_id} - Delete a machine
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-machine",
 		Method:      "DELETE",
@@ -49,34 +46,22 @@ func RegisterMachines(api huma.API) {
 	}, handleDeleteMachine)
 }
 
-// Handlers
-
 func handleCreateMachine(ctx context.Context, input *struct{}) (*MachineResponse, error) {
-	fmt.Println("=== handleCreateMachine called ===")
-	
 	if machineService == nil {
-		fmt.Println("ERROR: machineService is nil")
 		return nil, fmt.Errorf("machine service not initialized - kubernetes not configured")
 	}
 
-	// Generate a unique machine ID
 	machineID := uuid.New().String()
-	fmt.Printf("Generated machine ID: %s\n", machineID)
-
-	// Create the pod in Kubernetes
-	fmt.Println("Calling machineService.CreateMachine...")
 	err := machineService.CreateMachine(ctx, machineID)
 	if err != nil {
-		fmt.Printf("ERROR creating machine: %v\n", err)
 		return nil, fmt.Errorf("failed to create machine: %w", err)
 	}
 
-	fmt.Printf("Successfully created machine with ID: %s\n", machineID)
+	fmt.Printf("Created machine: %s\n", machineID)
 
 	resp := &MachineResponse{}
 	resp.Body.MachineID = machineID
 	resp.Body.Status = "creating"
-
 	return resp, nil
 }
 
@@ -87,18 +72,15 @@ func handleDeleteMachine(ctx context.Context, input *struct {
 		return nil, fmt.Errorf("machine service not initialized - kubernetes not configured")
 	}
 
-	machineID := input.MachineID
-
-	err := machineService.DeleteMachine(ctx, machineID)
+	err := machineService.DeleteMachine(ctx, input.MachineID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete machine: %w", err)
 	}
 
-	fmt.Printf("Deleted machine with ID: %s\n", machineID)
+	fmt.Printf("Deleted machine: %s\n", input.MachineID)
 
 	resp := &MachineResponse{}
-	resp.Body.MachineID = machineID
+	resp.Body.MachineID = input.MachineID
 	resp.Body.Status = "stopped"
-
 	return resp, nil
 }
