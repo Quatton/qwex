@@ -6,10 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
-	"github.com/quatton/qwex/apps/controller/services/machines"
 )
-
-var machineService *machines.Service
 
 // MachineResponse represents a machine response
 type MachineResponse struct {
@@ -20,13 +17,6 @@ type MachineResponse struct {
 }
 
 func RegisterMachines(api huma.API) {
-	var err error
-	machineService, err = machines.NewService()
-	if err != nil {
-		fmt.Printf("Warning: Failed to initialize machine service: %v\n", err)
-		fmt.Println("Machine endpoints will return errors until k8s is configured")
-	}
-
 	huma.Register(api, huma.Operation{
 		OperationID: "create-machine",
 		Method:      "POST",
@@ -47,16 +37,8 @@ func RegisterMachines(api huma.API) {
 }
 
 func handleCreateMachine(ctx context.Context, input *struct{}) (*MachineResponse, error) {
-	if machineService == nil {
-		return nil, fmt.Errorf("machine service not initialized - kubernetes not configured")
-	}
 
 	machineID := uuid.New().String()
-	err := machineService.CreateMachine(ctx, machineID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create machine: %w", err)
-	}
-
 	fmt.Printf("Created machine: %s\n", machineID)
 
 	resp := &MachineResponse{}
@@ -68,14 +50,6 @@ func handleCreateMachine(ctx context.Context, input *struct{}) (*MachineResponse
 func handleDeleteMachine(ctx context.Context, input *struct {
 	MachineID string `path:"machine_id" doc:"The machine ID to delete" format:"uuid"`
 }) (*MachineResponse, error) {
-	if machineService == nil {
-		return nil, fmt.Errorf("machine service not initialized - kubernetes not configured")
-	}
-
-	err := machineService.DeleteMachine(ctx, input.MachineID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to delete machine: %w", err)
-	}
 
 	fmt.Printf("Deleted machine: %s\n", input.MachineID)
 

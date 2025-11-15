@@ -123,7 +123,45 @@ kubectl apply -f examples/kueue-hello-world/job.yaml
 kubectl get jobs -w
 ```
 
-## 📁 **Project Structure**
+## � Dev Sessions (Velda-like)
+
+QWEX can spin up an ephemeral "machine" as a Pod with a persistent home directory (PVC) and an SSH server, closely mirroring Velda's interactive session model:
+
+- Persistent state: a PVC is mounted so changes in $HOME survive pod restarts.
+- Sticky sessions: keep the same pod alive while you work; re-attach via port-forward.
+- VS Code Remote: connect over SSH via `kubectl port-forward` (no node-level SSH needed).
+
+Prerequisites
+- A Kubernetes cluster and kubectl context
+- The controller running locally: `just ctrl-dev`
+
+Create a dev machine and connect
+```fish
+# 1) Create the machine (returns a UUID)
+set MID (just machine-create)
+echo Created machine $MID
+
+# 2) Port-forward SSH to localhost:2222
+just machine-port-forward $MID
+
+# In another terminal, connect with VS Code Remote-SSH:
+# Host: 127.0.0.1  Port: 2222  User: dev  (password generated per session)
+# Or open a shell:
+ssh -p 2222 dev@127.0.0.1
+```
+
+Notes
+- The SSH user is `dev`; the password is generated per session and stored in a Kubernetes Secret named `qwex-<id>-auth`.
+- The Pod listens on port 2222; we recommend using `kubectl port-forward` rather than exposing a Service.
+- By default, resources live in the `default` namespace; set `QWEX_NAMESPACE` to change it. Set `QWEX_STORAGE_CLASS` to control storage class.
+- You can override the SSH image with `QWEX_SSH_IMAGE` (default `lscr.io/linuxserver/openssh-server:latest`).
+
+Cleanup
+```fish
+just machine-delete $MID
+```
+
+## �📁 **Project Structure**
 
 ```
 qwex/
