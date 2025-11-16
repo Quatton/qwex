@@ -2,21 +2,13 @@ package routes
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/google/uuid"
+	"github.com/quatton/qwex/apps/controller/schemas"
+	"github.com/quatton/qwex/apps/controller/services/machines"
 )
 
-// MachineResponse represents a machine response
-type MachineResponse struct {
-	Body struct {
-		MachineID string `json:"machine_id" doc:"Unique identifier for the machine"`
-		Status    string `json:"status" doc:"Current status of the machine" enum:"creating,starting,running,stopping,stopped"`
-	}
-}
-
-func RegisterMachines(api huma.API) {
+func RegisterMachines(api huma.API, svc *machines.MachinesService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "create-machine",
 		Method:      "POST",
@@ -24,7 +16,10 @@ func RegisterMachines(api huma.API) {
 		Summary:     "Create a new machine",
 		Description: "Creates and starts a new machine (pod) with the uv image",
 		Tags:        []string{"Machines"},
-	}, handleCreateMachine)
+		Security:    BearerAuth,
+	}, func(ctx context.Context, input *struct{}) (*schemas.MachineResponse, error) {
+		return svc.Create(ctx, input)
+	})
 
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-machine",
@@ -33,28 +28,22 @@ func RegisterMachines(api huma.API) {
 		Summary:     "Delete a machine",
 		Description: "Stops and deletes a machine (pod) and all associated resources",
 		Tags:        []string{"Machines"},
-	}, handleDeleteMachine)
-}
+		Security:    BearerAuth,
+	}, func(ctx context.Context, input *struct {
+		MachineID string `path:"machine_id" doc:"The machine ID to delete" format:"uuid"`
+	}) (*schemas.MachineResponse, error) {
+		return svc.Delete(ctx, input)
+	})
 
-func handleCreateMachine(ctx context.Context, input *struct{}) (*MachineResponse, error) {
-
-	machineID := uuid.New().String()
-	fmt.Printf("Created machine: %s\n", machineID)
-
-	resp := &MachineResponse{}
-	resp.Body.MachineID = machineID
-	resp.Body.Status = "creating"
-	return resp, nil
-}
-
-func handleDeleteMachine(ctx context.Context, input *struct {
-	MachineID string `path:"machine_id" doc:"The machine ID to delete" format:"uuid"`
-}) (*MachineResponse, error) {
-
-	fmt.Printf("Deleted machine: %s\n", input.MachineID)
-
-	resp := &MachineResponse{}
-	resp.Body.MachineID = input.MachineID
-	resp.Body.Status = "stopped"
-	return resp, nil
+	huma.Register(api, huma.Operation{
+		OperationID: "list-machines",
+		Method:      "GET",
+		Path:        "/api/machines",
+		Summary:     "List user's machines",
+		Description: "List all machines owned by the authenticated user",
+		Tags:        []string{"Machines"},
+		Security:    BearerAuth,
+	}, func(ctx context.Context, input *struct{}) (*schemas.ListMachinesResponse, error) {
+		return svc.List(ctx, input)
+	})
 }

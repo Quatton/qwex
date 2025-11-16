@@ -1,0 +1,72 @@
+package config
+
+import (
+	"fmt"
+	"net/url"
+	"strings"
+
+	"github.com/kelseyhightower/envconfig"
+)
+
+type EnvConfig struct {
+	Port               string `envconfig:"PORT" default:"3000"`
+	BaseURL            string `envconfig:"BASE_URL" required:"true"`
+	AuthSecret         string `envconfig:"AUTH_SECRET" required:"true"`
+	GitHubClientID     string `envconfig:"GITHUB_CLIENT_ID"`
+	GitHubClientSecret string `envconfig:"GITHUB_CLIENT_SECRET"`
+	Environment        string `envconfig:"ENVIRONMENT" default:"development"`
+}
+
+func ValidateEnv() (*EnvConfig, error) {
+	var cfg EnvConfig
+	if err := envconfig.Process("", &cfg); err != nil {
+		return nil, fmt.Errorf("failed to load environment variables: %w", err)
+	}
+
+	var errors []string
+
+	if len(cfg.AuthSecret) < 32 {
+		errors = append(errors, "  ❌ AUTH_SECRET must be at least 32 characters")
+	}
+
+	if (cfg.GitHubClientID != "" && cfg.GitHubClientSecret == "") || (cfg.GitHubClientID == "" && cfg.GitHubClientSecret != "") {
+		errors = append(errors, "  ❌ Both GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be set together")
+	}
+
+	if _, err := url.ParseRequestURI(cfg.BaseURL); err != nil {
+		errors = append(errors, "  ❌ BASE_URL must be a valid URL")
+	}
+
+	if len(errors) > 0 {
+		return nil, fmt.Errorf("environment validation failed:\n%s", strings.Join(errors, "\n"))
+	}
+
+	return &cfg, nil
+}
+
+func MaskSecret(secret string) string {
+	if secret == "" {
+		return "<not set>"
+	}
+	if len(secret) <= 8 {
+		return "***"
+	}
+	return secret[:4] + "..." + secret[len(secret)-4:]
+}
+
+func (c *EnvConfig) Print() {
+	fmt.Println("\n📋 Configuration:")
+	fmt.Printf("  Environment: %s\n", c.Environment)
+	fmt.Printf("  Port: %s\n", c.Port)
+	fmt.Printf("  Base URL: %s\n", c.BaseURL)
+	fmt.Printf("  Auth Secret: %s\n", MaskSecret(c.AuthSecret))
+
+	if c.GitHubClientID != "" {
+		fmt.Printf("  GitHub OAuth: ✓ Enabled\n")
+		fmt.Printf("    Client ID: %s\n", MaskSecret(c.GitHubClientID))
+		fmt.Printf("    Client Secret: %s\n", MaskSecret(c.GitHubClientSecret))
+	} else {
+		fmt.Printf("  GitHub OAuth: ✗ Disabled\n")
+	}
+	fmt.Println()
+}
