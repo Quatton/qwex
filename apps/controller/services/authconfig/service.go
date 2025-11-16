@@ -10,6 +10,7 @@ import (
 	"github.com/go-pkgz/auth"
 	"github.com/go-pkgz/auth/avatar"
 	"github.com/go-pkgz/auth/logger"
+	"github.com/go-pkgz/auth/provider"
 	"github.com/go-pkgz/auth/token"
 	"github.com/quatton/qwex/apps/controller/config"
 	"github.com/quatton/qwex/apps/controller/utils"
@@ -36,7 +37,9 @@ func NewAuthConfigService(cfg *config.EnvConfig) *auth.Service {
 	service := auth.NewService(options)
 
 	if cfg.GitHubClientID != "" && cfg.GitHubClientSecret != "" {
-		service.AddProvider("github", cfg.GitHubClientID, cfg.GitHubClientSecret)
+		service.AddProviderWithUserAttributes("github", cfg.GitHubClientID, cfg.GitHubClientSecret, provider.UserAttributes{
+			"login": "login",
+		})
 		log.Println("✓ GitHub OAuth provider configured")
 		log.Printf("  GitHub login: %s/auth/github/login\n", cfg.BaseURL)
 	} else {

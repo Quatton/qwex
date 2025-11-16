@@ -42,7 +42,6 @@ func main() {
 
 	auth := authconfig.NewAuthConfigService(cfg)
 
-	authconfig.MountAuthHandlers(auth, router)
 	iamSvc := iam.NewIAMService(auth)
 	machinesSvc := machines.NewMachinesService(iamSvc)
 
@@ -57,6 +56,10 @@ func main() {
 		},
 	}
 
+	m := auth.Middleware()
+	router.Use(m.Trace)
+	authconfig.MountAuthHandlers(auth, router)
+
 	api := humachi.New(router, config)
 
 	svcs := &services.Container{
@@ -64,6 +67,7 @@ func main() {
 		Machines: machinesSvc,
 	}
 
+	api.UseMiddleware(iamSvc.Middleware())
 	routes.RegisterRoutes(api, svcs)
 
 	port := cfg.Port
