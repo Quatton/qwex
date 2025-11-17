@@ -7,6 +7,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// UserClaims represents a minimal, CLI-friendly view of the JWT payload.
+// Important: this is intended for display and UX only when parsed without
+// verification. Do not use these values for security decisions unless the
+// token has been cryptographically verified by a trusted key.
 type UserClaims struct {
 	ID          string
 	Login       string
@@ -19,6 +23,11 @@ type UserClaims struct {
 	Exp         int64
 }
 
+// ParseTokenClaims extracts raw claims from a JWT without verifying its
+// signature. This is useful for clients that need to inspect token payloads
+// but do not possess the issuer's signing key. The returned MapClaims will
+// contain numeric timestamps as float64 per the jwt library behavior.
+// WARNING: do not rely on this for authorization.
 func ParseTokenClaims(tokenStr string) (jwt.MapClaims, error) {
 	var claims jwt.MapClaims
 	parser := new(jwt.Parser)
@@ -29,6 +38,11 @@ func ParseTokenClaims(tokenStr string) (jwt.MapClaims, error) {
 	return claims, nil
 }
 
+// FromClaims reads token claims (without verification) and maps them into a
+// stable UserClaims structure. It tolerates both string and numeric forms of
+// the `sub`, `iat`, and `exp` claims and normalizes them into strings/int64s.
+// Use this when you need a predictable programmatic representation of a
+// token's user payload for display or tooling.
 func FromClaims(tokenStr string) (*UserClaims, error) {
 	mc, err := ParseTokenClaims(tokenStr)
 	if err != nil {
@@ -97,7 +111,10 @@ func FromClaims(tokenStr string) (*UserClaims, error) {
 	return uc, nil
 }
 
-// ToClaims converts UserClaims into jwt.MapClaims suitable for signing.
+// ToClaims converts a UserClaims into jwt.MapClaims suitable for signing by
+// the server. It intentionally keeps fields flat (e.g. `github_id`) so the
+// token remains compact and compatible with existing clients. Numeric
+// timestamp fields must be set by the caller (iat/exp) in unix seconds.
 func ToClaims(uc *UserClaims) jwt.MapClaims {
 	mc := jwt.MapClaims{}
 	if uc.ID != "" {
