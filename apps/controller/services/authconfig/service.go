@@ -67,9 +67,11 @@ func (s *AuthService) GenerateState(
 		RedirectURI:  redirectURI,
 		IncludeToken: includeToken,
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    "qwex",
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+			Issuer:   "qwex",
+			IssuedAt: jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(
+				time.Duration(s.cfg.AccessTokenTTL) * time.Second,
+			)),
 		},
 	}
 

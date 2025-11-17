@@ -15,6 +15,7 @@ type EnvConfig struct {
 	GitHubClientID     string `envconfig:"GITHUB_CLIENT_ID"`
 	GitHubClientSecret string `envconfig:"GITHUB_CLIENT_SECRET"`
 	Environment        string `envconfig:"ENVIRONMENT" default:"development"`
+	AccessTokenTTL     int    `envconfig:"ACCESS_TOKEN_TTL" default:"3600"`
 }
 
 func ValidateEnv() (*EnvConfig, error) {
