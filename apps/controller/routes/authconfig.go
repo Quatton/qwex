@@ -3,7 +3,6 @@ package routes
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 
@@ -118,8 +117,6 @@ func RegisterAuthConfig(api huma.API, svc *authconfig.AuthService) {
 		if err != nil {
 			return nil, huma.Error400BadRequest(fmt.Sprintf("invalid redirect_uri: %v", err))
 		}
-
-		log.Printf("redirecting to: %s", rewritten)
 
 		return &CallbackOutput{
 			Status:   http.StatusFound,

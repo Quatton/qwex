@@ -38,17 +38,20 @@ func ParseTokenClaims(tokenStr string) (jwt.MapClaims, error) {
 	return claims, nil
 }
 
-// FromClaims reads token claims (without verification) and maps them into a
+func FromToken(tokenStr string) (*UserClaims, error) {
+	claims, err := ParseTokenClaims(tokenStr)
+	if err != nil {
+		return nil, err
+	}
+	return FromMapClaims(claims)
+}
+
+// FromMapClaims reads token claims (without verification) and maps them into a
 // stable UserClaims structure. It tolerates both string and numeric forms of
 // the `sub`, `iat`, and `exp` claims and normalizes them into strings/int64s.
 // Use this when you need a predictable programmatic representation of a
 // token's user payload for display or tooling.
-func FromClaims(tokenStr string) (*UserClaims, error) {
-	mc, err := ParseTokenClaims(tokenStr)
-	if err != nil {
-		return nil, err
-	}
-
+func FromMapClaims(mc jwt.MapClaims) (*UserClaims, error) {
 	uc := &UserClaims{}
 
 	if sub, ok := mc["sub"]; ok {
@@ -118,7 +121,6 @@ func FromClaims(tokenStr string) (*UserClaims, error) {
 func ToClaims(uc *UserClaims) jwt.MapClaims {
 	mc := jwt.MapClaims{}
 	if uc.ID != "" {
-		// sub can be string
 		mc["sub"] = uc.ID
 	}
 	if uc.Login != "" {

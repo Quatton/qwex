@@ -205,14 +205,18 @@ func (s *AuthService) ValidateToken(tokenString string) (*schemas.User, error) {
 	}
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		user := &schemas.User{
-			Login: claims["login"].(string),
-			Name:  claims["name"].(string),
-			Email: claims["email"].(string),
+		// Map verified claims into UserClaims using shared helper to keep
+		// mapping logic consistent with the CLI/SDK.
+		uc, err := qsdk.FromMapClaims(claims)
+		if err != nil {
+			return nil, err
 		}
-		// Parse ID from "sub" claim
-		if sub, ok := claims["sub"].(string); ok {
-			user.ID = sub
+
+		user := &schemas.User{
+			ID:    uc.ID,
+			Login: uc.Login,
+			Name:  uc.Name,
+			Email: uc.Email,
 		}
 		return user, nil
 	}
