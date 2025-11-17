@@ -1,5 +1,6 @@
 # Load dotenv if available
 set dotenv-load := true
+set positional-arguments
 
 default:
     just --list
@@ -21,3 +22,7 @@ spec:
 
 gen:
     oapi-codegen -generate "client,types" -package client -o pkg/client/gen.go pkg/client/openapi.json
+
+@ctl *args='':
+    go run apps/qwexctl/main.go "$@"
+
