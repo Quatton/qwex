@@ -57,6 +57,9 @@ func Initialize(cmd *cobra.Command, cfgFile string) error {
 
 	if !viper.IsSet(BaseUrlKey) {
 		viper.SetDefault(BaseUrlKey, "http://localhost:3000")
+	} else {
+		normalized := strings.TrimRight(viper.GetString(BaseUrlKey), "/")
+		viper.Set(BaseUrlKey, normalized)
 	}
 
 	return nil

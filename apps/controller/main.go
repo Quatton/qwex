@@ -34,13 +34,13 @@ func main() {
 		log.Fatalf("❌ %v\n", err)
 	}
 
-	cfg.Print()
+	cfg.Print(log.Printf)
 
 	router := chi.NewMux()
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 
-	auth := authconfig.NewAuthConfigService(cfg)
+	auth := authconfig.NewAuthService(cfg)
 
 	iamSvc := iam.NewIAMService(auth)
 	machinesSvc := machines.NewMachinesService(iamSvc)
@@ -52,13 +52,9 @@ func main() {
 			Type:         "http",
 			Scheme:       "bearer",
 			BearerFormat: "JWT",
-			Description:  "JWT token from /auth/github/login",
+			Description:  "JWT token from /api/auth/callback",
 		},
 	}
-
-	m := auth.Middleware()
-	router.Use(m.Trace)
-	authconfig.MountAuthHandlers(auth, router)
 
 	api := humachi.New(router, config)
 
@@ -69,19 +65,17 @@ func main() {
 
 	api.UseMiddleware(iamSvc.Middleware())
 	routes.RegisterRoutes(api, svcs)
+	routes.RegisterAuthConfig(api, auth)
 
 	port := cfg.Port
 	addr := fmt.Sprintf(":%s", port)
 
-	fmt.Printf("🚀 Controller starting on %s\n", addr)
-	fmt.Printf("📚 OpenAPI docs: %s/docs\n", cfg.BaseURL)
-	fmt.Printf("📄 OpenAPI spec: %s/openapi.json\n", cfg.BaseURL)
-	fmt.Printf("🔐 Auth endpoints: %s/auth\n", cfg.BaseURL)
-	fmt.Printf("   - GitHub login: %s/auth/github/login\n", cfg.BaseURL)
-	if utils.IsDev() {
-		fmt.Printf("   - Dev login: %s/auth/dev/login\n", cfg.BaseURL)
-	}
-	fmt.Printf("   - Logout: %s/auth/logout\n\n", cfg.BaseURL)
+	log.Printf("🚀 Controller starting on %s\n", addr)
+	log.Printf("📚 OpenAPI docs: %s/docs\n", cfg.BaseURL)
+	log.Printf("📄 OpenAPI spec: %s/openapi.json\n", cfg.BaseURL)
+	log.Printf("🔐 Auth endpoints:\n")
+
+	log.Printf("   - Authorize: %s/api/auth/login", cfg.BaseURL)
 
 	if err := http.ListenAndServe(addr, router); err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)

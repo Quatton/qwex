@@ -1,13 +1,13 @@
 package iam
 
 import (
-	"github.com/go-pkgz/auth"
+	"github.com/quatton/qwex/apps/controller/services/authconfig"
 )
 
 type IAMService struct {
-	auth *auth.Service
+	auth *authconfig.AuthService
 }
 
-func NewIAMService(auth *auth.Service) *IAMService {
+func NewIAMService(auth *authconfig.AuthService) *IAMService {
 	return &IAMService{auth: auth}
 }

@@ -54,19 +54,18 @@ func MaskSecret(secret string) string {
 	return secret[:4] + "..." + secret[len(secret)-4:]
 }
 
-func (c *EnvConfig) Print() {
-	fmt.Println("\n📋 Configuration:")
-	fmt.Printf("  Environment: %s\n", c.Environment)
-	fmt.Printf("  Port: %s\n", c.Port)
-	fmt.Printf("  Base URL: %s\n", c.BaseURL)
-	fmt.Printf("  Auth Secret: %s\n", MaskSecret(c.AuthSecret))
+func (c *EnvConfig) Print(fmtr func(string, ...interface{})) {
+	fmtr("📋 Configuration:\n")
+	fmtr("  Environment: %s\n", c.Environment)
+	fmtr("  Port: %s\n", c.Port)
+	fmtr("  Base URL: %s\n", c.BaseURL)
+	fmtr("  Auth Secret: %s\n", MaskSecret(c.AuthSecret))
 
 	if c.GitHubClientID != "" {
-		fmt.Printf("  GitHub OAuth: ✓ Enabled\n")
-		fmt.Printf("    Client ID: %s\n", MaskSecret(c.GitHubClientID))
-		fmt.Printf("    Client Secret: %s\n", MaskSecret(c.GitHubClientSecret))
+		fmtr("  GitHub OAuth: ✓ Enabled\n")
+		fmtr("    Client ID: %s\n", MaskSecret(c.GitHubClientID))
+		fmtr("    Client Secret: %s\n", MaskSecret(c.GitHubClientSecret))
 	} else {
-		fmt.Printf("  GitHub OAuth: ✗ Disabled\n")
+		fmtr("  GitHub OAuth: ✗ Disabled\n")
 	}
-	fmt.Println()
 }
