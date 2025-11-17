@@ -15,3 +15,9 @@ ctrl-dev:
 # Run controller with hot reload
 ctrl-watch:
     air
+
+spec:
+    curl -sS http://localhost:3000/openapi-3.0.json -o pkg/client/openapi.json
+
+gen:
+    oapi-codegen -generate "client,types" -package client -o pkg/client/gen.go pkg/client/openapi.json
