@@ -6,11 +6,13 @@ package cmd
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/quatton/qwex/pkg/client"
 	"github.com/quatton/qwex/pkg/qsdk"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/zalando/go-keyring"
 )
 
 var loginCmd = &cobra.Command{
@@ -48,7 +50,28 @@ func run(cmd *cobra.Command, args []string) {
 		log.Fatalf("failed to complete login: %v", err)
 		return
 	}
-	fmt.Printf("Login successful! Token: %s\n", token)
+
+	if uc, err := qsdk.ParseUserFromToken(token); err == nil {
+		expStr := "unknown"
+		if uc.Exp > 0 {
+			expStr = time.Unix(uc.Exp, 0).Format(time.RFC3339)
+		}
+		fmt.Printf("Logged in as: %s (@%s)\n", uc.Name, uc.Login)
+		fmt.Printf("Token expires: %s\n", expStr)
+	} else {
+		log.Printf("warning: failed to parse token claims: %v", err)
+	}
+
+	service := "qwex"
+	user := viper.GetString(qsdk.BaseUrlKey)
+	if user == "" {
+		user = "default"
+	}
+	if err := keyring.Set(service, user, token); err != nil {
+		log.Printf("warning: failed to save token to keyring: %v", err)
+	} else {
+		fmt.Println("Access token saved")
+	}
 }
 
 func init() {
