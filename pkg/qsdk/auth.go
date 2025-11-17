@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/quatton/qwex/pkg/client"
+	"github.com/spf13/viper"
 )
 
 type AuthClient struct {
@@ -98,9 +99,8 @@ func NewAuthClient(
 	client *client.Client,
 ) *AuthClient {
 	return &AuthClient{
-		HttpClient: client,
-		tokenCh:    make(chan string, 1),
-		errCh:      make(chan error, 1),
+		tokenCh: make(chan string, 1),
+		errCh:   make(chan error, 1),
 	}
 }
 
@@ -112,7 +112,7 @@ func (ac *AuthClient) InitiateLoginWithGithub() (string, error) {
 	}
 	ac.CallbackServer = callbackServer
 
-	uBase, err := url.Parse(ac.HttpClient.Server)
+	uBase, err := url.Parse(viper.GetString(BaseUrlKey))
 	if err != nil {
 		return "", fmt.Errorf("invalid server URL: %w", err)
 	}

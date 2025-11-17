@@ -8,13 +8,15 @@ import (
 )
 
 type UserClaims struct {
-	ID    string
-	Login string
-	Name  string
-	Email string
-	Iss   string
-	Iat   int64
-	Exp   int64
+	ID          string
+	Login       string
+	Name        string
+	Email       string
+	GithubID    string
+	GithubLogin string
+	Iss         string
+	Iat         int64
+	Exp         int64
 }
 
 func ParseTokenClaims(tokenStr string) (jwt.MapClaims, error) {
@@ -27,7 +29,7 @@ func ParseTokenClaims(tokenStr string) (jwt.MapClaims, error) {
 	return claims, nil
 }
 
-func ParseUserFromToken(tokenStr string) (*UserClaims, error) {
+func FromClaims(tokenStr string) (*UserClaims, error) {
 	mc, err := ParseTokenClaims(tokenStr)
 	if err != nil {
 		return nil, err
@@ -77,5 +79,54 @@ func ParseUserFromToken(tokenStr string) (*UserClaims, error) {
 		}
 	}
 
+	if gid, ok := mc["github_id"]; ok {
+		switch v := gid.(type) {
+		case string:
+			uc.GithubID = v
+		case float64:
+			uc.GithubID = strconv.FormatInt(int64(v), 10)
+		default:
+			uc.GithubID = fmt.Sprintf("%v", v)
+		}
+	}
+
+	if gl, ok := mc["github_login"].(string); ok {
+		uc.GithubLogin = gl
+	}
+
 	return uc, nil
+}
+
+// ToClaims converts UserClaims into jwt.MapClaims suitable for signing.
+func ToClaims(uc *UserClaims) jwt.MapClaims {
+	mc := jwt.MapClaims{}
+	if uc.ID != "" {
+		// sub can be string
+		mc["sub"] = uc.ID
+	}
+	if uc.Login != "" {
+		mc["login"] = uc.Login
+	}
+	if uc.Name != "" {
+		mc["name"] = uc.Name
+	}
+	if uc.Email != "" {
+		mc["email"] = uc.Email
+	}
+	if uc.GithubID != "" {
+		mc["github_id"] = uc.GithubID
+	}
+	if uc.GithubLogin != "" {
+		mc["github_login"] = uc.GithubLogin
+	}
+	if uc.Iss != "" {
+		mc["iss"] = uc.Iss
+	}
+	if uc.Iat != 0 {
+		mc["iat"] = uc.Iat
+	}
+	if uc.Exp != 0 {
+		mc["exp"] = uc.Exp
+	}
+	return mc
 }

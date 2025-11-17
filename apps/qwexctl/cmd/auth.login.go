@@ -51,7 +51,7 @@ func run(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	if uc, err := qsdk.ParseUserFromToken(token); err == nil {
+	if uc, err := qsdk.FromClaims(token); err == nil {
 		expStr := "unknown"
 		if uc.Exp > 0 {
 			expStr = time.Unix(uc.Exp, 0).Format(time.RFC3339)

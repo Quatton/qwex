@@ -12,6 +12,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/quatton/qwex/apps/controller/config"
 	"github.com/quatton/qwex/apps/controller/schemas"
+	qsdk "github.com/quatton/qwex/pkg/qsdk"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
 )
@@ -132,16 +133,20 @@ func (s *AuthService) GetGitHubUser(ctx context.Context, token *oauth2.Token) (*
 	return &user, nil
 }
 
-func (s *AuthService) IssueToken(user *schemas.User) (string, error) {
-	claims := jwt.MapClaims{
-		"sub":   user.ID,
-		"login": user.Login,
-		"name":  user.Name,
-		"email": user.Email,
-		"iss":   "qwex",
-		"iat":   time.Now().Unix(),
-		"exp":   time.Now().Add(24 * time.Hour).Unix(),
+func (s *AuthService) IssueToken(user *schemas.User, githubID, githubLogin string) (string, error) {
+	uc := &qsdk.UserClaims{
+		ID:          user.ID,
+		Login:       user.Login,
+		Name:        user.Name,
+		Email:       user.Email,
+		GithubID:    githubID,
+		GithubLogin: githubLogin,
+		Iss:         "qwex",
+		Iat:         time.Now().Unix(),
+		Exp:         time.Now().Add(time.Duration(s.cfg.AccessTokenTTL) * time.Second).Unix(),
 	}
+
+	claims := qsdk.ToClaims(uc)
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.jwtSecret)

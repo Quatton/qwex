@@ -108,7 +108,7 @@ func RegisterAuthConfig(api huma.API, svc *authconfig.AuthService) {
 			Email: githubUser.Email,
 		}
 
-		token, err := svc.IssueToken(user)
+		token, err := svc.IssueToken(user, fmt.Sprintf("%d", githubUser.ID), githubUser.Login)
 		if err != nil {
 			return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to issue token: %v", err))
 		}
