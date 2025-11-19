@@ -12,7 +12,8 @@ import (
 )
 
 type Config struct {
-	BaseURL string `mapstructure:"base_url"`
+	BaseURL    string `mapstructure:"baseUrl"`
+	APIVersion string `mapstructure:"apiVersion"`
 }
 
 const (
@@ -49,6 +50,14 @@ func Initialize(cmd *cobra.Command, cfgFile string) error {
 			return fmt.Errorf("reading config: %w", err)
 		}
 	}
+
+	// Read state file if it exists
+	viper.AddConfigPath(".qwex")
+	viper.SetConfigName("state")
+	viper.SetConfigType("yaml")
+
+	// but if it doesn't exist, that's fine
+	_ = viper.MergeInConfig()
 
 	if cmd != nil {
 		if err := viper.BindPFlags(cmd.Flags()); err != nil {
