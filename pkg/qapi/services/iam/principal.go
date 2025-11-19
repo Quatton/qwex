@@ -3,7 +3,7 @@ package iam
 import (
 	"context"
 
-	"github.com/quatton/qwex/apps/controller/schemas"
+	"github.com/quatton/qwex/pkg/qapi/schemas"
 )
 
 type ctxKey string

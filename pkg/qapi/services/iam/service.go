@@ -1,8 +1,6 @@
 package iam
 
-import (
-	"github.com/quatton/qwex/apps/controller/services/authconfig"
-)
+import "github.com/quatton/qwex/pkg/qapi/services/authconfig"
 
 type IAMService struct {
 	auth *authconfig.AuthService

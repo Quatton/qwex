@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/quatton/qwex/pkg/client"
-	sdkerrors "github.com/quatton/qwex/pkg/qsdk/qerr"
+	"github.com/quatton/qwex/pkg/qsdk/qerr"
 	"github.com/spf13/viper"
 )
 
@@ -83,13 +83,13 @@ func (s *Sdk) authRequestEditor(ctx context.Context, req *http.Request) error {
 func (s *Sdk) ensureValidToken(ctx context.Context) error {
 	if s.Token == "" {
 		if s.RefreshToken == "" {
-			return sdkerrors.New(sdkerrors.CodeUnauthorized, fmt.Errorf("missing credentials"))
+			return qerr.New(qerr.CodeUnauthorized, fmt.Errorf("missing credentials"))
 		}
 		return s.refreshTokens(ctx)
 	}
 	expired, err := IsTokenExpired(s.Token, 30*time.Second)
 	if err != nil {
-		return sdkerrors.New(sdkerrors.CodeUnknown, err)
+		return qerr.New(qerr.CodeUnknown, err)
 	}
 	if expired {
 		return s.refreshTokens(ctx)
@@ -99,25 +99,25 @@ func (s *Sdk) ensureValidToken(ctx context.Context) error {
 
 func (s *Sdk) refreshTokens(ctx context.Context) error {
 	if s.RefreshToken == "" {
-		return sdkerrors.New(sdkerrors.CodeUnauthorized, fmt.Errorf("missing refresh token"))
+		return qerr.New(qerr.CodeUnauthorized, fmt.Errorf("missing refresh token"))
 	}
 	body := client.AuthRefreshJSONRequestBody{RefreshToken: s.RefreshToken}
 	ctx = context.WithValue(ctx, skipAuthEditorKey{}, true)
 	resp, err := s.Client.AuthRefreshWithResponse(ctx, body)
 	if err != nil {
-		return sdkerrors.New(sdkerrors.CodeRefreshFailed, err)
+		return qerr.New(qerr.CodeRefreshFailed, err)
 	}
 	if resp.JSON200 == nil {
 		status := 0
 		if resp.HTTPResponse != nil {
 			status = resp.StatusCode()
 		}
-		return sdkerrors.New(sdkerrors.CodeRefreshFailed, fmt.Errorf("refresh failed: status %d", status))
+		return qerr.New(qerr.CodeRefreshFailed, fmt.Errorf("refresh failed: status %d", status))
 	}
 	s.Token = resp.JSON200.AccessToken
 	s.RefreshToken = resp.JSON200.RefreshToken
 	if err := SaveTokens(s.BaseURL, s.Token, s.RefreshToken); err != nil {
-		return sdkerrors.New(sdkerrors.CodeUnknown, err)
+		return qerr.New(qerr.CodeUnknown, err)
 	}
 	return nil
 }

@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/quatton/qwex/apps/controller/schemas"
-	"github.com/quatton/qwex/apps/controller/services/iam"
+	"github.com/quatton/qwex/pkg/qapi/schemas"
+	"github.com/quatton/qwex/pkg/qapi/services/iam"
 )
 
 func RegisterIAM(api huma.API, svc *iam.IAMService) {

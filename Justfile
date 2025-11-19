@@ -11,20 +11,21 @@ k3d-create:
 
 # Run controller locally for development
 ctrl-dev:
-    cd apps/controller && go run main.go
+    go run apps/qcloud/main.go
 
 # Run controller with hot reload
 ctrl-watch:
     air
 
 spec:
-    curl -sS http://localhost:3000/openapi-3.0.json -o pkg/client/openapi.json
+    # curl -sS http://localhost:3000/openapi-3.0.json -o pkg/client/openapi.json
+    go run apps/qwexcloud/main.go spec -o pkg/client/openapi.json --downgrade
 
-gen:
+gen: spec
     oapi-codegen -generate "client,types" -package client -o pkg/client/gen.go pkg/client/openapi.json
 
 @ctl *args='':
     go run apps/qwexctl/main.go "$@"
 
 @migrate:
-    go run cmd/migrate/main.go
+    go run cmds/migrate/main.go

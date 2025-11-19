@@ -16,6 +16,9 @@ type User struct {
 	Name       string    `bun:",nullzero"`
 	Provider   string    `bun:",notnull"`
 	ProviderID string    `bun:",notnull"`
+	
+	GithubInstallationID int64 `bun:",nullzero"`
+
 	CreatedAt  time.Time `bun:",nullzero,notnull,default:current_timestamp"`
 	UpdatedAt  time.Time `bun:",nullzero,notnull,default:current_timestamp"`
 }

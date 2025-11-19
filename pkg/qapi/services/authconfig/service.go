@@ -16,9 +16,9 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/quatton/qwex/apps/controller/config"
-	"github.com/quatton/qwex/apps/controller/schemas"
 	"github.com/quatton/qwex/pkg/db/models"
+	"github.com/quatton/qwex/pkg/qapi/config"
+	"github.com/quatton/qwex/pkg/qapi/schemas"
 	"github.com/quatton/qwex/pkg/qsdk"
 	"github.com/uptrace/bun"
 	"golang.org/x/oauth2"
@@ -35,6 +35,10 @@ type AuthService struct {
 	jwtSecret    []byte
 	db           *bun.DB
 	refreshTTL   time.Duration
+}
+
+func (s *AuthService) DB() *bun.DB {
+	return s.db
 }
 
 // StateClaims is the short-lived JWT shape used for OAuth state parameter.
@@ -207,8 +211,8 @@ func (s *AuthService) IssueToken(user *schemas.User, githubID, githubLogin strin
 	return token.SignedString(s.jwtSecret)
 }
 
-func (s *AuthService) SyncGitHubUser(ctx context.Context, ghUser *GitHubUser) (*models.User, error) {
-	return s.findOrCreateUser(ctx, ghUser)
+func (s *AuthService) SyncGitHubUser(ctx context.Context, ghUser *GitHubUser, token *oauth2.Token) (*models.User, error) {
+	return s.findOrCreateUser(ctx, ghUser, token)
 }
 
 func (s *AuthService) IssueTokensWithRefresh(ctx context.Context, user *schemas.User, githubID, githubLogin string) (accessToken string, refreshToken string, err error) {
@@ -251,26 +255,51 @@ func (s *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (s
 	return s.IssueTokensWithRefresh(ctx, schemaUser, user.ProviderID, user.Login)
 }
 
-func (s *AuthService) findOrCreateUser(ctx context.Context, ghUser *GitHubUser) (*models.User, error) {
+func (s *AuthService) findOrCreateUser(ctx context.Context, ghUser *GitHubUser, token *oauth2.Token) (*models.User, error) {
+	// Fetch Installation ID using the App JWT
+	installationID, err := s.getInstallationID(ctx, ghUser.Login)
+	if err != nil {
+		// Log error but don't fail login? Or fail?
+		// For now, let's log and proceed with 0 if not found (user might not have installed app yet)
+		log.Printf("⚠ Failed to get installation ID for user %s: %v", ghUser.Login, err)
+	}
+
 	var user models.User
-	err := s.db.NewSelect().
+	err = s.db.NewSelect().
 		Model(&user).
 		Where("provider = ?", "github").
 		Where("provider_id = ?", fmt.Sprintf("%d", ghUser.ID)).
 		Scan(ctx)
+
 	if err == nil {
+		// User exists, update info
+		user.Login = ghUser.Login
+		user.Name = ghUser.Name
+		user.Email = ghUser.Email
+		user.UpdatedAt = time.Now()
+		if installationID != 0 {
+			user.GithubInstallationID = installationID
+		}
+
+		_, err = s.db.NewUpdate().Model(&user).WherePK().Exec(ctx)
+		if err != nil {
+			return nil, err
+		}
 		return &user, nil
 	}
+
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 
+	// Create new user
 	user = models.User{
-		Email:      ghUser.Email,
-		Login:      ghUser.Login,
-		Name:       ghUser.Name,
-		Provider:   "github",
-		ProviderID: fmt.Sprintf("%d", ghUser.ID),
+		Email:                ghUser.Email,
+		Login:                ghUser.Login,
+		Name:                 ghUser.Name,
+		Provider:             "github",
+		ProviderID:           fmt.Sprintf("%d", ghUser.ID),
+		GithubInstallationID: installationID,
 	}
 
 	_, err = s.db.NewInsert().Model(&user).Returning("*").Exec(ctx)
@@ -278,6 +307,115 @@ func (s *AuthService) findOrCreateUser(ctx context.Context, ghUser *GitHubUser) 
 		return nil, err
 	}
 	return &user, nil
+}
+
+// getInstallationID fetches the installation ID for a specific user
+func (s *AuthService) getInstallationID(ctx context.Context, username string) (int64, error) {
+	if s.cfg.GitHubAppID == 0 || s.cfg.GitHubAppPrivateKey == "" {
+		return 0, nil
+	}
+
+	jwtToken, err := s.generateAppJWT()
+	if err != nil {
+		return 0, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("https://api.github.com/users/%s/installation", username), nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+jwtToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return 0, nil // Not installed
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("github api returned status %d", resp.StatusCode)
+	}
+
+	var installation struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&installation); err != nil {
+		return 0, err
+	}
+
+	return installation.ID, nil
+}
+
+// generateAppJWT creates a JWT for authenticating as the GitHub App
+func (s *AuthService) generateAppJWT() (string, error) {
+	claims := jwt.RegisteredClaims{
+		Issuer:    fmt.Sprintf("%d", s.cfg.GitHubAppID),
+		IssuedAt:  jwt.NewNumericDate(time.Now().Add(-60 * time.Second)),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(10 * time.Minute)),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+
+	keyBlock, _ := base64.StdEncoding.DecodeString(s.cfg.GitHubAppPrivateKey)
+	// If not base64, try plain PEM
+	if len(keyBlock) == 0 {
+		keyBlock = []byte(s.cfg.GitHubAppPrivateKey)
+	}
+
+	// We need to parse the private key.
+	// Assuming standard PEM format.
+	signKey, err := jwt.ParseRSAPrivateKeyFromPEM(keyBlock)
+	if err != nil {
+		// Try treating it as raw key if it's not PEM formatted (e.g. from env var without newlines)
+		// But standard is PEM. Let's assume user provides valid PEM or we might need to fix newlines.
+		return "", fmt.Errorf("failed to parse private key: %w", err)
+	}
+
+	return token.SignedString(signKey)
+}
+
+// GetInstallationToken generates a short-lived access token for the installation
+func (s *AuthService) GetInstallationToken(ctx context.Context, installationID int64) (string, error) {
+	if installationID == 0 {
+		return "", errors.New("installation id is 0")
+	}
+
+	jwtToken, err := s.generateAppJWT()
+	if err != nil {
+		return "", err
+	}
+
+	url := fmt.Sprintf("https://api.github.com/app/installations/%d/access_tokens", installationID)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+jwtToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		return "", fmt.Errorf("github api returned status %d", resp.StatusCode)
+	}
+
+	var tokenResp struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", err
+	}
+
+	return tokenResp.Token, nil
 }
 
 func (s *AuthService) createRefreshToken(ctx context.Context, userID string) (string, error) {

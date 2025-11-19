@@ -8,8 +8,8 @@ import (
 	"net/url"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/quatton/qwex/apps/controller/schemas"
-	"github.com/quatton/qwex/apps/controller/services/authconfig"
+	"github.com/quatton/qwex/pkg/qapi/schemas"
+	"github.com/quatton/qwex/pkg/qapi/services/authconfig"
 )
 
 type AuthorizeInput struct {
@@ -101,7 +101,7 @@ func RegisterAuthConfig(api huma.API, svc *authconfig.AuthService) {
 		}
 
 		// Persist or find user
-		dbUser, err := svc.SyncGitHubUser(ctx, githubUser)
+		dbUser, err := svc.SyncGitHubUser(ctx, githubUser, oauthToken)
 		if err != nil {
 			return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to sync user: %v", err))
 		}
