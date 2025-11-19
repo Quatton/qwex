@@ -19,7 +19,7 @@ import (
 	"github.com/quatton/qwex/apps/controller/config"
 	"github.com/quatton/qwex/apps/controller/schemas"
 	"github.com/quatton/qwex/pkg/db/models"
-	qsdk "github.com/quatton/qwex/pkg/qsdk"
+	"github.com/quatton/qwex/pkg/qsdk"
 	"github.com/uptrace/bun"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"

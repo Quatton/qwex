@@ -3,7 +3,7 @@ package cmd
 import (
 	"log"
 
-	sdkerrors "github.com/quatton/qwex/pkg/qsdk/qerr"
+	"github.com/quatton/qwex/pkg/qsdk/qerr"
 )
 
 // exitIfSdkError inspects errors returned from the SDK and emits user-friendly
@@ -13,9 +13,9 @@ func exitIfSdkError(err error) {
 		return
 	}
 	switch {
-	case sdkerrors.IsCode(err, sdkerrors.CodeUnauthorized):
+	case qerr.IsCode(err, qerr.CodeUnauthorized):
 		log.Fatalf("authentication required: run 'qwexctl auth login' (%v)", err)
-	case sdkerrors.IsCode(err, sdkerrors.CodeRefreshFailed):
+	case qerr.IsCode(err, qerr.CodeRefreshFailed):
 		log.Fatalf("failed to refresh credentials: run 'qwexctl auth login' (%v)", err)
 	default:
 		log.Fatalf("%v", err)
