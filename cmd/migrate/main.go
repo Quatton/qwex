@@ -3,12 +3,19 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 
+	"github.com/joho/godotenv"
+	"github.com/kelseyhightower/envconfig"
 	"github.com/quatton/qwex/pkg/db"
 )
 
 func main() {
+	if err := godotenv.Load(); err != nil {
+		log.Println("ℹ No .env file found")
+	} else {
+		log.Println("✓ Loaded .env file")
+	}
+
 	ctx := context.Background()
 
 	cfg := db.Config{
@@ -20,9 +27,8 @@ func main() {
 		SSLMode:  "disable",
 	}
 
-	// Override with env vars if needed
-	if host := os.Getenv("DB_HOST"); host != "" {
-		cfg.Host = host
+	if err := envconfig.Process("DB", &cfg); err != nil {
+		log.Fatalf("failed to process env vars: %v", err)
 	}
 
 	database, err := db.New(ctx, cfg)

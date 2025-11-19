@@ -2,10 +2,13 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"net/url"
 	"strings"
 
+	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
+	"github.com/quatton/qwex/apps/controller/utils"
 )
 
 type EnvConfig struct {
@@ -19,6 +22,14 @@ type EnvConfig struct {
 }
 
 func ValidateEnv() (*EnvConfig, error) {
+	if utils.IsDev() {
+		if err := godotenv.Load(); err != nil {
+			log.Println("ℹ No .env file found")
+		} else {
+			log.Println("✓ Loaded .env file")
+		}
+	}
+
 	var cfg EnvConfig
 	if err := envconfig.Process("", &cfg); err != nil {
 		return nil, fmt.Errorf("failed to load environment variables: %w", err)

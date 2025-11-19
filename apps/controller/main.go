@@ -10,24 +10,15 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/joho/godotenv"
 	"github.com/quatton/qwex/apps/controller/config"
 	"github.com/quatton/qwex/apps/controller/routes"
 	"github.com/quatton/qwex/apps/controller/services"
 	"github.com/quatton/qwex/apps/controller/services/authconfig"
 	"github.com/quatton/qwex/apps/controller/services/iam"
 	"github.com/quatton/qwex/apps/controller/services/machines"
-	"github.com/quatton/qwex/apps/controller/utils"
 )
 
 func main() {
-	if utils.IsDev() {
-		if err := godotenv.Load(); err != nil {
-			log.Println("ℹ No .env file found")
-		} else {
-			log.Println("✓ Loaded .env file")
-		}
-	}
 
 	cfg, err := config.ValidateEnv()
 	if err != nil {
