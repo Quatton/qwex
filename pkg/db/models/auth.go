@@ -10,10 +10,14 @@ import (
 type User struct {
 	bun.BaseModel `bun:"table:auth.users,alias:u"`
 
-	ID        uuid.UUID `bun:"type:uuid,default:gen_random_uuid(),pk"`
-	Email     string    `bun:",unique,notnull"`
-	CreatedAt time.Time `bun:",nullzero,notnull,default:current_timestamp"`
-	UpdatedAt time.Time `bun:",nullzero,notnull,default:current_timestamp"`
+	ID         uuid.UUID `bun:"type:uuid,default:gen_random_uuid(),pk"`
+	Email      string    `bun:",unique,notnull"`
+	Login      string    `bun:",notnull"`
+	Name       string    `bun:",nullzero"`
+	Provider   string    `bun:",notnull"`
+	ProviderID string    `bun:",notnull"`
+	CreatedAt  time.Time `bun:",nullzero,notnull,default:current_timestamp"`
+	UpdatedAt  time.Time `bun:",nullzero,notnull,default:current_timestamp"`
 }
 
 type RefreshToken struct {

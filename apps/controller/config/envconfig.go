@@ -19,6 +19,13 @@ type EnvConfig struct {
 	GitHubClientSecret string `envconfig:"GITHUB_CLIENT_SECRET"`
 	Environment        string `envconfig:"ENVIRONMENT" default:"development"`
 	AccessTokenTTL     int    `envconfig:"ACCESS_TOKEN_TTL" default:"3600"`
+	DBHost             string `envconfig:"DB_HOST" default:"localhost"`
+	DBPort             int    `envconfig:"DB_PORT" default:"5432"`
+	DBUser             string `envconfig:"DB_USER" default:"qwex"`
+	DBPassword         string `envconfig:"DB_PASSWORD" default:"password"`
+	DBName             string `envconfig:"DB_NAME" default:"qwex"`
+	DBSSLMode          string `envconfig:"DB_SSLMODE" default:"disable"`
+	RefreshTokenTTL    int    `envconfig:"REFRESH_TOKEN_TTL" default:"2592000"` // 30 days
 }
 
 func ValidateEnv() (*EnvConfig, error) {
@@ -72,6 +79,8 @@ func (c *EnvConfig) Print(fmtr func(string, ...interface{})) {
 	fmtr("  Port: %s\n", c.Port)
 	fmtr("  Base URL: %s\n", c.BaseURL)
 	fmtr("  Auth Secret: %s\n", MaskSecret(c.AuthSecret))
+	fmtr("  Database: %s@%s:%d/%s (sslmode=%s)\n", c.DBUser, c.DBHost, c.DBPort, c.DBName, c.DBSSLMode)
+	fmtr("  Refresh TTL: %ds\n", c.RefreshTokenTTL)
 
 	if c.GitHubClientID != "" {
 		fmtr("  GitHub OAuth: ✓ Enabled\n")

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,10 +17,11 @@ import (
 	"github.com/quatton/qwex/apps/controller/services/authconfig"
 	"github.com/quatton/qwex/apps/controller/services/iam"
 	"github.com/quatton/qwex/apps/controller/services/machines"
+	"github.com/quatton/qwex/pkg/db"
 )
 
 func main() {
-
+	ctx := context.Background()
 	cfg, err := config.ValidateEnv()
 	if err != nil {
 		log.Fatalf("❌ %v\n", err)
@@ -27,11 +29,24 @@ func main() {
 
 	cfg.Print(log.Printf)
 
+	database, err := db.New(ctx, db.Config{
+		Host:     cfg.DBHost,
+		Port:     cfg.DBPort,
+		User:     cfg.DBUser,
+		Password: cfg.DBPassword,
+		Database: cfg.DBName,
+		SSLMode:  cfg.DBSSLMode,
+	})
+	if err != nil {
+		log.Fatalf("failed to initialize database: %v", err)
+	}
+	defer database.Close()
+
 	router := chi.NewMux()
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 
-	auth := authconfig.NewAuthService(cfg)
+	auth := authconfig.NewAuthService(cfg, database)
 
 	iamSvc := iam.NewIAMService(auth)
 	machinesSvc := machines.NewMachinesService(iamSvc)
@@ -58,8 +73,7 @@ func main() {
 	routes.RegisterRoutes(api, svcs)
 	routes.RegisterAuthConfig(api, auth)
 
-	port := cfg.Port
-	addr := fmt.Sprintf(":%s", port)
+	addr := fmt.Sprintf(":%s", cfg.Port)
 
 	log.Printf("🚀 Controller starting on %s\n", addr)
 	log.Printf("📚 OpenAPI docs: %s/docs\n", cfg.BaseURL)
