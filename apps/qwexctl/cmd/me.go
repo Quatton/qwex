@@ -22,6 +22,9 @@ var meCmd = &cobra.Command{
 		if err != nil {
 			log.Fatalf("api request failed: %v", err)
 		}
+		if sdk.HandleUnauthorized(resp.StatusCode()) {
+			log.Fatalf("unauthorized (401). Please run 'qwexctl auth login' to re-authenticate")
+		}
 		if resp.JSON200 == nil {
 			log.Fatalf("unexpected response: status=%d body=%s", resp.StatusCode(), string(resp.Body))
 		}
