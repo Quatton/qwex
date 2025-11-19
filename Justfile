@@ -11,7 +11,7 @@ k3d-create:
 
 # Run controller locally for development
 ctrl-dev:
-    go run apps/qwexcloud/main.go
+    go run apps/qwexcloud/main.go run
 
 # Run controller with hot reload
 ctrl-watch:
