@@ -3,7 +3,7 @@ package cmd
 import (
 	"log"
 
-	"github.com/quatton/qwex/pkg/qsdk/qerr"
+	"github.com/quatton/qwex/pkg/qerr"
 )
 
 // exitIfSdkError inspects errors returned from the SDK and emits user-friendly

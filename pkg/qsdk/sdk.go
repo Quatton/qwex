@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/quatton/qwex/pkg/client"
-	"github.com/quatton/qwex/pkg/qsdk/qerr"
+	"github.com/quatton/qwex/pkg/qerr"
 	"github.com/spf13/viper"
 )
 
