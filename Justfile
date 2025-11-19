@@ -26,3 +26,5 @@ gen:
 @ctl *args='':
     go run apps/qwexctl/main.go "$@"
 
+@migrate:
+    go run cmd/migrate/main.go
