@@ -4,6 +4,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -28,6 +29,23 @@ const (
 	Stopped  MachineResponseBodyStatus = "stopped"
 	Stopping MachineResponseBodyStatus = "stopping"
 )
+
+// Defines values for AuthLoginParamsProvider.
+const (
+	Github AuthLoginParamsProvider = "github"
+)
+
+// AuthorizeBody defines model for AuthorizeBody.
+type AuthorizeBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// AuthorizeUrl URL to redirect user to for OAuth authorization
+	AuthorizeUrl string `json:"authorize_url"`
+
+	// State State parameter for CSRF protection
+	State string `json:"state"`
+}
 
 // ErrorDetail defines model for ErrorDetail.
 type ErrorDetail struct {
@@ -112,6 +130,33 @@ type MeResponseBody struct {
 	User   User    `json:"user"`
 }
 
+// RefreshTokenRequestBody defines model for RefreshTokenRequestBody.
+type RefreshTokenRequestBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// RefreshToken Refresh token issued from login or previous refresh
+	RefreshToken string `json:"refresh_token"`
+}
+
+// RefreshTokenResponseBody defines model for RefreshTokenResponseBody.
+type RefreshTokenResponseBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// AccessToken New short-lived access token
+	AccessToken string `json:"access_token"`
+
+	// ExpiresIn Access token lifetime in seconds
+	ExpiresIn int64 `json:"expires_in"`
+
+	// RefreshToken Rotated refresh token
+	RefreshToken string `json:"refresh_token"`
+
+	// TokenType Token type descriptor
+	TokenType string `json:"token_type"`
+}
+
 // RootOutputBody defines model for RootOutputBody.
 type RootOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -135,6 +180,33 @@ type User struct {
 	// Name Full name of the principal
 	Name string `json:"name"`
 }
+
+// AuthCallbackParams defines parameters for AuthCallback.
+type AuthCallbackParams struct {
+	// Code Authorization code from OAuth provider
+	Code string `form:"code" json:"code"`
+
+	// State State parameter for CSRF validation
+	State string `form:"state" json:"state"`
+}
+
+// AuthLoginParams defines parameters for AuthLogin.
+type AuthLoginParams struct {
+	// RedirectUri URI to redirect after authentication
+	RedirectUri *string `form:"redirect_uri,omitempty" json:"redirect_uri,omitempty"`
+
+	// Provider Upstream OAuth provider
+	Provider *AuthLoginParamsProvider `form:"provider,omitempty" json:"provider,omitempty"`
+
+	// IncludeToken Whether to include the minted token in the callback redirect
+	IncludeToken *bool `form:"include_token,omitempty" json:"include_token,omitempty"`
+}
+
+// AuthLoginParamsProvider defines parameters for AuthLogin.
+type AuthLoginParamsProvider string
+
+// AuthRefreshJSONRequestBody defines body for AuthRefresh for application/json ContentType.
+type AuthRefreshJSONRequestBody = RefreshTokenRequestBody
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -212,6 +284,17 @@ type ClientInterface interface {
 	// GetRoot request
 	GetRoot(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// AuthCallback request
+	AuthCallback(ctx context.Context, params *AuthCallbackParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AuthLogin request
+	AuthLogin(ctx context.Context, params *AuthLoginParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AuthRefreshWithBody request with any body
+	AuthRefreshWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	AuthRefresh(ctx context.Context, body AuthRefreshJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListMachines request
 	ListMachines(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -230,6 +313,54 @@ type ClientInterface interface {
 
 func (c *Client) GetRoot(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetRootRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AuthCallback(ctx context.Context, params *AuthCallbackParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthCallbackRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AuthLogin(ctx context.Context, params *AuthLoginParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthLoginRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AuthRefreshWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthRefreshRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AuthRefresh(ctx context.Context, body AuthRefreshJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthRefreshRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -323,6 +454,184 @@ func NewGetRootRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewAuthCallbackRequest generates requests for AuthCallback
+func NewAuthCallbackRequest(server string, params *AuthCallbackParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/auth/callback")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", false, "code", runtime.ParamLocationQuery, params.Code); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", false, "state", runtime.ParamLocationQuery, params.State); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAuthLoginRequest generates requests for AuthLogin
+func NewAuthLoginRequest(server string, params *AuthLoginParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/auth/login")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.RedirectUri != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", false, "redirect_uri", runtime.ParamLocationQuery, *params.RedirectUri); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Provider != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", false, "provider", runtime.ParamLocationQuery, *params.Provider); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.IncludeToken != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", false, "include_token", runtime.ParamLocationQuery, *params.IncludeToken); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAuthRefreshRequest calls the generic AuthRefresh builder with application/json body
+func NewAuthRefreshRequest(server string, body AuthRefreshJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAuthRefreshRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAuthRefreshRequestWithBody generates requests for AuthRefresh with any type of body
+func NewAuthRefreshRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/auth/refresh")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -515,6 +824,17 @@ type ClientWithResponsesInterface interface {
 	// GetRootWithResponse request
 	GetRootWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRootResponse, error)
 
+	// AuthCallbackWithResponse request
+	AuthCallbackWithResponse(ctx context.Context, params *AuthCallbackParams, reqEditors ...RequestEditorFn) (*AuthCallbackResponse, error)
+
+	// AuthLoginWithResponse request
+	AuthLoginWithResponse(ctx context.Context, params *AuthLoginParams, reqEditors ...RequestEditorFn) (*AuthLoginResponse, error)
+
+	// AuthRefreshWithBodyWithResponse request with any body
+	AuthRefreshWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AuthRefreshResponse, error)
+
+	AuthRefreshWithResponse(ctx context.Context, body AuthRefreshJSONRequestBody, reqEditors ...RequestEditorFn) (*AuthRefreshResponse, error)
+
 	// ListMachinesWithResponse request
 	ListMachinesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMachinesResponse, error)
 
@@ -548,6 +868,74 @@ func (r GetRootResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetRootResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type AuthCallbackResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r AuthCallbackResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AuthCallbackResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type AuthLoginResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *AuthorizeBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r AuthLoginResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AuthLoginResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type AuthRefreshResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RefreshTokenResponseBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r AuthRefreshResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AuthRefreshResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -678,6 +1066,41 @@ func (c *ClientWithResponses) GetRootWithResponse(ctx context.Context, reqEditor
 	return ParseGetRootResponse(rsp)
 }
 
+// AuthCallbackWithResponse request returning *AuthCallbackResponse
+func (c *ClientWithResponses) AuthCallbackWithResponse(ctx context.Context, params *AuthCallbackParams, reqEditors ...RequestEditorFn) (*AuthCallbackResponse, error) {
+	rsp, err := c.AuthCallback(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthCallbackResponse(rsp)
+}
+
+// AuthLoginWithResponse request returning *AuthLoginResponse
+func (c *ClientWithResponses) AuthLoginWithResponse(ctx context.Context, params *AuthLoginParams, reqEditors ...RequestEditorFn) (*AuthLoginResponse, error) {
+	rsp, err := c.AuthLogin(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthLoginResponse(rsp)
+}
+
+// AuthRefreshWithBodyWithResponse request with arbitrary body returning *AuthRefreshResponse
+func (c *ClientWithResponses) AuthRefreshWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AuthRefreshResponse, error) {
+	rsp, err := c.AuthRefreshWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthRefreshResponse(rsp)
+}
+
+func (c *ClientWithResponses) AuthRefreshWithResponse(ctx context.Context, body AuthRefreshJSONRequestBody, reqEditors ...RequestEditorFn) (*AuthRefreshResponse, error) {
+	rsp, err := c.AuthRefresh(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthRefreshResponse(rsp)
+}
+
 // ListMachinesWithResponse request returning *ListMachinesResponse
 func (c *ClientWithResponses) ListMachinesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMachinesResponse, error) {
 	rsp, err := c.ListMachines(ctx, reqEditors...)
@@ -739,6 +1162,98 @@ func ParseGetRootResponse(rsp *http.Response) (*GetRootResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest RootOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAuthCallbackResponse parses an HTTP response from a AuthCallbackWithResponse call
+func ParseAuthCallbackResponse(rsp *http.Response) (*AuthCallbackResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AuthCallbackResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAuthLoginResponse parses an HTTP response from a AuthLoginWithResponse call
+func ParseAuthLoginResponse(rsp *http.Response) (*AuthLoginResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AuthLoginResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AuthorizeBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAuthRefreshResponse parses an HTTP response from a AuthRefreshWithResponse call
+func ParseAuthRefreshResponse(rsp *http.Response) (*AuthRefreshResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AuthRefreshResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RefreshTokenResponseBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

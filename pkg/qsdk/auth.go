@@ -8,10 +8,17 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/quatton/qwex/pkg/client"
 	"github.com/spf13/viper"
+	"github.com/zalando/go-keyring"
+)
+
+const (
+	keyringService = "qwex"
+	refreshSuffix  = ":refresh"
 )
 
 // AuthClient orchestrates an interactive browser-based OAuth login for CLI
@@ -23,8 +30,14 @@ type AuthClient struct {
 	HttpClient     *client.Client
 	CallbackServer *CallbackServer
 
-	tokenCh chan string
-	errCh   chan error
+	resultCh chan LoginResult
+	errCh    chan error
+}
+
+// LoginResult carries the tokens returned from the interactive login flow.
+type LoginResult struct {
+	AccessToken  string
+	RefreshToken string
 }
 
 // CallbackServer hosts a temporary HTTP listener on localhost used during the
@@ -54,7 +67,7 @@ func getFreePort() (port int, err error) {
 // Returns the callback URL that should be passed to the upstream OAuth
 // authorize endpoint (e.g. "http://localhost:12345/callback").
 func (cs *CallbackServer) Start(
-	ch chan<- string,
+	ch chan<- LoginResult,
 	ech chan<- error,
 ) (string, error) {
 	port, err := getFreePort()
@@ -75,7 +88,9 @@ func (cs *CallbackServer) Start(
 			f.Flush()
 		}
 
-		token := r.URL.Query().Get("token")
+		q := r.URL.Query()
+		token := q.Get("token")
+		refresh := q.Get("refresh_token")
 		if token == "" {
 			ech <- fmt.Errorf("no token in callback")
 			if srv != nil {
@@ -84,7 +99,7 @@ func (cs *CallbackServer) Start(
 			return
 		}
 
-		ch <- token
+		ch <- LoginResult{AccessToken: token, RefreshToken: refresh}
 
 		if srv != nil {
 			go func() { _ = srv.Shutdown(context.Background()) }()
@@ -118,7 +133,7 @@ func NewAuthClient(
 ) *AuthClient {
 	return &AuthClient{
 		HttpClient: client,
-		tokenCh:    make(chan string, 1),
+		resultCh:   make(chan LoginResult, 1),
 		errCh:      make(chan error, 1),
 	}
 }
@@ -130,7 +145,7 @@ func NewAuthClient(
 // CompleteLoginInteractive to receive the token or error.
 func (ac *AuthClient) InitiateLoginWithGithub() (string, error) {
 	callbackServer := &CallbackServer{}
-	callbackURL, err := callbackServer.Start(ac.tokenCh, ac.errCh)
+	callbackURL, err := callbackServer.Start(ac.resultCh, ac.errCh)
 	if err != nil {
 		return "", fmt.Errorf("failed to start callback server: %w", err)
 	}
@@ -156,13 +171,90 @@ func (ac *AuthClient) InitiateLoginWithGithub() (string, error) {
 // The method uses a 2 minute timeout to avoid leaving the CLI waiting
 // indefinitely. This timeout is intentionally short for interactive UX but
 // can be adjusted if needed.
-func (ac *AuthClient) CompleteLoginInteractive() (string, error) {
+func (ac *AuthClient) CompleteLoginInteractive() (string, string, error) {
 	select {
-	case res := <-ac.tokenCh:
-		return res, nil
+	case res := <-ac.resultCh:
+		return res.AccessToken, res.RefreshToken, nil
 	case err := <-ac.errCh:
-		return "", fmt.Errorf("login failed: %w", err)
+		return "", "", fmt.Errorf("login failed: %w", err)
 	case <-time.After(2 * time.Minute):
-		return "", fmt.Errorf("login timed out")
+		return "", "", fmt.Errorf("login timed out")
 	}
+}
+
+// normalizeKey converts a baseURL into a stable key name for keyring storage.
+// It trims whitespace and trailing slashes and lowercases the result so that
+// https://example.com and https://example.com/ map to the same entry.
+func normalizeKey(baseURL string) string {
+	s := strings.TrimSpace(baseURL)
+	s = strings.TrimRight(s, "/")
+	s = strings.ToLower(s)
+	return s
+}
+
+func normalizeRefreshKey(baseURL string) string {
+	return normalizeKey(baseURL) + refreshSuffix
+}
+
+// SaveToken stores the token in the OS keyring under the normalized baseURL
+// key. This keeps CLI credentials isolated per controller base URL.
+func SaveToken(baseURL string, token string) error {
+	key := normalizeKey(baseURL)
+	return keyring.Set(keyringService, key, token)
+}
+
+// SaveRefreshToken stores the refresh token for the baseURL. Passing an empty
+// refresh token removes any existing entry.
+func SaveRefreshToken(baseURL, token string) error {
+	key := normalizeRefreshKey(baseURL)
+	if token == "" {
+		return keyring.Delete(keyringService, key)
+	}
+	return keyring.Set(keyringService, key, token)
+}
+
+// LoadToken retrieves the token stored for the given baseURL.
+func LoadToken(baseURL string) (string, error) {
+	key := normalizeKey(baseURL)
+	return keyring.Get(keyringService, key)
+}
+
+// LoadRefreshToken loads the refresh token for the baseURL.
+func LoadRefreshToken(baseURL string) (string, error) {
+	key := normalizeRefreshKey(baseURL)
+	return keyring.Get(keyringService, key)
+}
+
+// DeleteToken removes the token entry for the given baseURL from the OS keyring.
+func DeleteToken(baseURL string) error {
+	key := normalizeKey(baseURL)
+	return keyring.Delete(keyringService, key)
+}
+
+// DeleteRefreshToken removes the refresh token entry.
+func DeleteRefreshToken(baseURL string) error {
+	key := normalizeRefreshKey(baseURL)
+	return keyring.Delete(keyringService, key)
+}
+
+// SaveTokens persists both access and refresh tokens atomically.
+func SaveTokens(baseURL, accessToken, refreshToken string) error {
+	if err := SaveToken(baseURL, accessToken); err != nil {
+		return err
+	}
+	if err := SaveRefreshToken(baseURL, refreshToken); err != nil {
+		return err
+	}
+	return nil
+}
+
+// LoadTokens retrieves both tokens (missing ones return empty strings).
+func LoadTokens(baseURL string) (accessToken, refreshToken string) {
+	if token, err := LoadToken(baseURL); err == nil {
+		accessToken = token
+	}
+	if rt, err := LoadRefreshToken(baseURL); err == nil {
+		refreshToken = rt
+	}
+	return
 }

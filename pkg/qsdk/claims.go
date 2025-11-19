@@ -3,6 +3,7 @@ package qsdk
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -148,4 +149,22 @@ func ToClaims(uc *UserClaims) jwt.MapClaims {
 		mc["exp"] = uc.Exp
 	}
 	return mc
+}
+
+// IsTokenExpired returns true when the access token is expired or within the
+// provided skew window. It relies on FromToken to parse the JWT without
+// verifying the signature, which is sufficient for local UX decisions.
+func IsTokenExpired(token string, skew time.Duration) (bool, error) {
+	if token == "" {
+		return true, nil
+	}
+	uc, err := FromToken(token)
+	if err != nil {
+		return true, err
+	}
+	if uc.Exp == 0 {
+		return false, nil
+	}
+	expiresAt := time.Unix(uc.Exp, 0).Add(-skew)
+	return time.Now().After(expiresAt), nil
 }

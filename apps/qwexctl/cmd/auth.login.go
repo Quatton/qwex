@@ -12,7 +12,6 @@ import (
 	"github.com/quatton/qwex/pkg/qsdk"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/zalando/go-keyring"
 )
 
 var loginCmd = &cobra.Command{
@@ -45,13 +44,13 @@ func run(cmd *cobra.Command, args []string) {
 	}
 	fmt.Printf("Please open the following URL in your browser to complete login:\n%s\n", loginUrl)
 
-	token, err := auth.CompleteLoginInteractive()
+	accessToken, refreshToken, err := auth.CompleteLoginInteractive()
 	if err != nil {
 		log.Fatalf("failed to complete login: %v", err)
 		return
 	}
 
-	if uc, err := qsdk.FromToken(token); err == nil {
+	if uc, err := qsdk.FromToken(accessToken); err == nil {
 		expStr := "unknown"
 		if uc.Exp > 0 {
 			expStr = time.Unix(uc.Exp, 0).Format(time.RFC3339)
@@ -62,13 +61,8 @@ func run(cmd *cobra.Command, args []string) {
 		log.Printf("warning: failed to parse token claims: %v", err)
 	}
 
-	service := "qwex"
-	user := viper.GetString(qsdk.BaseUrlKey)
-	if user == "" {
-		user = "default"
-	}
-	if err := keyring.Set(service, user, token); err != nil {
-		log.Printf("warning: failed to save token to keyring: %v", err)
+	if err := qsdk.SaveTokens(viper.GetString(qsdk.BaseUrlKey), accessToken, refreshToken); err != nil {
+		log.Printf("warning: failed to save tokens: %v", err)
 	} else {
 		fmt.Println("Access token saved")
 	}
