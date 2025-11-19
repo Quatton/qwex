@@ -19,7 +19,8 @@ const (
 	envprefix  = "QWEX"
 	configname = "qwex"
 
-	BaseUrlKey = "base_url"
+	BaseUrlKey    = "baseUrl"
+	ApiVersionKey = "apiVersion"
 )
 
 func Initialize(cmd *cobra.Command, cfgFile string) error {
@@ -30,7 +31,7 @@ func Initialize(cmd *cobra.Command, cfgFile string) error {
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
-		viper.AddConfigPath(".")
+		viper.AddConfigPath(".qwex")
 		if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
 			viper.AddConfigPath(filepath.Join(x, configname))
 		}
@@ -38,8 +39,8 @@ func Initialize(cmd *cobra.Command, cfgFile string) error {
 			viper.AddConfigPath(filepath.Join(home, ".config", configname))
 			viper.AddConfigPath(home)
 		}
-		viper.SetConfigName(configname)
-		viper.SetConfigType("toml")
+		viper.SetConfigName("config")
+		viper.SetConfigType("yaml")
 	}
 
 	if err := viper.ReadInConfig(); err != nil {
@@ -60,6 +61,10 @@ func Initialize(cmd *cobra.Command, cfgFile string) error {
 	} else {
 		normalized := strings.TrimRight(viper.GetString(BaseUrlKey), "/")
 		viper.Set(BaseUrlKey, normalized)
+	}
+
+	if !viper.IsSet(ApiVersionKey) {
+		viper.SetDefault(ApiVersionKey, "v1")
 	}
 
 	return nil

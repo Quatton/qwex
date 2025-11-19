@@ -55,3 +55,6 @@ tmp/
 *.dylib
 *.test
 *.out
+
+# qwex
+.qwex
