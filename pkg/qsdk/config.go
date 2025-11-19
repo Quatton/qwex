@@ -17,27 +17,28 @@ type Config struct {
 }
 
 const (
-	envprefix  = "QWEX"
-	configname = "qwex"
+	EnvPrefix  = "QWEX"
+	ConfigName = "qwex"
+	ConfigRoot = ".qwex"
 
 	BaseUrlKey    = "baseUrl"
 	ApiVersionKey = "apiVersion"
 )
 
 func Initialize(cmd *cobra.Command, cfgFile string) error {
-	viper.SetEnvPrefix(envprefix)
+	viper.SetEnvPrefix(EnvPrefix)
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 	viper.AutomaticEnv()
 
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
-		viper.AddConfigPath(".qwex")
+		viper.AddConfigPath(ConfigRoot)
 		if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
-			viper.AddConfigPath(filepath.Join(x, configname))
+			viper.AddConfigPath(filepath.Join(x, ConfigName))
 		}
 		if home, err := os.UserHomeDir(); err == nil {
-			viper.AddConfigPath(filepath.Join(home, ".config", configname))
+			viper.AddConfigPath(filepath.Join(home, ".config", ConfigName))
 			viper.AddConfigPath(home)
 		}
 		viper.SetConfigName("config")
@@ -52,7 +53,7 @@ func Initialize(cmd *cobra.Command, cfgFile string) error {
 	}
 
 	// Read state file if it exists
-	viper.AddConfigPath(".qwex")
+	viper.AddConfigPath(ConfigRoot)
 	viper.SetConfigName("state")
 	viper.SetConfigType("yaml")
 
