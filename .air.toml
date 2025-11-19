@@ -4,8 +4,8 @@ tmp_dir = "tmp"
 
 [build]
 args_bin = []
-bin = "./tmp/qcloud"
-cmd = "go build -o ./tmp/qcloud ./apps/qcloud/main.go"
+bin = "./tmp/qwexcloud"
+cmd = "go build -o ./tmp/qwexcloud ./apps/qwexcloud/main.go"
 delay = 1000
 envs = ["ENVIRONMENT=development"]
 exclude_dir = [
@@ -22,7 +22,7 @@ exclude_regex = ["_test.go"]
 exclude_unchanged = false
 follow_symlink = false
 full_bin = ""
-include_dir = ["apps/qcloud"]
+include_dir = ["apps/qwexcloud"]
 include_ext = ["go", "tpl", "tmpl", "html"]
 include_file = [".env"]
 kill_delay = "0s"
