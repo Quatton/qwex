@@ -1,19 +1,21 @@
 package qsdk
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	BaseURL    string `mapstructure:"baseUrl"`
-	APIVersion string `mapstructure:"apiVersion"`
+	BaseURL    string            `mapstructure:"baseUrl"`
+	APIVersion string            `mapstructure:"apiVersion"`
+	Env        map[string]string `mapstructure:"env"`
+	WorkingDir string            `mapstructure:"working_dir"`
+
+	v *viper.Viper // instance-specific viper
 }
 
 const (
@@ -25,73 +27,94 @@ const (
 	ApiVersionKey = "apiVersion"
 )
 
-func Initialize(cmd *cobra.Command, cfgFile string) error {
-	viper.SetEnvPrefix(EnvPrefix)
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
-	viper.AutomaticEnv()
+// LoadConfig creates a new Config instance with its own viper
+// This is the only way to load config (no global state)
+func LoadConfig(cfgFile string) (*Config, error) {
+	v := viper.New()
+
+	v.SetEnvPrefix(EnvPrefix)
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
+	v.AutomaticEnv()
 
 	if cfgFile != "" {
-		viper.SetConfigFile(cfgFile)
+		v.SetConfigFile(cfgFile)
+		if err := v.ReadInConfig(); err != nil {
+			return nil, fmt.Errorf("reading config file %s: %w", cfgFile, err)
+		}
 	} else {
-		viper.AddConfigPath(ConfigRoot)
-		if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
-			viper.AddConfigPath(filepath.Join(x, ConfigName))
+		// Load project config (TRACKED) - qwex.yaml in current directory
+		for _, name := range []string{"qwex.yaml", "qwex.yml", ".qwex.yaml"} {
+			if _, err := os.Stat(name); err == nil {
+				v.SetConfigFile(name)
+				if err := v.ReadInConfig(); err == nil {
+					break
+				}
+			}
 		}
-		if home, err := os.UserHomeDir(); err == nil {
-			viper.AddConfigPath(filepath.Join(home, ".config", ConfigName))
-			viper.AddConfigPath(home)
-		}
-		viper.SetConfigName("config")
-		viper.SetConfigType("yaml")
-	}
 
-	if err := viper.ReadInConfig(); err != nil {
-		var notFound viper.ConfigFileNotFoundError
-		if !errors.As(err, &notFound) {
-			return fmt.Errorf("reading config: %w", err)
-		}
-	}
-
-	// Read state file if it exists
-	viper.AddConfigPath(ConfigRoot)
-	viper.SetConfigName("state")
-	viper.SetConfigType("yaml")
-
-	// but if it doesn't exist, that's fine
-	_ = viper.MergeInConfig()
-
-	if cmd != nil {
-		if err := viper.BindPFlags(cmd.Flags()); err != nil {
-			return err
+		// Merge local overrides (UNTRACKED) - .qwex/config.yaml
+		localConfigPath := filepath.Join(ConfigRoot, "config.yaml")
+		if _, err := os.Stat(localConfigPath); err == nil {
+			v.SetConfigFile(localConfigPath)
+			if err := v.MergeInConfig(); err != nil {
+				return nil, fmt.Errorf("merging local config: %w", err)
+			}
 		}
 	}
 
-	if !viper.IsSet(BaseUrlKey) {
-		viper.SetDefault(BaseUrlKey, "http://localhost:3000")
-	} else {
-		normalized := strings.TrimRight(viper.GetString(BaseUrlKey), "/")
-		viper.Set(BaseUrlKey, normalized)
-	}
+	// Set defaults
+	setDefaults(v)
 
-	if !viper.IsSet(ApiVersionKey) {
-		viper.SetDefault(ApiVersionKey, "v1")
-	}
-
-	return nil
-}
-
-func ConfigFileUsed() string {
-	return viper.ConfigFileUsed()
-}
-
-func Viper() *viper.Viper {
-	return viper.GetViper()
-}
-
-func GetConfig() (*Config, error) {
+	// Unmarshal into Config
 	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
+	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshaling config: %w", err)
 	}
+
+	cfg.v = v
 	return &cfg, nil
+}
+
+// Get returns a value from the underlying viper instance
+// Useful for CLI flag binding and dynamic config access
+func (c *Config) Get(key string) interface{} {
+	if c.v == nil {
+		return nil
+	}
+	return c.v.Get(key)
+}
+
+// GetString returns a string value from the underlying viper instance
+func (c *Config) GetString(key string) string {
+	if c.v == nil {
+		return ""
+	}
+	return c.v.GetString(key)
+}
+
+// Viper returns the underlying viper instance
+// Useful for advanced config operations
+func (c *Config) Viper() *viper.Viper {
+	return c.v
+}
+
+func setDefaults(v *viper.Viper) {
+	if !v.IsSet(BaseUrlKey) {
+		v.SetDefault(BaseUrlKey, "http://localhost:3000")
+	} else {
+		normalized := strings.TrimRight(v.GetString(BaseUrlKey), "/")
+		v.Set(BaseUrlKey, normalized)
+	}
+
+	if !v.IsSet(ApiVersionKey) {
+		v.SetDefault(ApiVersionKey, "v1")
+	}
+}
+
+// ConfigFileUsed returns the config file that was used (if any)
+func (c *Config) ConfigFileUsed() string {
+	if c.v == nil {
+		return ""
+	}
+	return c.v.ConfigFileUsed()
 }

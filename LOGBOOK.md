@@ -44,3 +44,217 @@ It's modular and flexible.
 - Easier to deploy.
 
 Architecture: not yet finalized
+
+## Week 8: Nov 20, 2025
+
+### Runner Architecture Finalized
+
+After extensive design discussions, we've finalized the architecture for Qwex's execution layer. The goal is to make Qwex a **zero-init, filesystem-level capture tool** that works with any code and any tracking tool.
+
+#### Core Concepts
+
+**Job vs Run**
+- **Job**: Template/definition of work (the recipe)
+  - Defines: command, environment, dependencies, configuration
+  - Reusable and versioned
+  - Example: "train model X with config Y"
+- **Run**: Specific execution instance of a Job (one baking session)
+  - Each run has unique ID, lifecycle, logs, outputs, metrics
+  - Multiple runs can come from same job (retries, experiments, different params)
+  - Tracks: status, timestamps, exit code, artifacts
+
+**Runner vs Run Relationship**
+- **Run**: Pure data model (state object)
+  - Contains: ID, JobID, Status, CreatedAt, StartedAt, FinishedAt, ExitCode, Error, Metadata
+  - Immutable/append-only
+  - Persisted to filesystem or DB
+- **Runner**: Execution engine (behavior/logic)
+  - Implements: `Submit(ctx, jobSpec) (*Run, error)`, `GetRun(ctx, runID) (*Run, error)`, `Cancel(ctx, runID) error`
+  - Stateless or minimal state (just config like API URLs, credentials, directories)
+  - Two implementations:
+    - **LocalRunner**: executes jobs on current machine
+    - **QwexCloudRunner**: submits jobs to Qwex Cloud API (cloud execution uses LocalRunner internally)
+
+#### Run Lifecycle States
+
+Simplified state machine for MVP:
+```
+PENDING (submitted + queued + initializing)
+  ↓
+RUNNING (actively executing)
+  ↓
+SUCCEEDED | FAILED | CANCELLED
+```
+
+Future expansion:
+```
+PENDING → INITIALIZING → RUNNING → FINALIZING → SUCCEEDED/FAILED/CANCELLED
+```
+
+#### Directory Structure
+
+**Nested structure** (matches wandb/mlflow patterns):
+```
+project/
+  train.py
+  out/                    # conventional output dir (user writes here)
+    model.pth
+    metrics.json
+  .qwex/
+    runs/
+      abc123/
+        run.json          # execution metadata only
+        stdout.log        # combined console output
+        stderr.log        # or separate stderr
+        files/            # captured artifacts (copied from out/)
+          model.pth
+          metrics.json
+        artifacts.json    # auto-generated manifest
+```
+
+**Why nested?**
+- Single source of truth: everything for run X in one place
+- Easy cleanup: `rm -rf .qwex/runs/abc123/`
+- Easy archival: `tar -czf abc123.tar.gz .qwex/runs/abc123/`
+- Matches industry patterns (wandb, mlflow, tensorboard)
+
+#### Artifact Auto-Capture
+
+**Zero-init approach**: Users just write to `out/` (or configured dir), qwex auto-captures.
+
+**Default convention:**
+```python
+# User code - no qwex-specific logic needed
+import torch
+torch.save(model.state_dict(), "out/model.pth")
+```
+
+**Configuration** (`.qwex/config.yaml`):
+```yaml
+artifacts:
+  watch_directories:
+    - out              # default
+    # - checkpoints    # user can add more
+    # - models
+  ignore_patterns:
+    - "*.tmp"
+    - "*.log"
+    - "__pycache__"
+    - ".git"
+  max_file_size_mb: 1000
+```
+
+**Implementation**: Post-run directory scan (not real-time fsnotify)
+- After command exits, scan configured directories
+- Copy files to `.qwex/runs/<runId>/files/`
+- Generate `artifacts.json` manifest with checksums
+
+**CLI override:**
+```bash
+qwex run python train.py --local --watch outputs,models
+```
+
+#### Coexistence with Tracking Tools
+
+**Design principle**: Qwex is **execution layer**, not **tracking layer**
+
+**What qwex stores:**
+- Execution metadata: status, command, exit code, timestamps
+- Console output: stdout/stderr
+- Artifacts: files from watched directories
+
+**What qwex does NOT store:**
+- Metrics/plots (leave to wandb/mlflow)
+- Hyperparameters (except as command args)
+- Training checkpoints (unless in watched dir)
+
+**Example with wandb:**
+```python
+import wandb
+import torch
+
+wandb.init(project="my-project")
+
+# Train model
+# ...
+
+# Both qwex and wandb capture from out/
+torch.save(model.state_dict(), "out/model.pth")
+wandb.save("out/model.pth")
+```
+
+**Result:**
+- Qwex captures: `out/model.pth` → `.qwex/runs/abc123/files/`
+- Wandb captures: `out/model.pth` → `wandb/run-xyz/files/`
+- No conflicts — orthogonal systems
+
+**Environment variables (optional):**
+```bash
+QWEX_RUN_ID=abc123
+QWEX_RUN_DIR=/path/to/.qwex/runs/abc123
+```
+
+User code can optionally use these to link tracking runs:
+```python
+import wandb
+import os
+
+wandb.init(
+    project="my-project",
+    tags=[f"qwex:{os.getenv('QWEX_RUN_ID')}"]
+)
+```
+
+#### User Experience
+
+**Setup (optional):**
+```bash
+cat > .qwex/config.yaml
+artifacts:
+  watch_directories:
+    - out
+    - models
+```
+
+**Code (language-agnostic):**
+```python
+# Just use "out/" - simple convention
+torch.save(model.state_dict(), "out/model.pth")
+```
+
+**Run:**
+```bash
+$ qwex run python train.py --local
+⚙️  Run abc123 started
+⏳ Running python train.py...
+✅ Run abc123 succeeded in 2m 15s
+📦 Captured 1 artifact (50 MB)
+```
+
+**View artifacts:**
+```bash
+$ qwex artifacts abc123
+Run abc123 artifacts:
+  out/model.pth (50.0 MB)
+
+$ ls .qwex/runs/abc123/files/
+out/
+```
+
+#### Key Benefits
+
+✅ **Zero burden**: just write to `out/` (or configured dir)  
+✅ **Zero init**: no SDK calls, no `wandb.init()` equivalent  
+✅ **Language-agnostic**: works with Python, R, Julia, Rust, etc.  
+✅ **Tool-agnostic**: coexists with wandb/mlflow/tensorboard  
+✅ **Conventional**: `out/` is standard (like `node_modules/`, `build/`)  
+✅ **Simple implementation**: post-run directory copy (no fsnotify complexity)  
+✅ **Cloud-ready**: same approach works for local and cloud runs  
+
+#### Next Steps
+
+1. Update `pkg/qsdk/runner/interface.go` with Job/Run separation and lifecycle states
+2. Implement LocalRunner with artifact capture
+3. Implement QwexCloudRunner with API submission
+4. Add CLI commands: `qwex run`, `qwex artifacts`, `qwex status`
+5. Add tests for both runners
