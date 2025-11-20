@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	runLocal bool
-	runName  string
+	runLocal   bool
+	runBackend string
+	runName    string
 )
 
 var runCmd = &cobra.Command{
@@ -87,21 +88,52 @@ Examples:
 
 		ctx := context.Background()
 
-		// For now, only local runner is supported
-		if !runLocal {
-			return fmt.Errorf("only --local flag is supported for now")
+		// Determine backend: CLI flag > config file > default to local
+		backend := "local"
+		if runBackend != "" {
+			backend = runBackend
+		} else if cfg.Backend != "" {
+			backend = cfg.Backend
+		} else if runLocal {
+			backend = "local"
 		}
 
-		// Create local runner with base directory set to the spec's working directory
-		// This ensures .qwex/runs is created relative to the working directory
-		r := qrunner.NewLocalRunnerWithBaseDir(spec.WorkingDir)
+		// Create appropriate runner based on backend
+		var runner qrunner.Runner
+
+		switch backend {
+		case "local":
+			// Create local runner with base directory set to the spec's working directory
+			runner = qrunner.NewLocalRunnerWithBaseDir(spec.WorkingDir)
+
+		case "docker":
+			// Create Docker runner with image from config
+			config := qrunner.DefaultContainerConfig()
+			if cfg.Image != "" {
+				config.Image = cfg.Image
+			}
+			// Set base directory to spec.WorkingDir so .qwex is created relative to qwex.yaml
+			dockerRunner, dockerErr := qrunner.NewDockerRunnerWithBaseDir(spec.WorkingDir, config)
+			if dockerErr != nil {
+				return fmt.Errorf("creating docker runner: %w", dockerErr)
+			}
+			defer dockerRunner.Close()
+			runner = dockerRunner
+
+		default:
+			return fmt.Errorf("unsupported backend: %s (supported: local, docker)", backend)
+		}
 
 		// Submit the run
 		fmt.Printf("Submitting run: %s\n", spec.Name)
+		fmt.Printf("Backend: %s\n", backend)
+		if backend == "docker" && cfg.Image != "" {
+			fmt.Printf("Image: %s\n", cfg.Image)
+		}
 		fmt.Printf("Command: %s %v\n", spec.Command, spec.Args)
 		fmt.Printf("Working directory: %s\n", spec.WorkingDir)
 
-		run, err := r.Submit(ctx, spec)
+		run, err := runner.Submit(ctx, spec)
 		if err != nil {
 			return fmt.Errorf("submitting run: %w", err)
 		}
@@ -114,7 +146,7 @@ Examples:
 
 		// Wait for completion
 		fmt.Println("\nWaiting for run to complete...")
-		finalRun, err := r.Wait(ctx, run.ID)
+		finalRun, err := runner.Wait(ctx, run.ID)
 		if err != nil {
 			return fmt.Errorf("waiting for run: %w", err)
 		}
@@ -166,7 +198,7 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-	runCmd.Flags().BoolVar(&runLocal, "local", false, "Run locally (required for now)")
+	runCmd.Flags().BoolVar(&runLocal, "local", false, "Run locally (deprecated: use --backend=local)")
+	runCmd.Flags().StringVar(&runBackend, "backend", "", "Backend to use: local, docker (default: from config or local)")
 	runCmd.Flags().StringVar(&runName, "name", "", "Custom name for the run")
-	runCmd.MarkFlagRequired("local")
 }

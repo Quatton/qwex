@@ -4,38 +4,63 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
+	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/google/uuid"
 )
 
 // DockerRunner executes jobs by spinning up Docker containers that internally
 // run "qwex run --local <command>". This allows running jobs in isolated
 // container environments while delegating the actual command execution to LocalRunner.
+//
+// Flow:
+//  1. Creates .qwex/runs/<runID>/ on host
+//  2. Spins up container with volume mount: host_dir → /qwex/runs/<runID>
+//  3. Container runs: qwex run --local <original_command>
+//  4. LocalRunner inside container writes to /qwex/runs/<runID>/run.json
+//  5. Host reads from same directory (it's mounted!)
 type DockerRunner struct {
 	baseDir string // base directory for .qwex/runs (on host)
 	config  ContainerConfig
-	// TODO: add docker client when implementing
-	// client *docker.Client
+	client  *client.Client
 }
 
 // NewDockerRunner creates a new Docker runner with the given configuration
-func NewDockerRunner(config ContainerConfig) *DockerRunner {
+func NewDockerRunner(config ContainerConfig) (*DockerRunner, error) {
 	cwd, _ := os.Getwd()
+
+	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create docker client: %w", err)
+	}
+
 	return &DockerRunner{
 		baseDir: cwd,
 		config:  config,
-	}
+		client:  dockerClient,
+	}, nil
 }
 
 // NewDockerRunnerWithBaseDir creates a Docker runner with a specific base directory
-func NewDockerRunnerWithBaseDir(baseDir string, config ContainerConfig) *DockerRunner {
+func NewDockerRunnerWithBaseDir(baseDir string, config ContainerConfig) (*DockerRunner, error) {
+	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create docker client: %w", err)
+	}
+
 	return &DockerRunner{
 		baseDir: baseDir,
 		config:  config,
-	}
+		client:  dockerClient,
+	}, nil
 }
 
 func (r *DockerRunner) getRunsDir() string {
@@ -43,26 +68,101 @@ func (r *DockerRunner) getRunsDir() string {
 }
 
 func (r *DockerRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
-	// Generate run ID
-	runID := uuid.New().String()
-	if spec.ID != "" {
-		runID = spec.ID
+	// Generate run ID (using UUIDv7 for lexicographic sorting)
+	runID := spec.ID
+	if runID == "" {
+		uuidV7, err := uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate UUID: %w", err)
+		}
+		runID = uuidV7.String()
 	}
 
-	// Create run directory (on host, will be mounted into container)
+	// Create run directory (on host) for tracking
 	runsDir := r.getRunsDir()
 	runDir := filepath.Join(runsDir, runID)
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create run directory: %w", err)
 	}
 
-	// Wrap the command to run via "qwex run --local"
-	// Original: echo hello world
-	// Wrapped:  qwex run --local echo hello world
-	wrappedCmd, wrappedArgs := WrapCommandForLocal(spec.Command, spec.Args)
+	// Use image from config (in the future, could come from spec.Image)
+	image := r.config.Image
 
-	// Create container config
-	containerConfig := r.buildContainerConfig(spec, runDir, wrappedCmd, wrappedArgs)
+	// Run command DIRECTLY (no qwex wrapper!)
+	fullCmd := append([]string{spec.Command}, spec.Args...)
+
+	// Container paths (inside container)
+	containerRunDir := filepath.Join("/qwex/runs", runID)
+	containerWorkDir := "/workspace"
+
+	// Build Docker mounts
+	mounts := []mount.Mount{
+		{
+			Type:     mount.TypeBind,
+			Source:   runDir,          // Host path for run tracking
+			Target:   containerRunDir, // Container path
+			ReadOnly: false,
+		},
+	}
+
+	// Mount the working directory if specified (where user's code/scripts are)
+	if spec.WorkingDir != "" {
+		mounts = append(mounts, mount.Mount{
+			Type:     mount.TypeBind,
+			Source:   spec.WorkingDir,  // Host working directory
+			Target:   containerWorkDir, // Container working directory
+			ReadOnly: true,             // Read-only for safety
+		})
+	}
+
+	// Add user-defined mounts
+	for _, m := range r.config.Mounts {
+		mounts = append(mounts, mount.Mount{
+			Type:     mount.Type(m.Type),
+			Source:   m.Source,
+			Target:   m.Destination,
+			ReadOnly: m.ReadOnly,
+		})
+	}
+
+	// Build environment variables
+	env := []string{}
+	for k, v := range spec.Env {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+	env = append(env,
+		fmt.Sprintf("QWEX_RUN_ID=%s", runID),
+		fmt.Sprintf("QWEX_RUN_DIR=%s", containerRunDir),
+		"QWEX_BACKEND=docker",
+	)
+
+	// Create log file path (we'll write Docker logs here)
+	logsPath := filepath.Join(runDir, "stdout.log")
+
+	// Set working directory - use containerWorkDir if we mounted the working dir
+	workDir := containerWorkDir
+	if spec.WorkingDir == "" {
+		workDir = "/" // Default to root if no working dir
+	}
+
+	// Create container
+	containerConfig := &container.Config{
+		Image:      image,
+		Cmd:        fullCmd,
+		Env:        env,
+		WorkingDir: workDir,
+	}
+
+	hostConfig := &container.HostConfig{
+		Mounts: mounts,
+	}
+
+	resp, err := r.client.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, fmt.Sprintf("qwex-%s", runID[:8]))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create container: %w", err)
+	}
+
+	containerID := resp.ID
 
 	// Initialize run object
 	now := time.Now()
@@ -70,20 +170,19 @@ func (r *DockerRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 		ID:        runID,
 		JobID:     spec.Name,
 		Status:    RunStatusPending,
-		Command:   spec.Command, // Store original command
+		Command:   spec.Command,
 		Args:      spec.Args,
 		Env:       spec.Env,
 		CreatedAt: now,
 		Metadata: map[string]string{
-			"run_dir":         runDir,
-			"logs_path":       filepath.Join(runDir, "stdout.log"),
-			"wrapped_command": wrappedCmd, // Store wrapped command for debugging
-			"backend":         "docker",
-			// TODO: add docker container ID when implementing
-			// "container_id": containerID,
+			"run_dir":      runDir,
+			"logs_path":    logsPath,
+			"container_id": containerID,
+			"backend":      "docker",
+			"image":        image,
 		},
 		RunDir:   runDir,
-		LogsPath: filepath.Join(runDir, "stdout.log"),
+		LogsPath: logsPath,
 	}
 
 	// Save initial state
@@ -91,65 +190,53 @@ func (r *DockerRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 		return nil, fmt.Errorf("failed to save run state: %w", err)
 	}
 
-	// TODO: Implement Docker container creation and start
-	// This would call Docker API to:
-	// 1. Create container with containerConfig
-	// 2. Start the container
-	// 3. Store container ID in run.Metadata
-	fmt.Printf("TODO: Create Docker container with config: %+v\n", containerConfig)
+	// Start container
+	if err := r.client.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
+		return nil, fmt.Errorf("failed to start container: %w", err)
+	}
+
+	// Update status to running
+	now = time.Now()
+	run.StartedAt = &now
+	run.Status = RunStatusRunning
+	if err := r.saveRun(run); err != nil {
+		return nil, fmt.Errorf("failed to save run state: %w", err)
+	}
 
 	return run, nil
 }
 
-// buildContainerConfig constructs the Docker container configuration
-// This is where we translate our shared ContainerConfig into Docker-specific config
-func (r *DockerRunner) buildContainerConfig(spec JobSpec, runDir, command string, args []string) map[string]interface{} {
-	// Mount the run directory into the container
-	// Host: /home/user/.qwex/runs/abc-123
-	// Container: /qwex/runs/abc-123
-	containerRunDir := filepath.Join("/qwex/runs", filepath.Base(runDir))
+// captureLogs retrieves container logs and writes them to the log file
+func (r *DockerRunner) captureLogs(ctx context.Context, containerID string, run *Run) {
+	logFile, err := os.Create(run.LogsPath)
+	if err != nil {
+		return // Can't write logs, but don't fail the run
+	}
+	defer logFile.Close()
 
-	mounts := []Mount{
-		{
-			Type:        "bind",
-			Source:      runDir,
-			Destination: containerRunDir,
-			ReadOnly:    false,
-		},
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     false,
+		Timestamps: false,
 	}
 
-	// Add user-defined mounts
-	mounts = append(mounts, r.config.Mounts...)
-
-	// Build environment variables
-	// Include spec.Env and add qwex-specific vars
-	env := make(map[string]string)
-	for k, v := range spec.Env {
-		env[k] = v
+	logReader, err := r.client.ContainerLogs(ctx, containerID, options)
+	if err != nil {
+		return
 	}
-	env["QWEX_RUN_DIR"] = containerRunDir // Inside container path
-	env["QWEX_BACKEND"] = "docker"
+	defer logReader.Close()
 
-	// This is a pseudo-config showing what would be passed to Docker API
-	return map[string]interface{}{
-		"image":   r.config.Image,
-		"command": command,
-		"args":    args,
-		"env":     env,
-		"mounts":  mounts,
-		"resources": map[string]interface{}{
-			"cpu_request":    r.config.Resources.CPURequest,
-			"memory_request": r.config.Resources.MemoryRequest,
-			"cpu_limit":      r.config.Resources.CPULimit,
-			"memory_limit":   r.config.Resources.MemoryLimit,
-		},
-		"network_mode": r.config.NetworkMode,
-		"working_dir":  containerRunDir,
+	// Docker log stream is multiplexed with 8-byte headers
+	// Use stdcopy to properly demultiplex stdout/stderr
+	_, err = stdcopy.StdCopy(logFile, logFile, logReader)
+	if err != nil {
+		// Log error but don't fail the run
+		return
 	}
 }
 
 func (r *DockerRunner) Wait(ctx context.Context, runID string) (*Run, error) {
-	// Similar to LocalRunner: poll for completion
 	run, err := r.GetRun(ctx, runID)
 	if err != nil {
 		return nil, err
@@ -159,25 +246,46 @@ func (r *DockerRunner) Wait(ctx context.Context, runID string) (*Run, error) {
 		return run, nil
 	}
 
-	// TODO: Use Docker API to wait for container
-	// For now, poll the run.json file (LocalRunner inside container updates it)
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-ticker.C:
-			run, err := r.GetRun(ctx, runID)
-			if err != nil {
-				return nil, err
-			}
-			if run.Status == RunStatusSucceeded || run.Status == RunStatusFailed || run.Status == RunStatusCancelled {
-				return run, nil
-			}
-		}
+	containerID := run.Metadata["container_id"]
+	if containerID == "" {
+		return nil, fmt.Errorf("container ID not found in run metadata")
 	}
+
+	// Wait for container to finish
+	statusCh, errCh := r.client.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
+
+	var exitCode int64
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return nil, fmt.Errorf("error waiting for container: %w", err)
+		}
+	case status := <-statusCh:
+		exitCode = status.StatusCode
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	// Update the run with final status (don't rely on trackContainer goroutine)
+	finishTime := time.Now()
+	run.FinishedAt = &finishTime
+	exitCodeInt := int(exitCode)
+	run.ExitCode = &exitCodeInt
+
+	if exitCode == 0 {
+		run.Status = RunStatusSucceeded
+	} else {
+		run.Status = RunStatusFailed
+		run.Error = fmt.Sprintf("container exited with code %d", exitCode)
+	}
+
+	// Capture logs
+	r.captureLogs(ctx, containerID, run)
+
+	// Save final state
+	r.saveRun(run)
+
+	return run, nil
 }
 
 func (r *DockerRunner) GetRun(ctx context.Context, runID string) (*Run, error) {
@@ -201,7 +309,6 @@ func (r *DockerRunner) GetRun(ctx context.Context, runID string) (*Run, error) {
 }
 
 func (r *DockerRunner) Cancel(ctx context.Context, runID string) error {
-	// TODO: Call Docker API to stop/kill container
 	run, err := r.GetRun(ctx, runID)
 	if err != nil {
 		return err
@@ -212,9 +319,14 @@ func (r *DockerRunner) Cancel(ctx context.Context, runID string) error {
 		return fmt.Errorf("container ID not found in run metadata")
 	}
 
-	// TODO: Implement
-	// r.client.ContainerStop(ctx, containerID, timeout)
-	fmt.Printf("TODO: Stop Docker container %s\n", containerID)
+	// Stop the container (10 second timeout, then kill)
+	timeout := 10
+	if err := r.client.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeout}); err != nil {
+		// If container is already stopped, that's fine
+		if !strings.Contains(err.Error(), "is not running") {
+			return fmt.Errorf("failed to stop container: %w", err)
+		}
+	}
 
 	return nil
 }
@@ -262,5 +374,43 @@ func (r *DockerRunner) saveRun(run *Run) error {
 		return fmt.Errorf("failed to write run state: %w", err)
 	}
 
+	return nil
+}
+
+// StreamLogs streams the logs from the Docker container
+func (r *DockerRunner) StreamLogs(ctx context.Context, runID string, w io.Writer) error {
+	run, err := r.GetRun(ctx, runID)
+	if err != nil {
+		return err
+	}
+
+	containerID := run.Metadata["container_id"]
+	if containerID == "" {
+		return fmt.Errorf("container ID not found in run metadata")
+	}
+
+	// Get container logs
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     false,
+		Timestamps: false,
+	}
+
+	logReader, err := r.client.ContainerLogs(ctx, containerID, options)
+	if err != nil {
+		return fmt.Errorf("failed to get container logs: %w", err)
+	}
+	defer logReader.Close()
+
+	_, err = io.Copy(w, logReader)
+	return err
+}
+
+// Close closes the Docker client connection
+func (r *DockerRunner) Close() error {
+	if r.client != nil {
+		return r.client.Close()
+	}
 	return nil
 }

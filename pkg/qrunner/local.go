@@ -49,10 +49,14 @@ func (r *LocalRunner) getRunsDir() string {
 }
 
 func (r *LocalRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
-	// Generate run ID
-	runID := uuid.New().String()
-	if spec.ID != "" {
-		runID = spec.ID
+	// Generate run ID (using UUIDv7 for lexicographic sorting)
+	runID := spec.ID
+	if runID == "" {
+		uuidV7, err := uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate UUID: %w", err)
+		}
+		runID = uuidV7.String()
 	}
 
 	// Create run directory (.qwex/runs/<runID> in the base directory)

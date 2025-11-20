@@ -12,6 +12,8 @@ import (
 type Config struct {
 	BaseURL    string            `mapstructure:"baseUrl"`
 	APIVersion string            `mapstructure:"apiVersion"`
+	Backend    string            `mapstructure:"backend"` // "local", "docker", "k8s"
+	Image      string            `mapstructure:"image"`   // Docker/K8s image
 	Env        map[string]string `mapstructure:"env"`
 	WorkingDir string            `mapstructure:"working_dir"`
 

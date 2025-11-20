@@ -47,9 +47,14 @@ func NewK8sRunner(namespace, queueName, image string) (*K8sRunner, error) {
 
 // Submit creates and submits a Kubernetes Job
 func (r *K8sRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
-	runID := uuid.New().String()
-	if spec.ID != "" {
-		runID = spec.ID
+	// Generate run ID (using UUIDv7 for lexicographic sorting)
+	runID := spec.ID
+	if runID == "" {
+		uuidV7, err := uuid.NewV7()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate UUID: %w", err)
+		}
+		runID = uuidV7.String()
 	}
 
 	jobName := fmt.Sprintf("qwex-%s", runID[:8])

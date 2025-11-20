@@ -52,8 +52,9 @@ type Mount struct {
 // inside the container.
 //
 // Example:
-//   Input:  command="echo", args=["hello", "world"]
-//   Output: command="qwex", args=["run", "--local", "echo", "hello", "world"]
+//
+//	Input:  command="echo", args=["hello", "world"]
+//	Output: command="qwex", args=["run", "--local", "echo", "hello", "world"]
 func WrapCommandForLocal(command string, args []string) (string, []string) {
 	wrappedArgs := []string{"run", "--local", command}
 	wrappedArgs = append(wrappedArgs, args...)
@@ -63,7 +64,7 @@ func WrapCommandForLocal(command string, args []string) (string, []string) {
 // DefaultContainerConfig returns sensible defaults for container configuration
 func DefaultContainerConfig() ContainerConfig {
 	return ContainerConfig{
-		Image: "qwex:latest", // TODO: make this configurable
+		Image: "alpine:latest", // Users can use ANY image! qwex binary is mounted from host
 		Resources: ResourceRequirements{
 			CPURequest:    "100m",
 			MemoryRequest: "128Mi",

@@ -1,0 +1,10 @@
+[project]
+name = "test-docker-runner"
+version = "0.1.0"
+description = "Test project for qwex Docker runner"
+requires-python = ">=3.12"
+dependencies = ["requests>=2.31.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

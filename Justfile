@@ -21,11 +21,39 @@ spec:
     # curl -sS http://localhost:3000/openapi-3.0.json -o pkg/client/openapi.json
     go run apps/qwexcloud/main.go spec -o pkg/client/openapi.json --downgrade
 
+# Safe generation: backup old gen.go, generate new one, verify it compiles, then commit
 gen: spec
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "📦 Backing up existing gen.go..."
+    if [ -f pkg/client/gen.go ]; then
+        cp pkg/client/gen.go pkg/client/gen.go.bak
+    fi
+    echo "🔨 Generating new client code..."
     oapi-codegen -generate "client,types" -package client -o pkg/client/gen.go pkg/client/openapi.json
+    echo "✅ Verifying generated code compiles..."
+    if go build -o /dev/null ./pkg/client/... 2>&1; then
+        echo "✅ Generated code is valid!"
+        rm -f pkg/client/gen.go.bak
+    else
+        echo "❌ Generated code has errors! Reverting..."
+        if [ -f pkg/client/gen.go.bak ]; then
+            mv pkg/client/gen.go.bak pkg/client/gen.go
+            echo "⚠️  Reverted to previous gen.go"
+        fi
+        exit 1
+    fi
 
 @ctl *args='':
     go run apps/qwexctl/main.go "$@"
 
 @migrate:
     go run cmds/migrate/main.go
+
+# Build Docker image for qwex runner (contains qwex binary)
+docker-build-runner:
+    docker build -f Dockerfile.runner -t qwex:latest .
+
+# Test DockerRunner (requires Docker daemon and qwex:latest image)
+test-docker-runner: docker-build-runner
+    go test -v ./pkg/qrunner -run TestDockerRunnerBasic
