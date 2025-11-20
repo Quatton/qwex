@@ -30,7 +30,7 @@ Credentials will be stored in the local configuration for subsequent commands.`,
 
 func run(cmd *cobra.Command, args []string) {
 	logger := qlog.NewDefault()
-	
+
 	client, err := client.NewClient(viper.GetString(qsdk.BaseUrlKey))
 	if err != nil {
 		logger.Fatal("failed to create client", "error", err)

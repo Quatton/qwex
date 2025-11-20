@@ -258,7 +258,7 @@ func (s *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (s
 
 func (s *AuthService) findOrCreateUser(ctx context.Context, ghUser *GitHubUser, token *oauth2.Token) (*models.User, error) {
 	logger := qlog.NewDefault()
-	
+
 	// Fetch Installation ID using the App JWT
 	installationID, err := s.getInstallationID(ctx, ghUser.Login)
 	if err != nil {

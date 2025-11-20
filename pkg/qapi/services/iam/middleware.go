@@ -10,7 +10,7 @@ import (
 
 func (s *IAMService) Middleware() func(ctx huma.Context, next func(huma.Context)) {
 	logger := qlog.NewDefault()
-	
+
 	return func(ctx huma.Context, next func(huma.Context)) {
 		r, _ := humachi.Unwrap(ctx)
 

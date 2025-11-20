@@ -36,7 +36,7 @@ type EnvConfig struct {
 
 func ValidateEnv() (*EnvConfig, error) {
 	logger := qlog.NewDefault()
-	
+
 	if utils.IsDev() {
 		if err := godotenv.Load(); err != nil {
 			logger.Info("no .env file found")

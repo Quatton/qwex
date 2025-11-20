@@ -12,7 +12,7 @@ func exitIfSdkError(err error) {
 		return
 	}
 	logger := qlog.NewDefault()
-	
+
 	switch {
 	case qerr.IsCode(err, qerr.CodeUnauthorized):
 		logger.Fatal("authentication required: run 'qwexctl auth login'", "error", err)

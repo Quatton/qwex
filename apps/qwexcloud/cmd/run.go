@@ -37,7 +37,7 @@ func init() {
 func run(cmd *cobra.Command, args []string) {
 	logger := qlog.NewDefault()
 	ctx := context.Background()
-	
+
 	cfg, err := config.ValidateEnv()
 	if err != nil {
 		logger.Fatal("failed to validate environment", "error", err)
