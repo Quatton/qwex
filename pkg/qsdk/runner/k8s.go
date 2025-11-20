@@ -7,15 +7,17 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/quatton/qwex/pkg/k8s"
+	"github.com/quatton/qwex/pkg/qapi/services/jobs"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
 
 // K8sRunner executes runs as Kubernetes Jobs with Kueue integration
 type K8sRunner struct {
-	jobManager *k8s.JobManager
+	jobManager *jobs.JobManager
 	namespace  string
 	queueName  string
 	image      string
@@ -29,7 +31,7 @@ func NewK8sRunner(namespace, queueName, image string) (*K8sRunner, error) {
 	}
 
 	return &K8sRunner{
-		jobManager: k8s.NewJobManager(client, namespace),
+		jobManager: jobs.NewJobManager(client, namespace),
 		namespace:  namespace,
 		queueName:  queueName,
 		image:      image,
@@ -50,8 +52,8 @@ func (r *K8sRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: jobName,
 			Labels: map[string]string{
-				k8s.KueueQueueLabel: r.queueName,
-				"qwex.run-id":       runID,
+				jobs.KueueQueueLabel: r.queueName,
+				"qwex.run-id":        runID,
 			},
 		},
 		Spec: batchv1.JobSpec{
@@ -70,8 +72,8 @@ func (r *K8sRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 							Env:     envMapToEnvVars(spec.Env),
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    *ptr.To("100m"),
-									corev1.ResourceMemory: *ptr.To("128Mi"),
+									corev1.ResourceCPU:    mustParseQuantity("100m"),
+									corev1.ResourceMemory: mustParseQuantity("128Mi"),
 								},
 							},
 						},
@@ -255,6 +257,14 @@ func envMapToEnvVars(envMap map[string]string) []corev1.EnvVar {
 		})
 	}
 	return envVars
+}
+
+func mustParseQuantity(s string) resource.Quantity {
+	q, err := resource.ParseQuantity(s)
+	if err != nil {
+		panic(fmt.Sprintf("invalid quantity %q: %v", s, err))
+	}
+	return q
 }
 
 func jobStatusToRunStatus(job *batchv1.Job) RunStatus {
