@@ -16,7 +16,7 @@ import (
 )
 
 type LocalRunner struct {
-	baseDir string                 // base directory for .qwex/runs
+	baseDir string // base directory for .qwex/runs
 	mu      sync.RWMutex
 	runs    map[string]*runProcess // in-memory tracking of active runs
 }

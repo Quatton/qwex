@@ -100,7 +100,7 @@ Examples:
 		fmt.Printf("Submitting run: %s\n", spec.Name)
 		fmt.Printf("Command: %s %v\n", spec.Command, spec.Args)
 		fmt.Printf("Working directory: %s\n", spec.WorkingDir)
-		
+
 		run, err := r.Submit(ctx, spec)
 		if err != nil {
 			return fmt.Errorf("submitting run: %w", err)
@@ -124,11 +124,11 @@ Examples:
 		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		fmt.Printf("Run completed: %s\n", finalRun.Status)
 		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		
+
 		if finalRun.ExitCode != nil {
 			fmt.Printf("Exit code: %d\n", *finalRun.ExitCode)
 		}
-		
+
 		if finalRun.StartedAt != nil && finalRun.FinishedAt != nil {
 			duration := finalRun.FinishedAt.Sub(*finalRun.StartedAt)
 			fmt.Printf("Duration: %s\n", duration.Round(time.Millisecond))
@@ -137,16 +137,16 @@ Examples:
 		// Read and display logs
 		fmt.Printf("\nLogs:\n")
 		fmt.Printf("─────────────────────────────────────────\n")
-		
+
 		logsContent, err := os.ReadFile(finalRun.LogsPath)
 		if err != nil {
 			fmt.Printf("(Could not read logs: %v)\n", err)
 		} else {
 			fmt.Print(string(logsContent))
 		}
-		
+
 		fmt.Printf("─────────────────────────────────────────\n")
-		
+
 		// Show relative path for convenience
 		relPath, err := filepath.Rel(".", finalRun.RunDir)
 		if err == nil {
