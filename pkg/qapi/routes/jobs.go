@@ -8,7 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/quatton/qwex/pkg/qapi/schemas"
-	"github.com/quatton/qwex/pkg/qsdk/runner"
+	"github.com/quatton/qwex/pkg/qrunner"
 )
 
 // SubmitJobInput defines the input for job submission
@@ -16,13 +16,23 @@ type SubmitJobInput struct {
 	Body schemas.SubmitJobRequest
 }
 
+// SubmitJobOutput is the response for submitting a job
+type SubmitJobOutput struct {
+	Body schemas.JobResponse
+}
+
 // GetJobInput defines the input for getting a job
 type GetJobInput struct {
 	JobID string `path:"jobId" doc:"Job ID"`
 }
 
-// DeleteJobInput defines the input for deleting a job
-type DeleteJobInput struct {
+// GetJobOutput is the response for getting a job
+type GetJobOutput struct {
+	Body schemas.JobResponse
+}
+
+// CancelJobInput defines the input for canceling a job
+type CancelJobInput struct {
 	JobID string `path:"jobId" doc:"Job ID"`
 }
 
@@ -31,8 +41,15 @@ type ListJobsInput struct {
 	Status string `query:"status" doc:"Filter by status" required:"false"`
 }
 
+// ListJobsOutput is the response for listing jobs
+type ListJobsOutput struct {
+	Body struct {
+		Jobs []schemas.JobResponse `json:"jobs" doc:"List of jobs"`
+	}
+}
+
 // RegisterJobs registers job-related routes
-func RegisterJobs(api huma.API, jobRunner runner.Runner) {
+func RegisterJobs(api huma.API, jobRunner qrunner.Runner) {
 	// Submit job
 	huma.Register(api, huma.Operation{
 		OperationID: "submit-job",
@@ -41,7 +58,7 @@ func RegisterJobs(api huma.API, jobRunner runner.Runner) {
 		Summary:     "Submit a new job",
 		Description: "Submit a job for execution",
 		Tags:        []string{"Jobs"},
-	}, func(ctx context.Context, input *SubmitJobInput) (*schemas.SubmitJobResponse, error) {
+	}, func(ctx context.Context, input *SubmitJobInput) (*SubmitJobOutput, error) {
 		// Validate required fields
 		if input.Body.Name == "" {
 			return nil, huma.Error400BadRequest("name is required")
@@ -51,7 +68,7 @@ func RegisterJobs(api huma.API, jobRunner runner.Runner) {
 		}
 
 		// Create job spec
-		spec := runner.JobSpec{
+		spec := qrunner.JobSpec{
 			Name:       input.Body.Name,
 			Command:    input.Body.Command,
 			Args:       input.Body.Args,
@@ -65,7 +82,7 @@ func RegisterJobs(api huma.API, jobRunner runner.Runner) {
 			return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to submit job: %v", err))
 		}
 
-		resp := &schemas.SubmitJobResponse{
+		resp := &SubmitJobOutput{
 			Body: runToJobResponse(run),
 		}
 		return resp, nil
@@ -79,10 +96,10 @@ func RegisterJobs(api huma.API, jobRunner runner.Runner) {
 		Summary:     "List jobs",
 		Description: "Get a list of all jobs",
 		Tags:        []string{"Jobs"},
-	}, func(ctx context.Context, input *ListJobsInput) (*schemas.ListJobsResponse, error) {
-		var status *runner.RunStatus
+	}, func(ctx context.Context, input *ListJobsInput) (*ListJobsOutput, error) {
+		var status *qrunner.RunStatus
 		if input.Status != "" {
-			s := runner.RunStatus(input.Status)
+			s := qrunner.RunStatus(input.Status)
 			status = &s
 		}
 
@@ -97,7 +114,7 @@ func RegisterJobs(api huma.API, jobRunner runner.Runner) {
 			jobs[i] = runToJobResponse(run)
 		}
 
-		resp := &schemas.ListJobsResponse{}
+		resp := &ListJobsOutput{}
 		resp.Body.Jobs = jobs
 		return resp, nil
 	})
@@ -110,7 +127,7 @@ func RegisterJobs(api huma.API, jobRunner runner.Runner) {
 		Summary:     "Get job details",
 		Description: "Get details of a specific job",
 		Tags:        []string{"Jobs"},
-	}, func(ctx context.Context, input *GetJobInput) (*schemas.GetJobResponse, error) {
+	}, func(ctx context.Context, input *GetJobInput) (*GetJobOutput, error) {
 		if input.JobID == "" {
 			return nil, huma.Error400BadRequest("job ID is required")
 		}
@@ -120,7 +137,7 @@ func RegisterJobs(api huma.API, jobRunner runner.Runner) {
 			return nil, huma.Error404NotFound(fmt.Sprintf("job not found: %v", err))
 		}
 
-		resp := &schemas.GetJobResponse{
+		resp := &GetJobOutput{
 			Body: runToJobResponse(run),
 		}
 		return resp, nil
@@ -134,7 +151,7 @@ func RegisterJobs(api huma.API, jobRunner runner.Runner) {
 		Summary:     "Cancel a job",
 		Description: "Cancel a running job",
 		Tags:        []string{"Jobs"},
-	}, func(ctx context.Context, input *DeleteJobInput) (*struct{}, error) {
+	}, func(ctx context.Context, input *CancelJobInput) (*struct{}, error) {
 		if input.JobID == "" {
 			return nil, huma.Error400BadRequest("job ID is required")
 		}
@@ -149,7 +166,7 @@ func RegisterJobs(api huma.API, jobRunner runner.Runner) {
 }
 
 // Helper function to convert Run to JobResponse
-func runToJobResponse(run *runner.Run) schemas.JobResponse {
+func runToJobResponse(run *qrunner.Run) schemas.JobResponse {
 	resp := schemas.JobResponse{
 		ID:        run.ID,
 		Name:      run.JobID,

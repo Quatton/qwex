@@ -1,4 +1,4 @@
-package runner
+package qrunner
 
 import (
 	"context"
@@ -183,21 +183,20 @@ func (r *K8sRunner) GetRun(ctx context.Context, runID string) (*Run, error) {
 			run.StartedAt = &pod.Status.StartTime.Time
 		}
 
-		// Get exit code from container status
-		for _, status := range pod.Status.ContainerStatuses {
-			if status.State.Terminated != nil {
-				exitCode := int(status.State.Terminated.ExitCode)
-				run.ExitCode = &exitCode
-			}
-		}
 
-		run.LogsPath = fmt.Sprintf("pod/%s", pod.Name)
+	// Get exit code from container status
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.State.Terminated != nil {
+			exitCode := int(status.State.Terminated.ExitCode)
+			run.ExitCode = &exitCode
+		}
 	}
 
-	return run, nil
+	run.Metadata["logs_path"] = fmt.Sprintf("pod/%s", pod.Name)
 }
 
-// Cancel cancels a running job
+return run, nil
+}// Cancel cancels a running job
 func (r *K8sRunner) Cancel(ctx context.Context, runID string) error {
 	run, err := r.GetRun(ctx, runID)
 	if err != nil {

@@ -19,7 +19,7 @@ import (
 	"github.com/quatton/qwex/pkg/db/models"
 	"github.com/quatton/qwex/pkg/qapi/config"
 	"github.com/quatton/qwex/pkg/qapi/schemas"
-	"github.com/quatton/qwex/pkg/qsdk"
+	"github.com/quatton/qwex/pkg/qauth"
 	"github.com/uptrace/bun"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
@@ -193,7 +193,7 @@ func (s *AuthService) GetGitHubUser(ctx context.Context, token *oauth2.Token) (*
 // The caller must supply the githubID/githubLogin values discovered during
 // the OAuth flow; they are stored as top-level claims for simplicity.
 func (s *AuthService) IssueToken(user *schemas.User, githubID, githubLogin string) (string, error) {
-	uc := &qsdk.UserClaims{
+	uc := &qauth.UserClaims{
 		ID:          user.ID,
 		Login:       user.Login,
 		Name:        user.Name,
@@ -205,7 +205,7 @@ func (s *AuthService) IssueToken(user *schemas.User, githubID, githubLogin strin
 		Exp:         time.Now().Add(time.Duration(s.cfg.AccessTokenTTL) * time.Second).Unix(),
 	}
 
-	claims := qsdk.ToClaims(uc)
+	claims := qauth.ToClaims(uc)
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(s.jwtSecret)
@@ -490,7 +490,7 @@ func (s *AuthService) ValidateToken(tokenString string) (*schemas.User, error) {
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
 		// Map verified claims into UserClaims using shared helper to keep
 		// mapping logic consistent with the CLI/SDK.
-		uc, err := qsdk.FromMapClaims(claims)
+		uc, err := qauth.FromMapClaims(claims)
 		if err != nil {
 			return nil, err
 		}

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/quatton/qwex/pkg/qsdk/runner"
+	"github.com/quatton/qwex/pkg/qrunner"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +42,7 @@ Examples:
 		cmdArgs := args[1:]
 
 		// Create job spec
-		spec := runner.JobSpec{
+		spec := qrunner.JobSpec{
 			Name:    runName,
 			Command: command,
 			Args:    cmdArgs,
@@ -94,7 +94,7 @@ Examples:
 
 		// Create local runner with base directory set to the spec's working directory
 		// This ensures .qwex/runs is created relative to the working directory
-		r := runner.NewLocalRunnerWithBaseDir(spec.WorkingDir)
+		r := qrunner.NewLocalRunnerWithBaseDir(spec.WorkingDir)
 
 		// Submit the run
 		fmt.Printf("Submitting run: %s\n", spec.Name)

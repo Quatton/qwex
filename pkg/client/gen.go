@@ -76,25 +76,49 @@ type ErrorModel struct {
 // JobResponse defines model for JobResponse.
 type JobResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema     *string            `json:"$schema,omitempty"`
-	Args       *[]string          `json:"args"`
-	Command    string             `json:"command"`
-	CreatedAt  string             `json:"created_at"`
-	Error      *string            `json:"error,omitempty"`
-	ExitCode   *int64             `json:"exit_code,omitempty"`
-	FinishedAt *string            `json:"finished_at,omitempty"`
-	Id         string             `json:"id"`
-	Metadata   *map[string]string `json:"metadata,omitempty"`
-	Name       string             `json:"name"`
-	StartedAt  *string            `json:"started_at,omitempty"`
-	Status     string             `json:"status"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// Args Command arguments
+	Args *[]string `json:"args"`
+
+	// Command Command
+	Command string `json:"command"`
+
+	// CreatedAt Creation timestamp
+	CreatedAt string `json:"created_at"`
+
+	// Error Error message if failed
+	Error *string `json:"error,omitempty"`
+
+	// ExitCode Exit code
+	ExitCode *int64 `json:"exit_code,omitempty"`
+
+	// FinishedAt Finish timestamp
+	FinishedAt *string `json:"finished_at,omitempty"`
+
+	// Id Job ID
+	Id string `json:"id"`
+
+	// Metadata Additional metadata
+	Metadata *map[string]string `json:"metadata,omitempty"`
+
+	// Name Job name
+	Name string `json:"name"`
+
+	// StartedAt Start timestamp
+	StartedAt *string `json:"started_at,omitempty"`
+
+	// Status Job status
+	Status string `json:"status"`
 }
 
-// ListJobsResponse defines model for ListJobsResponse.
-type ListJobsResponse struct {
+// ListJobsOutputBody defines model for ListJobsOutputBody.
+type ListJobsOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string        `json:"$schema,omitempty"`
-	Jobs   *[]JobResponse `json:"jobs"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// Jobs List of jobs
+	Jobs *[]JobResponse `json:"jobs"`
 }
 
 // MeResponseBody defines model for MeResponseBody.
@@ -134,12 +158,22 @@ type RefreshTokenResponseBody struct {
 // SubmitJobRequest defines model for SubmitJobRequest.
 type SubmitJobRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema     *string            `json:"$schema,omitempty"`
-	Args       *[]string          `json:"args"`
-	Command    string             `json:"command"`
-	Env        *map[string]string `json:"env,omitempty"`
-	Name       string             `json:"name"`
-	WorkingDir *string            `json:"working_dir,omitempty"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// Args Command arguments
+	Args *[]string `json:"args"`
+
+	// Command Command to execute
+	Command string `json:"command"`
+
+	// Env Environment variables
+	Env *map[string]string `json:"env,omitempty"`
+
+	// Name Job name
+	Name string `json:"name"`
+
+	// WorkingDir Working directory
+	WorkingDir *string `json:"working_dir,omitempty"`
 }
 
 // User defines model for User.
@@ -920,7 +954,7 @@ func (r AuthRefreshResponse) StatusCode() int {
 type ListJobsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *ListJobsResponse
+	JSON200                       *ListJobsOutputBody
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
@@ -1226,7 +1260,7 @@ func ParseListJobsResponse(rsp *http.Response) (*ListJobsResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ListJobsResponse
+		var dest ListJobsOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

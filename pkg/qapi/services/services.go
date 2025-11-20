@@ -4,14 +4,14 @@ import (
 	"github.com/quatton/qwex/pkg/qapi/config"
 	"github.com/quatton/qwex/pkg/qapi/services/authconfig"
 	"github.com/quatton/qwex/pkg/qapi/services/iam"
-	"github.com/quatton/qwex/pkg/qsdk/runner"
+	"github.com/quatton/qwex/pkg/qrunner"
 	"github.com/uptrace/bun"
 )
 
 type Services struct {
 	Auth      *authconfig.AuthService
 	IAM       *iam.IAMService
-	JobRunner runner.Runner
+	JobRunner qrunner.Runner
 }
 
 func NewServices(cfg *config.EnvConfig, db *bun.DB) (*Services, error) {
@@ -19,7 +19,7 @@ func NewServices(cfg *config.EnvConfig, db *bun.DB) (*Services, error) {
 	iamSvc := iam.NewIAMService(authSvc)
 
 	// Create Kubernetes runner
-	jobRunner, err := runner.NewK8sRunner(cfg.K8sNamespace, cfg.K8sQueue, cfg.K8sImage)
+	jobRunner, err := qrunner.NewK8sRunner(cfg.K8sNamespace, cfg.K8sQueue, cfg.K8sImage)
 	if err != nil {
 		return nil, err
 	}

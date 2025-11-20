@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/quatton/qwex/pkg/client"
+	"github.com/quatton/qwex/pkg/qauth"
 	"github.com/quatton/qwex/pkg/qerr"
 	"github.com/spf13/viper"
 )
@@ -87,7 +88,7 @@ func (s *Sdk) ensureValidToken(ctx context.Context) error {
 		}
 		return s.refreshTokens(ctx)
 	}
-	expired, err := IsTokenExpired(s.Token, 30*time.Second)
+	expired, err := qauth.IsTokenExpired(s.Token, 30*time.Second)
 	if err != nil {
 		return qerr.New(qerr.CodeUnknown, err)
 	}

@@ -23,21 +23,3 @@ type JobResponse struct {
 	Error      string            `json:"error,omitempty" doc:"Error message if failed"`
 	Metadata   map[string]string `json:"metadata,omitempty" doc:"Additional metadata"`
 }
-
-// SubmitJobResponse is the response for submitting a job
-type SubmitJobResponse struct {
-	Body JobResponse
-}
-
-// GetJobResponse is the response for getting a job
-type GetJobResponse struct {
-	Body JobResponse
-}
-
-// ListJobsResponse is the response for listing jobs
-type ListJobsResponse struct {
-	Body struct {
-		Jobs []JobResponse `json:"jobs" doc:"List of jobs"`
-	}
-}
-

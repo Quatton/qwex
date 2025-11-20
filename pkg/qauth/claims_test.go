@@ -1,4 +1,4 @@
-package qsdk
+package qauth
 
 import (
 	"reflect"

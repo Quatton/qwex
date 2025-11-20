@@ -1,4 +1,4 @@
-package runner
+package qrunner
 
 import (
 	"context"
@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/quatton/qwex/pkg/qsdk"
 )
 
 type LocalRunner struct {
@@ -46,7 +45,7 @@ func NewLocalRunnerWithBaseDir(baseDir string) *LocalRunner {
 
 // getRunsDir returns the runs directory
 func (r *LocalRunner) getRunsDir() string {
-	return filepath.Join(r.baseDir, qsdk.ConfigRoot, "runs")
+	return filepath.Join(r.baseDir, ".qwex", "runs")
 }
 
 func (r *LocalRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
@@ -76,9 +75,9 @@ func (r *LocalRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 		Args:      spec.Args,
 		Env:       spec.Env,
 		CreatedAt: now,
+		Metadata:  make(map[string]string),
 		RunDir:    runDir,
 		LogsPath:  logsPath,
-		Metadata:  make(map[string]string),
 	}
 
 	// Save initial state
@@ -122,11 +121,11 @@ func (r *LocalRunner) executeRun(ctx context.Context, run *Run, spec JobSpec) {
 	// Add qwex-specific env vars
 	cmd.Env = append(cmd.Env,
 		fmt.Sprintf("QWEX_RUN_ID=%s", run.ID),
-		fmt.Sprintf("QWEX_RUN_DIR=%s", run.RunDir),
+		fmt.Sprintf("QWEX_RUN_DIR=%s", run.Metadata["run_dir"]),
 	)
 
 	// Create log file
-	logFile, err := os.Create(run.LogsPath)
+	logFile, err := os.Create(run.Metadata["logs_path"])
 	if err != nil {
 		r.finishRunWithError(run, fmt.Errorf("failed to create log file: %w", err))
 		return
@@ -300,7 +299,7 @@ func (r *LocalRunner) ListRuns(ctx context.Context, status *RunStatus) ([]*Run, 
 }
 
 func (r *LocalRunner) saveRun(run *Run) error {
-	runPath := filepath.Join(run.RunDir, "run.json")
+	runPath := filepath.Join(run.Metadata["run_dir"], "run.json")
 	data, err := json.MarshalIndent(run, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal run state: %w", err)
@@ -320,7 +319,7 @@ func (r *LocalRunner) StreamLogs(ctx context.Context, runID string, w io.Writer)
 		return err
 	}
 
-	logFile, err := os.Open(run.LogsPath)
+	logFile, err := os.Open(run.Metadata["logs_path"])
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
