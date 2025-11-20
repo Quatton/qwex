@@ -16,7 +16,7 @@ import (
 )
 
 type LocalRunner struct {
-	runsDir string
+	baseDir string                 // base directory for .qwex/runs
 	mu      sync.RWMutex
 	runs    map[string]*runProcess // in-memory tracking of active runs
 }
@@ -31,9 +31,22 @@ type runProcess struct {
 func NewLocalRunner() *LocalRunner {
 	cwd, _ := os.Getwd()
 	return &LocalRunner{
-		runsDir: filepath.Join(cwd, qsdk.ConfigRoot, "runs"),
+		baseDir: cwd,
 		runs:    make(map[string]*runProcess),
 	}
+}
+
+// NewLocalRunnerWithBaseDir creates a LocalRunner with a specific base directory
+func NewLocalRunnerWithBaseDir(baseDir string) *LocalRunner {
+	return &LocalRunner{
+		baseDir: baseDir,
+		runs:    make(map[string]*runProcess),
+	}
+}
+
+// getRunsDir returns the runs directory
+func (r *LocalRunner) getRunsDir() string {
+	return filepath.Join(r.baseDir, qsdk.ConfigRoot, "runs")
 }
 
 func (r *LocalRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
@@ -43,8 +56,9 @@ func (r *LocalRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 		runID = spec.ID
 	}
 
-	// Create run directory
-	runDir := filepath.Join(r.runsDir, runID)
+	// Create run directory (.qwex/runs/<runID> in the base directory)
+	runsDir := r.getRunsDir()
+	runDir := filepath.Join(runsDir, runID)
 	if err := os.MkdirAll(runDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create run directory: %w", err)
 	}
@@ -213,7 +227,7 @@ func (r *LocalRunner) Wait(ctx context.Context, runID string) (*Run, error) {
 }
 
 func (r *LocalRunner) GetRun(ctx context.Context, runID string) (*Run, error) {
-	runPath := filepath.Join(r.runsDir, runID, "run.json")
+	runPath := filepath.Join(r.getRunsDir(), runID, "run.json")
 	data, err := os.ReadFile(runPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -254,7 +268,7 @@ func (r *LocalRunner) Cancel(ctx context.Context, runID string) error {
 }
 
 func (r *LocalRunner) ListRuns(ctx context.Context, status *RunStatus) ([]*Run, error) {
-	entries, err := os.ReadDir(r.runsDir)
+	entries, err := os.ReadDir(r.getRunsDir())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []*Run{}, nil

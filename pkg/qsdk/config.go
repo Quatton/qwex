@@ -15,7 +15,8 @@ type Config struct {
 	Env        map[string]string `mapstructure:"env"`
 	WorkingDir string            `mapstructure:"working_dir"`
 
-	v *viper.Viper // instance-specific viper
+	v                 *viper.Viper // instance-specific viper
+	projectConfigFile string       // path to the project config file (for working dir resolution)
 }
 
 const (
@@ -36,28 +37,37 @@ func LoadConfig(cfgFile string) (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 	v.AutomaticEnv()
 
+	var projectConfigFile string // Track which project config was loaded
+
 	if cfgFile != "" {
 		v.SetConfigFile(cfgFile)
 		if err := v.ReadInConfig(); err != nil {
 			return nil, fmt.Errorf("reading config file %s: %w", cfgFile, err)
 		}
+		projectConfigFile = cfgFile
 	} else {
 		// Load project config (TRACKED) - qwex.yaml in current directory
 		for _, name := range []string{"qwex.yaml", "qwex.yml", ".qwex.yaml"} {
 			if _, err := os.Stat(name); err == nil {
 				v.SetConfigFile(name)
 				if err := v.ReadInConfig(); err == nil {
+					projectConfigFile = name
 					break
 				}
 			}
 		}
 
 		// Merge local overrides (UNTRACKED) - .qwex/config.yaml
+		// Use a separate viper instance to avoid overwriting ConfigFileUsed
 		localConfigPath := filepath.Join(ConfigRoot, "config.yaml")
 		if _, err := os.Stat(localConfigPath); err == nil {
-			v.SetConfigFile(localConfigPath)
-			if err := v.MergeInConfig(); err != nil {
-				return nil, fmt.Errorf("merging local config: %w", err)
+			localViper := viper.New()
+			localViper.SetConfigFile(localConfigPath)
+			if err := localViper.ReadInConfig(); err == nil {
+				// Merge all settings from local config
+				for _, key := range localViper.AllKeys() {
+					v.Set(key, localViper.Get(key))
+				}
 			}
 		}
 	}
@@ -72,6 +82,7 @@ func LoadConfig(cfgFile string) (*Config, error) {
 	}
 
 	cfg.v = v
+	cfg.projectConfigFile = projectConfigFile // Store the project config file path
 	return &cfg, nil
 }
 
@@ -111,10 +122,8 @@ func setDefaults(v *viper.Viper) {
 	}
 }
 
-// ConfigFileUsed returns the config file that was used (if any)
+// ConfigFileUsed returns the project config file that was used (if any)
+// This returns the tracked config file (qwex.yaml), not local overrides
 func (c *Config) ConfigFileUsed() string {
-	if c.v == nil {
-		return ""
-	}
-	return c.v.ConfigFileUsed()
+	return c.projectConfigFile
 }

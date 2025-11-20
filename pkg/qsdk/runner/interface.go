@@ -31,20 +31,20 @@ const (
 
 // Run represents a specific execution instance of a job
 type Run struct {
-	ID         string            // Unique run ID
-	JobID      string            // Reference to job ID
-	Status     RunStatus         // Current status
-	Command    string            // Full command executed
-	Args       []string          // Command arguments
-	Env        map[string]string // Environment variables used
-	CreatedAt  time.Time         // When the run was created
-	StartedAt  *time.Time        // When execution started (nil if not started)
-	FinishedAt *time.Time        // When execution finished (nil if not finished)
-	ExitCode   *int              // Process exit code (nil if not finished)
-	Error      string            // Error message (if failed)
-	RunDir     string            // Path to .qwex/runs/<run-id>
-	LogsPath   string            // Path to stdout.log
-	Metadata   map[string]string // Additional metadata
+	ID         string            `json:"id"`
+	JobID      string            `json:"job_id"`
+	Status     RunStatus         `json:"status"`
+	Command    string            `json:"command"`
+	Args       []string          `json:"args"`
+	Env        map[string]string `json:"env,omitempty"`
+	CreatedAt  time.Time         `json:"created_at"`
+	StartedAt  *time.Time        `json:"started_at,omitempty"`
+	FinishedAt *time.Time        `json:"finished_at,omitempty"`
+	ExitCode   *int              `json:"exit_code,omitempty"`
+	Error      string            `json:"error,omitempty"`
+	RunDir     string            `json:"run_dir"`
+	LogsPath   string            `json:"logs_path"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
 // Runner is the execution engine interface
