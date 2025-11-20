@@ -11,12 +11,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	runLocal   bool
-	runBackend string
-	runName    string
-)
-
 var runCmd = &cobra.Command{
 	Use:   "run [flags] -- <command> [args...]",
 	Short: "Run a command and track its execution",
@@ -33,6 +27,11 @@ Examples:
   qwex run --local --name "training-run" -- python train.py`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Get flags
+		runLocal, _ := cmd.Flags().GetBool("local")
+		runBackend, _ := cmd.Flags().GetString("backend")
+		runName, _ := cmd.Flags().GetString("name")
+
 		cfg, err := GetConfig(cmd)
 		if err != nil {
 			return err
@@ -198,7 +197,7 @@ Examples:
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-	runCmd.Flags().BoolVar(&runLocal, "local", false, "Run locally (deprecated: use --backend=local)")
-	runCmd.Flags().StringVar(&runBackend, "backend", "", "Backend to use: local, docker (default: from config or local)")
-	runCmd.Flags().StringVar(&runName, "name", "", "Custom name for the run")
+	runCmd.Flags().Bool("local", false, "Run locally (deprecated: use --backend=local)")
+	runCmd.Flags().String("backend", "", "Backend to use: local, docker (default: from config or local)")
+	runCmd.Flags().String("name", "", "Custom name for the run")
 }

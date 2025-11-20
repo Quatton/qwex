@@ -49,11 +49,3 @@ gen: spec
 
 @migrate:
     go run cmds/migrate/main.go
-
-# Build Docker image for qwex runner (contains qwex binary)
-docker-build-runner:
-    docker build -f Dockerfile.runner -t qwex:latest .
-
-# Test DockerRunner (requires Docker daemon and qwex:latest image)
-test-docker-runner: docker-build-runner
-    go test -v ./pkg/qrunner -run TestDockerRunnerBasic
