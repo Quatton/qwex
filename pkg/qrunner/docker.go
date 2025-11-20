@@ -285,6 +285,15 @@ func (r *DockerRunner) Wait(ctx context.Context, runID string) (*Run, error) {
 	// Save final state
 	r.saveRun(run)
 
+	// Clean up container (remove it after completion since it's ephemeral)
+	removeErr := r.client.ContainerRemove(ctx, containerID, container.RemoveOptions{
+		Force: true, // Force remove even if still running
+	})
+	if removeErr != nil {
+		// Log error but don't fail - run completed successfully
+		// Container will be cleaned up later manually if needed
+	}
+
 	return run, nil
 }
 
