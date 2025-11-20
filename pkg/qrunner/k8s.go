@@ -15,7 +15,14 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// K8sRunner executes runs as Kubernetes Jobs with Kueue integration
+// K8sRunner executes runs as Kubernetes Jobs with Kueue integration.
+//
+// Similar to DockerRunner, this could wrap commands with WrapCommandForLocal()
+// to run "qwex run --local <command>" inside the Pod, allowing the Pod to
+// delegate execution to LocalRunner. This would enable sharing volume mounting,
+// environment setup, and resource configuration logic with DockerRunner.
+//
+// Current implementation runs commands directly without wrapping.
 type K8sRunner struct {
 	jobManager *jobs.JobManager
 	namespace  string
@@ -183,20 +190,19 @@ func (r *K8sRunner) GetRun(ctx context.Context, runID string) (*Run, error) {
 			run.StartedAt = &pod.Status.StartTime.Time
 		}
 
-
-	// Get exit code from container status
-	for _, status := range pod.Status.ContainerStatuses {
-		if status.State.Terminated != nil {
-			exitCode := int(status.State.Terminated.ExitCode)
-			run.ExitCode = &exitCode
+		// Get exit code from container status
+		for _, status := range pod.Status.ContainerStatuses {
+			if status.State.Terminated != nil {
+				exitCode := int(status.State.Terminated.ExitCode)
+				run.ExitCode = &exitCode
+			}
 		}
+
+		run.Metadata["logs_path"] = fmt.Sprintf("pod/%s", pod.Name)
 	}
 
-	run.Metadata["logs_path"] = fmt.Sprintf("pod/%s", pod.Name)
-}
-
-return run, nil
-}// Cancel cancels a running job
+	return run, nil
+} // Cancel cancels a running job
 func (r *K8sRunner) Cancel(ctx context.Context, runID string) error {
 	run, err := r.GetRun(ctx, runID)
 	if err != nil {
