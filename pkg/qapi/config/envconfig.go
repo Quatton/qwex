@@ -28,6 +28,10 @@ type EnvConfig struct {
 	DBName              string `envconfig:"DB_NAME" default:"qwex"`
 	DBSSLMode           string `envconfig:"DB_SSLMODE" default:"disable"`
 	RefreshTokenTTL     int    `envconfig:"REFRESH_TOKEN_TTL" default:"2592000"` // 30 days
+	// Kubernetes configuration
+	K8sNamespace string `envconfig:"K8S_NAMESPACE" default:"default"`
+	K8sQueue     string `envconfig:"K8S_QUEUE" default:"user-queue"`
+	K8sImage     string `envconfig:"K8S_IMAGE" default:"python:3.11-slim"`
 }
 
 func ValidateEnv() (*EnvConfig, error) {

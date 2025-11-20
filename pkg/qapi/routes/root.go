@@ -9,9 +9,10 @@ func RegisterAPI(api huma.API, svcs *services.Services) {
 	if svcs == nil {
 		RegisterIAM(api, nil)
 		RegisterAuthConfig(api, nil)
+		RegisterJobs(api, nil)
 	} else {
-
 		RegisterIAM(api, svcs.IAM)
 		RegisterAuthConfig(api, svcs.Auth)
+		RegisterJobs(api, svcs.JobRunner)
 	}
 }

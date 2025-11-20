@@ -99,7 +99,7 @@ func (r *K8sRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 		Env:       spec.Env,
 		CreatedAt: now,
 		Metadata: map[string]string{
-			"k8s_job_name": createdJob.Name,
+			"k8s_job_name":  createdJob.Name,
 			"k8s_namespace": r.namespace,
 		},
 	}

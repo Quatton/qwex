@@ -14,20 +14,10 @@ import (
 	"strings"
 
 	"github.com/oapi-codegen/runtime"
-	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 const (
 	BearerScopes = "bearer.Scopes"
-)
-
-// Defines values for MachineResponseBodyStatus.
-const (
-	Creating MachineResponseBodyStatus = "creating"
-	Running  MachineResponseBodyStatus = "running"
-	Starting MachineResponseBodyStatus = "starting"
-	Stopped  MachineResponseBodyStatus = "stopped"
-	Stopping MachineResponseBodyStatus = "stopping"
 )
 
 // Defines values for AuthLoginParamsProvider.
@@ -83,45 +73,29 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
-// HealthOutputBody defines model for HealthOutputBody.
-type HealthOutputBody struct {
+// JobResponse defines model for JobResponse.
+type JobResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-
-	// Status Health status
-	Status string `json:"status"`
+	Schema     *string            `json:"$schema,omitempty"`
+	Args       *[]string          `json:"args"`
+	Command    string             `json:"command"`
+	CreatedAt  string             `json:"created_at"`
+	Error      *string            `json:"error,omitempty"`
+	ExitCode   *int64             `json:"exit_code,omitempty"`
+	FinishedAt *string            `json:"finished_at,omitempty"`
+	Id         string             `json:"id"`
+	Metadata   *map[string]string `json:"metadata,omitempty"`
+	Name       string             `json:"name"`
+	StartedAt  *string            `json:"started_at,omitempty"`
+	Status     string             `json:"status"`
 }
 
-// Item defines model for Item.
-type Item struct {
-	MachineId string `json:"machine_id"`
-	Status    string `json:"status"`
-}
-
-// ListMachinesResponseBody defines model for ListMachinesResponseBody.
-type ListMachinesResponseBody struct {
+// ListJobsResponse defines model for ListJobsResponse.
+type ListJobsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema   *string `json:"$schema,omitempty"`
-	Machines *[]Item `json:"machines"`
+	Schema *string        `json:"$schema,omitempty"`
+	Jobs   *[]JobResponse `json:"jobs"`
 }
-
-// MachineResponseBody defines model for MachineResponseBody.
-type MachineResponseBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-
-	// MachineId Unique identifier for the machine
-	MachineId string `json:"machine_id"`
-
-	// Status Current status of the machine
-	Status MachineResponseBodyStatus `json:"status"`
-
-	// UserId ID of the user who owns the machine
-	UserId *string `json:"user_id,omitempty"`
-}
-
-// MachineResponseBodyStatus Current status of the machine
-type MachineResponseBodyStatus string
 
 // MeResponseBody defines model for MeResponseBody.
 type MeResponseBody struct {
@@ -157,13 +131,15 @@ type RefreshTokenResponseBody struct {
 	TokenType string `json:"token_type"`
 }
 
-// RootOutputBody defines model for RootOutputBody.
-type RootOutputBody struct {
+// SubmitJobRequest defines model for SubmitJobRequest.
+type SubmitJobRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-
-	// Message Welcome message
-	Message string `json:"message"`
+	Schema     *string            `json:"$schema,omitempty"`
+	Args       *[]string          `json:"args"`
+	Command    string             `json:"command"`
+	Env        *map[string]string `json:"env,omitempty"`
+	Name       string             `json:"name"`
+	WorkingDir *string            `json:"working_dir,omitempty"`
 }
 
 // User defines model for User.
@@ -205,8 +181,17 @@ type AuthLoginParams struct {
 // AuthLoginParamsProvider defines parameters for AuthLogin.
 type AuthLoginParamsProvider string
 
+// ListJobsParams defines parameters for ListJobs.
+type ListJobsParams struct {
+	// Status Filter by status
+	Status *string `form:"status,omitempty" json:"status,omitempty"`
+}
+
 // AuthRefreshJSONRequestBody defines body for AuthRefresh for application/json ContentType.
 type AuthRefreshJSONRequestBody = RefreshTokenRequestBody
+
+// SubmitJobJSONRequestBody defines body for SubmitJob for application/json ContentType.
+type SubmitJobJSONRequestBody = SubmitJobRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -281,9 +266,6 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
-	// GetRoot request
-	GetRoot(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// AuthCallback request
 	AuthCallback(ctx context.Context, params *AuthCallbackParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -295,32 +277,22 @@ type ClientInterface interface {
 
 	AuthRefresh(ctx context.Context, body AuthRefreshJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ListMachines request
-	ListMachines(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ListJobs request
+	ListJobs(ctx context.Context, params *ListJobsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// CreateMachine request
-	CreateMachine(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// SubmitJobWithBody request with any body
+	SubmitJobWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// DeleteMachine request
-	DeleteMachine(ctx context.Context, machineId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SubmitJob(ctx context.Context, body SubmitJobJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CancelJob request
+	CancelJob(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetJob request
+	GetJob(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetMe request
 	GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// HealthCheck request
-	HealthCheck(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-}
-
-func (c *Client) GetRoot(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetRootRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
 }
 
 func (c *Client) AuthCallback(ctx context.Context, params *AuthCallbackParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -371,8 +343,8 @@ func (c *Client) AuthRefresh(ctx context.Context, body AuthRefreshJSONRequestBod
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListMachines(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListMachinesRequest(c.Server)
+func (c *Client) ListJobs(ctx context.Context, params *ListJobsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListJobsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -383,8 +355,8 @@ func (c *Client) ListMachines(ctx context.Context, reqEditors ...RequestEditorFn
 	return c.Client.Do(req)
 }
 
-func (c *Client) CreateMachine(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateMachineRequest(c.Server)
+func (c *Client) SubmitJobWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitJobRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -395,8 +367,32 @@ func (c *Client) CreateMachine(ctx context.Context, reqEditors ...RequestEditorF
 	return c.Client.Do(req)
 }
 
-func (c *Client) DeleteMachine(ctx context.Context, machineId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteMachineRequest(c.Server, machineId)
+func (c *Client) SubmitJob(ctx context.Context, body SubmitJobJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitJobRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CancelJob(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelJobRequest(c.Server, jobId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetJob(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetJobRequest(c.Server, jobId)
 	if err != nil {
 		return nil, err
 	}
@@ -417,45 +413,6 @@ func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*htt
 		return nil, err
 	}
 	return c.Client.Do(req)
-}
-
-func (c *Client) HealthCheck(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewHealthCheckRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// NewGetRootRequest generates requests for GetRoot
-func NewGetRootRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
 }
 
 // NewAuthCallbackRequest generates requests for AuthCallback
@@ -636,8 +593,8 @@ func NewAuthRefreshRequestWithBody(server string, contentType string, body io.Re
 	return req, nil
 }
 
-// NewListMachinesRequest generates requests for ListMachines
-func NewListMachinesRequest(server string) (*http.Request, error) {
+// NewListJobsRequest generates requests for ListJobs
+func NewListJobsRequest(server string, params *ListJobsParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -645,7 +602,7 @@ func NewListMachinesRequest(server string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/machines")
+	operationPath := fmt.Sprintf("/api/jobs")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -653,6 +610,28 @@ func NewListMachinesRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Status != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", false, "status", runtime.ParamLocationQuery, *params.Status); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
@@ -663,8 +642,19 @@ func NewListMachinesRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewCreateMachineRequest generates requests for CreateMachine
-func NewCreateMachineRequest(server string) (*http.Request, error) {
+// NewSubmitJobRequest calls the generic SubmitJob builder with application/json body
+func NewSubmitJobRequest(server string, body SubmitJobJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSubmitJobRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSubmitJobRequestWithBody generates requests for SubmitJob with any type of body
+func NewSubmitJobRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -672,7 +662,7 @@ func NewCreateMachineRequest(server string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/machines")
+	operationPath := fmt.Sprintf("/api/jobs")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -682,21 +672,23 @@ func NewCreateMachineRequest(server string) (*http.Request, error) {
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	req, err := http.NewRequest("POST", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
 
+	req.Header.Add("Content-Type", contentType)
+
 	return req, nil
 }
 
-// NewDeleteMachineRequest generates requests for DeleteMachine
-func NewDeleteMachineRequest(server string, machineId openapi_types.UUID) (*http.Request, error) {
+// NewCancelJobRequest generates requests for CancelJob
+func NewCancelJobRequest(server string, jobId string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "machine_id", runtime.ParamLocationPath, machineId)
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "jobId", runtime.ParamLocationPath, jobId)
 	if err != nil {
 		return nil, err
 	}
@@ -706,7 +698,7 @@ func NewDeleteMachineRequest(server string, machineId openapi_types.UUID) (*http
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/machines/%s", pathParam0)
+	operationPath := fmt.Sprintf("/api/jobs/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -724,16 +716,23 @@ func NewDeleteMachineRequest(server string, machineId openapi_types.UUID) (*http
 	return req, nil
 }
 
-// NewGetMeRequest generates requests for GetMe
-func NewGetMeRequest(server string) (*http.Request, error) {
+// NewGetJobRequest generates requests for GetJob
+func NewGetJobRequest(server string, jobId string) (*http.Request, error) {
 	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "jobId", runtime.ParamLocationPath, jobId)
+	if err != nil {
+		return nil, err
+	}
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/me")
+	operationPath := fmt.Sprintf("/api/jobs/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -751,8 +750,8 @@ func NewGetMeRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewHealthCheckRequest generates requests for HealthCheck
-func NewHealthCheckRequest(server string) (*http.Request, error) {
+// NewGetMeRequest generates requests for GetMe
+func NewGetMeRequest(server string) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -760,7 +759,7 @@ func NewHealthCheckRequest(server string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/health")
+	operationPath := fmt.Sprintf("/api/me")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -821,9 +820,6 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
-	// GetRootWithResponse request
-	GetRootWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRootResponse, error)
-
 	// AuthCallbackWithResponse request
 	AuthCallbackWithResponse(ctx context.Context, params *AuthCallbackParams, reqEditors ...RequestEditorFn) (*AuthCallbackResponse, error)
 
@@ -835,43 +831,22 @@ type ClientWithResponsesInterface interface {
 
 	AuthRefreshWithResponse(ctx context.Context, body AuthRefreshJSONRequestBody, reqEditors ...RequestEditorFn) (*AuthRefreshResponse, error)
 
-	// ListMachinesWithResponse request
-	ListMachinesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMachinesResponse, error)
+	// ListJobsWithResponse request
+	ListJobsWithResponse(ctx context.Context, params *ListJobsParams, reqEditors ...RequestEditorFn) (*ListJobsResponse, error)
 
-	// CreateMachineWithResponse request
-	CreateMachineWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateMachineResponse, error)
+	// SubmitJobWithBodyWithResponse request with any body
+	SubmitJobWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitJobResponse, error)
 
-	// DeleteMachineWithResponse request
-	DeleteMachineWithResponse(ctx context.Context, machineId openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteMachineResponse, error)
+	SubmitJobWithResponse(ctx context.Context, body SubmitJobJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitJobResponse, error)
+
+	// CancelJobWithResponse request
+	CancelJobWithResponse(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*CancelJobResponse, error)
+
+	// GetJobWithResponse request
+	GetJobWithResponse(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*GetJobResponse, error)
 
 	// GetMeWithResponse request
 	GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
-
-	// HealthCheckWithResponse request
-	HealthCheckWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthCheckResponse, error)
-}
-
-type GetRootResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *RootOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetRootResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetRootResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
 }
 
 type AuthCallbackResponse struct {
@@ -942,15 +917,15 @@ func (r AuthRefreshResponse) StatusCode() int {
 	return 0
 }
 
-type ListMachinesResponse struct {
+type ListJobsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *ListMachinesResponseBody
+	JSON200                       *ListJobsResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
-func (r ListMachinesResponse) Status() string {
+func (r ListJobsResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -958,22 +933,22 @@ func (r ListMachinesResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r ListMachinesResponse) StatusCode() int {
+func (r ListJobsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type CreateMachineResponse struct {
+type SubmitJobResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MachineResponseBody
+	JSON200                       *JobResponse
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
-func (r CreateMachineResponse) Status() string {
+func (r SubmitJobResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -981,22 +956,21 @@ func (r CreateMachineResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r CreateMachineResponse) StatusCode() int {
+func (r SubmitJobResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type DeleteMachineResponse struct {
+type CancelJobResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *MachineResponseBody
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
-func (r DeleteMachineResponse) Status() string {
+func (r CancelJobResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1004,7 +978,30 @@ func (r DeleteMachineResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r DeleteMachineResponse) StatusCode() int {
+func (r CancelJobResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetJobResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *JobResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetJobResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetJobResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1032,38 +1029,6 @@ func (r GetMeResponse) StatusCode() int {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
-}
-
-type HealthCheckResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *HealthOutputBody
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r HealthCheckResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r HealthCheckResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// GetRootWithResponse request returning *GetRootResponse
-func (c *ClientWithResponses) GetRootWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRootResponse, error) {
-	rsp, err := c.GetRoot(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetRootResponse(rsp)
 }
 
 // AuthCallbackWithResponse request returning *AuthCallbackResponse
@@ -1101,31 +1066,48 @@ func (c *ClientWithResponses) AuthRefreshWithResponse(ctx context.Context, body 
 	return ParseAuthRefreshResponse(rsp)
 }
 
-// ListMachinesWithResponse request returning *ListMachinesResponse
-func (c *ClientWithResponses) ListMachinesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMachinesResponse, error) {
-	rsp, err := c.ListMachines(ctx, reqEditors...)
+// ListJobsWithResponse request returning *ListJobsResponse
+func (c *ClientWithResponses) ListJobsWithResponse(ctx context.Context, params *ListJobsParams, reqEditors ...RequestEditorFn) (*ListJobsResponse, error) {
+	rsp, err := c.ListJobs(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseListMachinesResponse(rsp)
+	return ParseListJobsResponse(rsp)
 }
 
-// CreateMachineWithResponse request returning *CreateMachineResponse
-func (c *ClientWithResponses) CreateMachineWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateMachineResponse, error) {
-	rsp, err := c.CreateMachine(ctx, reqEditors...)
+// SubmitJobWithBodyWithResponse request with arbitrary body returning *SubmitJobResponse
+func (c *ClientWithResponses) SubmitJobWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitJobResponse, error) {
+	rsp, err := c.SubmitJobWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseCreateMachineResponse(rsp)
+	return ParseSubmitJobResponse(rsp)
 }
 
-// DeleteMachineWithResponse request returning *DeleteMachineResponse
-func (c *ClientWithResponses) DeleteMachineWithResponse(ctx context.Context, machineId openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteMachineResponse, error) {
-	rsp, err := c.DeleteMachine(ctx, machineId, reqEditors...)
+func (c *ClientWithResponses) SubmitJobWithResponse(ctx context.Context, body SubmitJobJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitJobResponse, error) {
+	rsp, err := c.SubmitJob(ctx, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseDeleteMachineResponse(rsp)
+	return ParseSubmitJobResponse(rsp)
+}
+
+// CancelJobWithResponse request returning *CancelJobResponse
+func (c *ClientWithResponses) CancelJobWithResponse(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*CancelJobResponse, error) {
+	rsp, err := c.CancelJob(ctx, jobId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelJobResponse(rsp)
+}
+
+// GetJobWithResponse request returning *GetJobResponse
+func (c *ClientWithResponses) GetJobWithResponse(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*GetJobResponse, error) {
+	rsp, err := c.GetJob(ctx, jobId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetJobResponse(rsp)
 }
 
 // GetMeWithResponse request returning *GetMeResponse
@@ -1135,48 +1117,6 @@ func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors 
 		return nil, err
 	}
 	return ParseGetMeResponse(rsp)
-}
-
-// HealthCheckWithResponse request returning *HealthCheckResponse
-func (c *ClientWithResponses) HealthCheckWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthCheckResponse, error) {
-	rsp, err := c.HealthCheck(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseHealthCheckResponse(rsp)
-}
-
-// ParseGetRootResponse parses an HTTP response from a GetRootWithResponse call
-func ParseGetRootResponse(rsp *http.Response) (*GetRootResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetRootResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest RootOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
 }
 
 // ParseAuthCallbackResponse parses an HTTP response from a AuthCallbackWithResponse call
@@ -1271,22 +1211,22 @@ func ParseAuthRefreshResponse(rsp *http.Response) (*AuthRefreshResponse, error) 
 	return response, nil
 }
 
-// ParseListMachinesResponse parses an HTTP response from a ListMachinesWithResponse call
-func ParseListMachinesResponse(rsp *http.Response) (*ListMachinesResponse, error) {
+// ParseListJobsResponse parses an HTTP response from a ListJobsWithResponse call
+func ParseListJobsResponse(rsp *http.Response) (*ListJobsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &ListMachinesResponse{
+	response := &ListJobsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ListMachinesResponseBody
+		var dest ListJobsResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1304,22 +1244,22 @@ func ParseListMachinesResponse(rsp *http.Response) (*ListMachinesResponse, error
 	return response, nil
 }
 
-// ParseCreateMachineResponse parses an HTTP response from a CreateMachineWithResponse call
-func ParseCreateMachineResponse(rsp *http.Response) (*CreateMachineResponse, error) {
+// ParseSubmitJobResponse parses an HTTP response from a SubmitJobWithResponse call
+func ParseSubmitJobResponse(rsp *http.Response) (*SubmitJobResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &CreateMachineResponse{
+	response := &SubmitJobResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MachineResponseBody
+		var dest JobResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1337,22 +1277,48 @@ func ParseCreateMachineResponse(rsp *http.Response) (*CreateMachineResponse, err
 	return response, nil
 }
 
-// ParseDeleteMachineResponse parses an HTTP response from a DeleteMachineWithResponse call
-func ParseDeleteMachineResponse(rsp *http.Response) (*DeleteMachineResponse, error) {
+// ParseCancelJobResponse parses an HTTP response from a CancelJobWithResponse call
+func ParseCancelJobResponse(rsp *http.Response) (*CancelJobResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &DeleteMachineResponse{
+	response := &CancelJobResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetJobResponse parses an HTTP response from a GetJobWithResponse call
+func ParseGetJobResponse(rsp *http.Response) (*GetJobResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetJobResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MachineResponseBody
+		var dest JobResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1386,39 +1352,6 @@ func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest MeResponseBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseHealthCheckResponse parses an HTTP response from a HealthCheckWithResponse call
-func ParseHealthCheckResponse(rsp *http.Response) (*HealthCheckResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &HealthCheckResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest HealthOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

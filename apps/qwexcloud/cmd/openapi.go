@@ -12,10 +12,11 @@ import (
 
 // openapiCmd represents the openapi command
 var openapiCmd = &cobra.Command{
-	Use:   "openapi",
-	Short: "Generate OpenAPI specification",
-	Long:  `Outputs the OpenAPI 3.0 specification for the Qwex Cloud API without requiring database or service initialization.`,
-	Run:   generateOpenAPI,
+	Use:     "openapi",
+	Aliases: []string{"spec"},
+	Short:   "Generate OpenAPI specification",
+	Long:    `Outputs the OpenAPI 3.0 specification for the Qwex Cloud API without requiring database or service initialization.`,
+	Run:     generateOpenAPI,
 }
 
 var (
