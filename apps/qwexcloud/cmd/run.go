@@ -6,15 +6,14 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
-	"os"
 
 	"github.com/quatton/qwex/pkg/db"
 	"github.com/quatton/qwex/pkg/qapi"
 	"github.com/quatton/qwex/pkg/qapi/config"
 	"github.com/quatton/qwex/pkg/qapi/routes"
 	"github.com/quatton/qwex/pkg/qapi/services"
+	"github.com/quatton/qwex/pkg/qlog"
 	"github.com/spf13/cobra"
 )
 
@@ -36,13 +35,17 @@ func init() {
 }
 
 func run(cmd *cobra.Command, args []string) {
+	logger := qlog.NewDefault()
 	ctx := context.Background()
+	
 	cfg, err := config.ValidateEnv()
 	if err != nil {
-		log.Fatalf("❌ %v\n", err)
+		logger.Fatal("failed to validate environment", "error", err)
 	}
 
-	cfg.Print(log.Printf)
+	cfg.Print(func(format string, args ...any) {
+		logger.Info(fmt.Sprintf(format, args...))
+	})
 
 	database, err := db.New(ctx, db.Config{
 		Host:     cfg.DBHost,
@@ -53,13 +56,13 @@ func run(cmd *cobra.Command, args []string) {
 		SSLMode:  cfg.DBSSLMode,
 	})
 	if err != nil {
-		log.Fatalf("failed to initialize database: %v", err)
+		logger.Fatal("failed to initialize database", "error", err)
 	}
 	defer database.Close()
 
 	svcs, err := services.NewServices(cfg, database)
 	if err != nil {
-		log.Fatalf("failed to initialize services: %v", err)
+		logger.Fatal("failed to initialize services", "error", err)
 	}
 
 	api := qapi.NewApi()
@@ -67,15 +70,13 @@ func run(cmd *cobra.Command, args []string) {
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 
-	log.Printf("🚀 Controller starting on %s\n", addr)
-	log.Printf("📚 OpenAPI docs: %s/docs\n", cfg.BaseURL)
-	log.Printf("📄 OpenAPI spec: %s/openapi.json\n", cfg.BaseURL)
-	log.Printf("🔐 Auth endpoints:\n")
-
-	log.Printf("   - Authorize: %s/api/auth/login", cfg.BaseURL)
+	logger.Info("controller starting", "addr", addr)
+	logger.Info("openapi docs", "url", fmt.Sprintf("%s/docs", cfg.BaseURL))
+	logger.Info("openapi spec", "url", fmt.Sprintf("%s/openapi.json", cfg.BaseURL))
+	logger.Info("auth endpoints")
+	logger.Info("  authorize endpoint", "url", fmt.Sprintf("%s/api/auth/login", cfg.BaseURL))
 
 	if err := http.ListenAndServe(addr, api.Router); err != nil {
-		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
-		os.Exit(1)
+		logger.Fatal("server error", "error", err)
 	}
 }

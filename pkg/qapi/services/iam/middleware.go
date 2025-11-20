@@ -1,14 +1,16 @@
 package iam
 
 import (
-	"log"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
+	"github.com/quatton/qwex/pkg/qlog"
 )
 
 func (s *IAMService) Middleware() func(ctx huma.Context, next func(huma.Context)) {
+	logger := qlog.NewDefault()
+	
 	return func(ctx huma.Context, next func(huma.Context)) {
 		r, _ := humachi.Unwrap(ctx)
 
@@ -18,10 +20,10 @@ func (s *IAMService) Middleware() func(ctx huma.Context, next func(huma.Context)
 			if len(parts) == 2 && parts[0] == "Bearer" {
 				token := parts[1]
 				if user, err := s.auth.ValidateToken(token); err == nil {
-					log.Printf("ℹ Authenticated user: %s (%s)", user.Login, user.Email)
+					logger.Debug("authenticated user", "login", user.Login, "email", user.Email)
 					ctx = huma.WithValue(ctx, principalKey, user)
 				} else {
-					log.Printf("⚠️ Invalid token: %v", err)
+					logger.Warn("invalid token", "error", err)
 				}
 			}
 		}

@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/quatton/qwex/pkg/client"
 	"github.com/quatton/qwex/pkg/qauth"
+	"github.com/quatton/qwex/pkg/qlog"
 	"github.com/quatton/qwex/pkg/qsdk"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -29,22 +29,24 @@ Credentials will be stored in the local configuration for subsequent commands.`,
 }
 
 func run(cmd *cobra.Command, args []string) {
+	logger := qlog.NewDefault()
+	
 	client, err := client.NewClient(viper.GetString(qsdk.BaseUrlKey))
 	if err != nil {
-		log.Fatalf("failed to create client: %v", err)
+		logger.Fatal("failed to create client", "error", err)
 		return
 	}
 	auth := qsdk.NewAuthClient(client)
 	loginUrl, err := auth.InitiateLoginWithGithub()
 	if err != nil {
-		log.Fatalf("failed to initiate login: %v", err)
+		logger.Fatal("failed to initiate login", "error", err)
 		return
 	}
 	fmt.Printf("Please open the following URL in your browser to complete login:\n%s\n", loginUrl)
 
 	accessToken, refreshToken, err := auth.CompleteLoginInteractive()
 	if err != nil {
-		log.Fatalf("failed to complete login: %v", err)
+		logger.Fatal("failed to complete login", "error", err)
 		return
 	}
 
@@ -56,11 +58,11 @@ func run(cmd *cobra.Command, args []string) {
 		fmt.Printf("Logged in as: %s (@%s)\n", uc.Name, uc.Login)
 		fmt.Printf("Token expires: %s\n", expStr)
 	} else {
-		log.Printf("warning: failed to parse token claims: %v", err)
+		logger.Warn("failed to parse token claims", "error", err)
 	}
 
 	if err := qsdk.SaveTokens(viper.GetString(qsdk.BaseUrlKey), accessToken, refreshToken); err != nil {
-		log.Printf("warning: failed to save tokens: %v", err)
+		logger.Warn("failed to save tokens", "error", err)
 	} else {
 		fmt.Println("Access token saved")
 	}

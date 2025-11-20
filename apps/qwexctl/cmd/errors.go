@@ -1,23 +1,24 @@
 package cmd
 
 import (
-	"log"
-
 	"github.com/quatton/qwex/pkg/qerr"
+	"github.com/quatton/qwex/pkg/qlog"
 )
 
 // exitIfSdkError inspects errors returned from the SDK and emits user-friendly
-// guidance before exiting. Non-SDK errors fall back to log.Fatalf.
+// guidance before exiting. Non-SDK errors fall back to logger.Fatal.
 func exitIfSdkError(err error) {
 	if err == nil {
 		return
 	}
+	logger := qlog.NewDefault()
+	
 	switch {
 	case qerr.IsCode(err, qerr.CodeUnauthorized):
-		log.Fatalf("authentication required: run 'qwexctl auth login' (%v)", err)
+		logger.Fatal("authentication required: run 'qwexctl auth login'", "error", err)
 	case qerr.IsCode(err, qerr.CodeRefreshFailed):
-		log.Fatalf("failed to refresh credentials: run 'qwexctl auth login' (%v)", err)
+		logger.Fatal("failed to refresh credentials: run 'qwexctl auth login'", "error", err)
 	default:
-		log.Fatalf("%v", err)
+		logger.Fatal("command failed", "error", err)
 	}
 }

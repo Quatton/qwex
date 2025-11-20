@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/quatton/qwex/pkg/qapi/config"
 	"github.com/quatton/qwex/pkg/qapi/schemas"
 	"github.com/quatton/qwex/pkg/qauth"
+	"github.com/quatton/qwex/pkg/qlog"
 	"github.com/uptrace/bun"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
@@ -84,7 +84,8 @@ func NewAuthService(cfg *config.EnvConfig, dbClient *bun.DB) *AuthService {
 			RedirectURL:  fmt.Sprintf("%s/api/auth/callback", cfg.BaseURL),
 		}
 	} else {
-		log.Println("ℹ GitHub OAuth not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET to enable.")
+		logger := qlog.NewDefault()
+		logger.Info("github oauth not configured", "hint", "set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET to enable")
 	}
 
 	return svc
@@ -256,12 +257,14 @@ func (s *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (s
 }
 
 func (s *AuthService) findOrCreateUser(ctx context.Context, ghUser *GitHubUser, token *oauth2.Token) (*models.User, error) {
+	logger := qlog.NewDefault()
+	
 	// Fetch Installation ID using the App JWT
 	installationID, err := s.getInstallationID(ctx, ghUser.Login)
 	if err != nil {
 		// Log error but don't fail login? Or fail?
 		// For now, let's log and proceed with 0 if not found (user might not have installed app yet)
-		log.Printf("⚠ Failed to get installation ID for user %s: %v", ghUser.Login, err)
+		logger.Warn("failed to get installation ID", "user", ghUser.Login, "error", err)
 	}
 
 	var user models.User

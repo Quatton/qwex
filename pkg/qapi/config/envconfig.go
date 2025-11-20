@@ -2,13 +2,13 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/quatton/qwex/pkg/qapi/utils"
+	"github.com/quatton/qwex/pkg/qlog"
 )
 
 type EnvConfig struct {
@@ -35,11 +35,13 @@ type EnvConfig struct {
 }
 
 func ValidateEnv() (*EnvConfig, error) {
+	logger := qlog.NewDefault()
+	
 	if utils.IsDev() {
 		if err := godotenv.Load(); err != nil {
-			log.Println("ℹ No .env file found")
+			logger.Info("no .env file found")
 		} else {
-			log.Println("✓ Loaded .env file")
+			logger.Info("loaded .env file")
 		}
 	}
 

@@ -5,12 +5,14 @@ import (
 	"fmt"
 
 	"github.com/quatton/qwex/pkg/db/migrations"
+	"github.com/quatton/qwex/pkg/qlog"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/migrate"
 )
 
 // Migrate runs the database migrations.
 func Migrate(ctx context.Context, db *bun.DB) error {
+	logger := qlog.NewDefault()
 	migrator := migrate.NewMigrator(db, migrations.Migrations)
 
 	// Initialize the migration tables if they don't exist
@@ -25,10 +27,10 @@ func Migrate(ctx context.Context, db *bun.DB) error {
 	}
 
 	if group.ID == 0 {
-		fmt.Println("Database is up to date")
+		logger.Info("database is up to date")
 		return nil
 	}
 
-	fmt.Printf("Migrated to %s\n", group)
+	logger.Info("migrated", "group", group.String())
 	return nil
 }
