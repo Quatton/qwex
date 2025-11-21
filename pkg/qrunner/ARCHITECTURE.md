@@ -128,6 +128,27 @@ Common patterns:
 - Timestamp handling (CreatedAt, StartedAt, FinishedAt)
 - Run state persistence (run.json)
 
+## Runner vs Watcher: Backend Comparison
+
+This table clarifies how responsibilities are divided across different backends.
+
+| Feature                                 | Local Backend                                     | Docker Backend                              | K8s / Kueue Backend                     |
+| :-------------------------------------- | :------------------------------------------------ | :------------------------------------------ | :-------------------------------------- |
+| **Runner Action**<br>(`Submit`)         | Spawns `exec.Cmd`<br>(detached process)           | Calls Docker API<br>(`ContainerCreate`)     | Calls K8s API<br>(`Job` resource)       |
+| **State Source**                        | Filesystem<br>(`.qwex/runs/<id>/run.json`)        | Docker Daemon<br>(`ContainerInspect`)       | K8s API Server<br>(`Job` Status)        |
+| **Watcher Action**<br>(`Wait`/`Stream`) | Polls `run.json` & PID<br>Tails `stdout.log` file | Polls Docker API<br>Streams `ContainerLogs` | Watches K8s Events<br>Streams `PodLogs` |
+| **Persistence**                         | Local Disk                                        | Docker Storage                              | etcd (via K8s)                          |
+| **Primary User**                        | `qwexctl` (CLI)                                   | `qwexctl` (CLI)                             | `qwexctl` (CLI) & `qwexcloud`           |
+
+### Usage Patterns
+
+1.  **qwexctl (CLI):**
+    *   Uses **Runner** to submit jobs (fire-and-forget).
+    *   Uses **Watcher** to attach to running jobs (local or remote).
+2.  **qwexcloud (Server):**
+    *   Uses **Watcher** (K8s backend) to observe cluster state and update its own database.
+    *   *Does not usually use Runner* (unless it's orchestrating jobs itself).
+
 ## Architecture Decision: Watcher vs Daemon
 
 ### Why Watcher (Chosen)
@@ -157,6 +178,31 @@ qwexctl → HTTP API → qwexcloud microservice
                    → Submits Jobs/Pods
 ```
 No need for separate daemon - K8s API server fills that role.
+
+## Strategic Decision: Direct vs. Mediated Access
+
+You might ask: **"Why do we need qwexcloud if qwexctl can talk to K8s directly?"**
+
+### 1. Direct Access (The "kubectl" Model)
+*   **How it works:** `qwexctl` uses `~/.kube/config` to talk directly to the K8s API.
+*   **Pros:** Simple, no server to maintain, great for small teams/admins.
+*   **Cons:**
+    *   **Credentials:** Every user needs a K8s ServiceAccount/Certificate.
+    *   **History:** When K8s deletes the Pod (Garbage Collection), the run history is GONE.
+    *   **Complexity:** Users need to understand K8s concepts (namespaces, quotas).
+
+### 2. Mediated Access (The "qwexcloud" Model)
+*   **How it works:** `qwexctl` talks to `qwexcloud` (REST/gRPC), which talks to K8s.
+*   **Pros:**
+    *   **Persistence:** `qwexcloud` stores run history in SQL forever, even after Pods are deleted.
+    *   **Abstraction:** Users just need a `qwex` token, not K8s credentials.
+    *   **Multi-Cluster:** One `qwexcloud` can dispatch to 10 different K8s clusters transparently.
+    *   **Webhooks:** Can trigger Slack/Email notifications on completion (K8s can't do this easily).
+*   **Cons:** More infrastructure to maintain.
+
+**Verdict:**
+*   **MVP:** Start with **Direct Access** (using `pkg/k8s` in CLI).
+*   **Production:** Use **Mediated Access** (`qwexcloud`) for teams, history, and security.
 
 ## Current Implementation Status
 

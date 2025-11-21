@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/quatton/qwex/pkg/k8s"
-	"github.com/quatton/qwex/pkg/qapi/services/jobs"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -24,7 +23,7 @@ import (
 //
 // Current implementation runs commands directly without wrapping.
 type K8sRunner struct {
-	jobManager *jobs.JobManager
+	jobManager *k8s.JobManager
 	namespace  string
 	queueName  string
 	image      string
@@ -38,7 +37,7 @@ func NewK8sRunner(namespace, queueName, image string) (*K8sRunner, error) {
 	}
 
 	return &K8sRunner{
-		jobManager: jobs.NewJobManager(client, namespace),
+		jobManager: k8s.NewJobManager(client, namespace),
 		namespace:  namespace,
 		queueName:  queueName,
 		image:      image,
@@ -64,8 +63,8 @@ func (r *K8sRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: jobName,
 			Labels: map[string]string{
-				jobs.KueueQueueLabel: r.queueName,
-				"qwex.run-id":        runID,
+				k8s.KueueQueueLabel: r.queueName,
+				"qwex.run-id":       runID,
 			},
 		},
 		Spec: batchv1.JobSpec{
