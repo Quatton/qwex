@@ -1,6 +1,7 @@
 package services
 
 import (
+	"github.com/quatton/qwex/pkg/kv"
 	"github.com/quatton/qwex/pkg/qapi/config"
 	"github.com/quatton/qwex/pkg/qapi/services/authconfig"
 	"github.com/quatton/qwex/pkg/qapi/services/iam"
@@ -14,8 +15,8 @@ type Services struct {
 	JobRunner qrunner.Runner
 }
 
-func NewServices(cfg *config.EnvConfig, db *bun.DB) (*Services, error) {
-	authSvc := authconfig.NewAuthService(cfg, db)
+func NewServices(cfg *config.EnvConfig, db *bun.DB, kvStore kv.Store) (*Services, error) {
+	authSvc := authconfig.NewAuthService(cfg, db, kvStore)
 	iamSvc := iam.NewIAMService(authSvc)
 
 	// Create Kubernetes runner

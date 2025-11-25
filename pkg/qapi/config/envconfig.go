@@ -20,7 +20,7 @@ type EnvConfig struct {
 	GitHubClientID      string `envconfig:"GITHUB_CLIENT_ID"`
 	GitHubClientSecret  string `envconfig:"GITHUB_CLIENT_SECRET"`
 	Environment         string `envconfig:"ENVIRONMENT" default:"development"`
-	AccessTokenTTL      int    `envconfig:"ACCESS_TOKEN_TTL" default:"3600"`
+	AccessTokenTTL      int    `envconfig:"ACCESS_TOKEN_TTL" default:"900"`
 	DBHost              string `envconfig:"DB_HOST" default:"localhost"`
 	DBPort              int    `envconfig:"DB_PORT" default:"5432"`
 	DBUser              string `envconfig:"DB_USER" default:"qwex"`
@@ -28,10 +28,16 @@ type EnvConfig struct {
 	DBName              string `envconfig:"DB_NAME" default:"qwex"`
 	DBSSLMode           string `envconfig:"DB_SSLMODE" default:"disable"`
 	RefreshTokenTTL     int    `envconfig:"REFRESH_TOKEN_TTL" default:"2592000"` // 30 days
+	// Valkey/Redis configuration
+	ValkeyAddr     string `envconfig:"VALKEY_ADDR" default:"localhost:6379"`
+	ValkeyPassword string `envconfig:"VALKEY_PASSWORD" default:""`
+	ValkeyDB       int    `envconfig:"VALKEY_DB" default:"0"`
 	// Kubernetes configuration
 	K8sNamespace string `envconfig:"K8S_NAMESPACE" default:"default"`
 	K8sQueue     string `envconfig:"K8S_QUEUE" default:"user-queue"`
 	K8sImage     string `envconfig:"K8S_IMAGE" default:"python:3.11-slim"`
+	// Allowed redirect URIs (comma-separated prefixes)
+	AllowedRedirects string `envconfig:"ALLOWED_REDIRECTS" default:"http://localhost"`
 }
 
 func ValidateEnv() (*EnvConfig, error) {
@@ -92,7 +98,10 @@ func (c *EnvConfig) Print(fmtr func(string, ...interface{})) {
 	fmtr("  Base URL: %s\n", c.BaseURL)
 	fmtr("  Auth Secret: %s\n", MaskSecret(c.AuthSecret))
 	fmtr("  Database: %s@%s:%d/%s (sslmode=%s)\n", c.DBUser, c.DBHost, c.DBPort, c.DBName, c.DBSSLMode)
-	fmtr("  Refresh TTL: %ds\n", c.RefreshTokenTTL)
+	fmtr("  Valkey: %s (db=%d)\n", c.ValkeyAddr, c.ValkeyDB)
+	fmtr("  Access Token TTL: %ds\n", c.AccessTokenTTL)
+	fmtr("  Refresh Token TTL: %ds\n", c.RefreshTokenTTL)
+	fmtr("  Allowed Redirects: %s\n", c.AllowedRedirects)
 
 	if c.GitHubAppID != 0 {
 		fmtr("  GitHub App: ✓ Enabled (ID: %d)\n", c.GitHubAppID)

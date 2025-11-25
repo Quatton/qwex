@@ -20,6 +20,7 @@ type UserClaims struct {
 	GithubID    string
 	GithubLogin string
 	Iss         string
+	Aud         string
 	Iat         int64
 	Exp         int64
 }
@@ -112,6 +113,10 @@ func FromMapClaims(mc jwt.MapClaims) (*UserClaims, error) {
 		uc.GithubLogin = gl
 	}
 
+	if aud, ok := mc["aud"].(string); ok {
+		uc.Aud = aud
+	}
+
 	return uc, nil
 }
 
@@ -147,6 +152,9 @@ func ToClaims(uc *UserClaims) jwt.MapClaims {
 	}
 	if uc.Exp != 0 {
 		mc["exp"] = uc.Exp
+	}
+	if uc.Aud != "" {
+		mc["aud"] = uc.Aud
 	}
 	return mc
 }

@@ -11,6 +11,19 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  valkey:
+    image: valkey/valkey:8-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # minio:
   #   image: minio/minio
   #   command: server /data --console-address ":9001"
@@ -26,4 +39,5 @@ services:
 
 volumes:
   postgres_data:
+  valkey_data:
   minio_data:

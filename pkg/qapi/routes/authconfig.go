@@ -56,8 +56,11 @@ func RegisterAuthConfig(api huma.API, svc *authconfig.AuthService) {
 			return nil, huma.Error400BadRequest("redirect_uri is required")
 		}
 
-		state, err := svc.GenerateState(input.Provider, input.RedirectURI, input.IncludeToken)
+		state, err := svc.GenerateState(ctx, input.Provider, input.RedirectURI, input.IncludeToken)
 		if err != nil {
+			if errors.Is(err, authconfig.ErrRedirectNotAllowed) {
+				return nil, huma.Error400BadRequest("redirect_uri is not in the allowlist")
+			}
 			return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to generate state: %v", err))
 		}
 		authorizeURL := svc.GetAuthorizeURL(state)
@@ -82,8 +85,11 @@ func RegisterAuthConfig(api huma.API, svc *authconfig.AuthService) {
 		Tags:        []string{TagIam.String()},
 	}, func(ctx context.Context, input *CallbackInput) (*CallbackOutput, error) {
 		// Validate state
-		claims, err := svc.ValidateState(input.State)
+		claims, err := svc.ValidateState(ctx, input.State)
 		if err != nil {
+			if errors.Is(err, authconfig.ErrStateAlreadyUsed) {
+				return nil, huma.Error400BadRequest("state token has already been used")
+			}
 			return nil, huma.Error400BadRequest("invalid or expired state parameter")
 		}
 

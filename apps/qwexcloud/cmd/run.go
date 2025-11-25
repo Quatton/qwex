@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/quatton/qwex/pkg/db"
+	"github.com/quatton/qwex/pkg/kv"
 	"github.com/quatton/qwex/pkg/qapi"
 	"github.com/quatton/qwex/pkg/qapi/config"
 	"github.com/quatton/qwex/pkg/qapi/routes"
@@ -60,7 +61,18 @@ func run(cmd *cobra.Command, args []string) {
 	}
 	defer database.Close()
 
-	svcs, err := services.NewServices(cfg, database)
+	// Initialize Valkey/Redis KV store
+	kvStore, err := kv.NewValkeyStore(kv.ValkeyConfig{
+		Addr:     cfg.ValkeyAddr,
+		Password: cfg.ValkeyPassword,
+		DB:       cfg.ValkeyDB,
+	})
+	if err != nil {
+		logger.Fatal("failed to initialize valkey", "error", err)
+	}
+	defer kvStore.Close()
+
+	svcs, err := services.NewServices(cfg, database, kvStore)
 	if err != nil {
 		logger.Fatal("failed to initialize services", "error", err)
 	}

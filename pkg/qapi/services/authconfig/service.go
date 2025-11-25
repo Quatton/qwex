@@ -11,11 +11,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"github.com/quatton/qwex/pkg/db/models"
+	"github.com/quatton/qwex/pkg/kv"
 	"github.com/quatton/qwex/pkg/qapi/config"
 	"github.com/quatton/qwex/pkg/qapi/schemas"
 	"github.com/quatton/qwex/pkg/qauth"
@@ -25,16 +27,27 @@ import (
 	"golang.org/x/oauth2/github"
 )
 
+const (
+	// TokenAudience is the expected audience claim for access tokens.
+	TokenAudience = "qwex"
+
+	// Key prefixes for KV store
+	kvPrefixState   = "auth:state:"
+	kvPrefixRefresh = "auth:refresh:"
+)
+
 // AuthService encapsulates OAuth provider configuration and methods for
 // generating and validating the small JWTs used by the system (state tokens
 // and access tokens). It intentionally keeps provider details internal so
 // callers work with simple method calls.
 type AuthService struct {
-	cfg          *config.EnvConfig
-	githubConfig *oauth2.Config
-	jwtSecret    []byte
-	db           *bun.DB
-	refreshTTL   time.Duration
+	cfg              *config.EnvConfig
+	githubConfig     *oauth2.Config
+	jwtSecret        []byte
+	db               *bun.DB
+	kv               kv.Store
+	refreshTTL       time.Duration
+	allowedRedirects []string
 }
 
 func (s *AuthService) DB() *bun.DB {
@@ -49,6 +62,7 @@ type StateClaims struct {
 	Provider     string `json:"provider"`
 	RedirectURI  string `json:"redirect_uri"`
 	IncludeToken bool   `json:"include_token"`
+	StateID      string `json:"state_id"`
 	jwt.RegisteredClaims
 }
 
@@ -67,12 +81,20 @@ type GitHubUser struct {
 // client credentials are present the service will be able to perform the
 // OAuth code flow; otherwise methods that require provider access will
 // return errors.
-func NewAuthService(cfg *config.EnvConfig, dbClient *bun.DB) *AuthService {
+func NewAuthService(cfg *config.EnvConfig, dbClient *bun.DB, kvStore kv.Store) *AuthService {
 	svc := &AuthService{
 		cfg:        cfg,
 		jwtSecret:  []byte(cfg.AuthSecret),
 		db:         dbClient,
+		kv:         kvStore,
 		refreshTTL: time.Duration(cfg.RefreshTokenTTL) * time.Second,
+	}
+
+	if cfg.AllowedRedirects != "" {
+		svc.allowedRedirects = strings.Split(cfg.AllowedRedirects, ",")
+		for i := range svc.allowedRedirects {
+			svc.allowedRedirects[i] = strings.TrimSpace(svc.allowedRedirects[i])
+		}
 	}
 
 	if cfg.GitHubClientID != "" && cfg.GitHubClientSecret != "" {
@@ -96,20 +118,57 @@ func (s *AuthService) AccessTokenTTL() int {
 }
 
 var ErrInvalidRefreshToken = errors.New("invalid refresh token")
+var ErrStateAlreadyUsed = errors.New("state token already used")
+var ErrRedirectNotAllowed = errors.New("redirect URI not allowed")
+
+// IsAllowedRedirect checks if the given URI is in the allowlist.
+func (s *AuthService) IsAllowedRedirect(uri string) bool {
+	if len(s.allowedRedirects) == 0 {
+		return false
+	}
+
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		return false
+	}
+
+	// Reconstruct the origin (scheme + host)
+	origin := fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+
+	for _, allowed := range s.allowedRedirects {
+		if strings.HasPrefix(origin, allowed) || strings.HasPrefix(uri, allowed) {
+			return true
+		}
+	}
+	return false
+}
 
 // GenerateState builds a signed, short-lived JWT to be used as the OAuth
 // `state` parameter. The returned token encodes where the user should be
 // redirected after auth and whether the server should include the issued
 // application token in that redirect. TTL is derived from the service's
 // AccessTokenTTL configuration.
+//
+// The state token is stored in KV for single-use validation.
 func (s *AuthService) GenerateState(
+	ctx context.Context,
 	provider string,
 	redirectURI string,
 	includeToken bool) (string, error) {
+
+	// Validate redirect URI against allowlist
+	if !s.IsAllowedRedirect(redirectURI) {
+		return "", ErrRedirectNotAllowed
+	}
+
+	// Generate a unique state ID
+	stateID := generateRandomString(32)
+
 	claims := StateClaims{
 		Provider:     provider,
 		RedirectURI:  redirectURI,
 		IncludeToken: includeToken,
+		StateID:      stateID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:   "qwex",
 			IssuedAt: jwt.NewNumericDate(time.Now()),
@@ -120,13 +179,28 @@ func (s *AuthService) GenerateState(
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(s.jwtSecret)
+	signedToken, err := token.SignedString(s.jwtSecret)
+	if err != nil {
+		return "", err
+	}
+
+	// Store state ID in KV for single-use validation
+	// Value is "1" (exists marker), TTL matches token expiry
+	ttl := time.Duration(s.cfg.AccessTokenTTL) * time.Second
+	if err := s.kv.Set(ctx, kvPrefixState+stateID, []byte("1"), ttl); err != nil {
+		return "", fmt.Errorf("failed to store state: %w", err)
+	}
+
+	return signedToken, nil
 }
 
 // ValidateState verifies the HMAC signature and expiry of a state token and
 // returns the decoded StateClaims. It enforces HMAC signing method to avoid
 // algorithm confusion attacks.
-func (s *AuthService) ValidateState(state string) (*StateClaims, error) {
+//
+// This method also validates single-use: the state is deleted from KV after
+// successful validation. If the state was already used, returns an error.
+func (s *AuthService) ValidateState(ctx context.Context, state string) (*StateClaims, error) {
 	parsed, err := jwt.ParseWithClaims(state, &StateClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -138,11 +212,28 @@ func (s *AuthService) ValidateState(state string) (*StateClaims, error) {
 		return nil, err
 	}
 
-	if claims, ok := parsed.Claims.(*StateClaims); ok && parsed.Valid {
-		return claims, nil
+	claims, ok := parsed.Claims.(*StateClaims)
+	if !ok || !parsed.Valid {
+		return nil, errors.New("invalid state token")
 	}
 
-	return nil, errors.New("invalid state token")
+	// Check single-use: state must exist in KV
+	_, err = s.kv.Get(ctx, kvPrefixState+claims.StateID)
+	if err != nil {
+		if errors.Is(err, kv.ErrNotFound) {
+			return nil, ErrStateAlreadyUsed
+		}
+		return nil, fmt.Errorf("failed to validate state: %w", err)
+	}
+
+	// Delete state to prevent reuse
+	if err := s.kv.Delete(ctx, kvPrefixState+claims.StateID); err != nil {
+		// Log but don't fail - the state was valid
+		logger := qlog.NewDefault()
+		logger.Warn("failed to delete state after use", "error", err)
+	}
+
+	return claims, nil
 }
 
 // GetAuthorizeURL returns the provider-specific authorize URL for a signed
@@ -202,6 +293,7 @@ func (s *AuthService) IssueToken(user *schemas.User, githubID, githubLogin strin
 		GithubID:    githubID,
 		GithubLogin: githubLogin,
 		Iss:         "qwex",
+		Aud:         TokenAudience,
 		Iat:         time.Now().Unix(),
 		Exp:         time.Now().Add(time.Duration(s.cfg.AccessTokenTTL) * time.Second).Unix(),
 	}
@@ -229,21 +321,28 @@ func (s *AuthService) IssueTokensWithRefresh(ctx context.Context, user *schemas.
 }
 
 func (s *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (string, string, error) {
-	stored, err := s.verifyRefreshToken(ctx, refreshToken)
+	// Verify the refresh token and get the user ID
+	userID, err := s.verifyRefreshToken(ctx, refreshToken)
 	if err != nil {
 		return "", "", err
 	}
 
-	if err := s.deleteRefreshToken(ctx, stored.ID); err != nil {
-		return "", "", err
+	// Delete the old refresh token (token rotation)
+	hash := hashToken(refreshToken)
+	if err := s.deleteRefreshTokenByHash(ctx, hash); err != nil {
+		// Log but don't fail - the token was valid
+		logger := qlog.NewDefault()
+		logger.Warn("failed to delete old refresh token", "error", err)
 	}
 
-	user := stored.User
-	if user == nil {
-		if err := s.db.NewSelect().Model(stored).Relation("User").WherePK().Scan(ctx); err != nil {
-			return "", "", err
-		}
-		user = stored.User
+	// Fetch the user from DB
+	var user models.User
+	err = s.db.NewSelect().
+		Model(&user).
+		Where("id = ?", userID).
+		Scan(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to fetch user: %w", err)
 	}
 
 	schemaUser := &schemas.User{
@@ -421,6 +520,17 @@ func (s *AuthService) GetInstallationToken(ctx context.Context, installationID i
 	return tokenResp.Token, nil
 }
 
+// generateRandomString generates a cryptographically secure random string
+// of the specified length using base64url encoding.
+func generateRandomString(length int) string {
+	buf := make([]byte, length)
+	if _, err := rand.Read(buf); err != nil {
+		// This should never fail in practice
+		panic(fmt.Sprintf("crypto/rand failed: %v", err))
+	}
+	return base64.RawURLEncoding.EncodeToString(buf)[:length]
+}
+
 func (s *AuthService) createRefreshToken(ctx context.Context, userID string) (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
@@ -430,44 +540,34 @@ func (s *AuthService) createRefreshToken(ctx context.Context, userID string) (st
 	return raw, s.storeRefreshToken(ctx, userID, raw)
 }
 
+// storeRefreshToken stores the refresh token in KV with the user ID as value.
+// The token hash is used as the key for secure lookup.
 func (s *AuthService) storeRefreshToken(ctx context.Context, userID, token string) error {
 	hash := hashToken(token)
-	expires := time.Now().Add(s.refreshTTL)
-	model := models.RefreshToken{TokenHash: hash, ExpiresAt: expires}
-	uid, err := uuid.Parse(userID)
-	if err != nil {
-		return err
-	}
-	model.UserID = uid
-
-	_, err = s.db.NewInsert().Model(&model).Exec(ctx)
-	return err
+	key := kvPrefixRefresh + hash
+	return s.kv.Set(ctx, key, []byte(userID), s.refreshTTL)
 }
 
-func (s *AuthService) deleteRefreshToken(ctx context.Context, id uuid.UUID) error {
-	_, err := s.db.NewDelete().
-		Model((*models.RefreshToken)(nil)).
-		Where("id = ?", id).
-		Exec(ctx)
-	return err
+// deleteRefreshTokenByHash removes a refresh token from KV by its hash.
+func (s *AuthService) deleteRefreshTokenByHash(ctx context.Context, tokenHash string) error {
+	return s.kv.Delete(ctx, kvPrefixRefresh+tokenHash)
 }
 
-func (s *AuthService) verifyRefreshToken(ctx context.Context, token string) (*models.RefreshToken, error) {
+// verifyRefreshToken validates a refresh token and returns the associated user ID.
+// Returns ErrInvalidRefreshToken if the token doesn't exist or has expired.
+func (s *AuthService) verifyRefreshToken(ctx context.Context, token string) (string, error) {
 	hash := hashToken(token)
-	var stored models.RefreshToken
-	err := s.db.NewSelect().
-		Model(&stored).
-		Where("token_hash = ?", hash).
-		Where("expires_at > ?", time.Now()).
-		Relation("User").
-		Scan(ctx)
+	key := kvPrefixRefresh + hash
+
+	data, err := s.kv.Get(ctx, key)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrInvalidRefreshToken
+		if errors.Is(err, kv.ErrNotFound) {
+			return "", ErrInvalidRefreshToken
 		}
-		return nil, err
+		return "", err
 	}
-	return &stored, nil
+
+	return string(data), nil
 }
 
 func hashToken(token string) string {
@@ -477,7 +577,8 @@ func hashToken(token string) string {
 
 // ValidateToken verifies an application JWT and returns a minimal `schemas.User`.
 // This is a convenience for internal services that only need the user's id/login
-// and email/name. It enforces HMAC signing and will error on tampering or expiry.
+// and email/name. It enforces HMAC signing, validates the audience claim,
+// and will error on tampering or expiry.
 func (s *AuthService) ValidateToken(tokenString string) (*schemas.User, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -496,6 +597,11 @@ func (s *AuthService) ValidateToken(tokenString string) (*schemas.User, error) {
 		uc, err := qauth.FromMapClaims(claims)
 		if err != nil {
 			return nil, err
+		}
+
+		// Validate audience claim
+		if uc.Aud != TokenAudience {
+			return nil, fmt.Errorf("invalid audience: expected %q, got %q", TokenAudience, uc.Aud)
 		}
 
 		user := &schemas.User{

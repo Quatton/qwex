@@ -16,22 +16,11 @@ type User struct {
 	Name       string    `bun:",nullzero"`
 	Provider   string    `bun:",notnull"`
 	ProviderID string    `bun:",notnull"`
-	
+
 	GithubInstallationID int64 `bun:",nullzero"`
 
-	CreatedAt  time.Time `bun:",nullzero,notnull,default:current_timestamp"`
-	UpdatedAt  time.Time `bun:",nullzero,notnull,default:current_timestamp"`
-}
-
-type RefreshToken struct {
-	bun.BaseModel `bun:"table:auth.refresh_tokens,alias:rt"`
-
-	ID        uuid.UUID `bun:"type:uuid,default:gen_random_uuid(),pk"`
-	UserID    uuid.UUID `bun:"type:uuid,notnull"`
-	TokenHash string    `bun:",notnull"`
-	ExpiresAt time.Time `bun:",notnull"`
 	CreatedAt time.Time `bun:",nullzero,notnull,default:current_timestamp"`
-
-	// Relations
-	User *User `bun:"rel:belongs-to,join:user_id=id"`
+	UpdatedAt time.Time `bun:",nullzero,notnull,default:current_timestamp"`
 }
+
+// Note: RefreshToken is now stored in Valkey (pkg/kv), not in the database.

@@ -27,26 +27,13 @@ func init() {
 			return err
 		}
 
-		// Create refresh_tokens table from struct
-		_, err = db.NewCreateTable().
-			Model((*models.RefreshToken)(nil)).
-			IfNotExists().
-			ForeignKey(`("user_id") REFERENCES auth.users ("id") ON DELETE CASCADE`).
-			Exec(ctx)
-		if err != nil {
-			return err
-		}
+		// Note: refresh_tokens are now stored in Valkey, not in the database
 
 		return nil
 	}, func(ctx context.Context, db *bun.DB) error {
 		fmt.Print(" [down migration] ")
 
-		_, err := db.NewDropTable().Model((*models.RefreshToken)(nil)).IfExists().Exec(ctx)
-		if err != nil {
-			return err
-		}
-
-		_, err = db.NewDropTable().Model((*models.User)(nil)).IfExists().Exec(ctx)
+		_, err := db.NewDropTable().Model((*models.User)(nil)).IfExists().Exec(ctx)
 		if err != nil {
 			return err
 		}
