@@ -258,3 +258,288 @@ out/
 3. Implement QwexCloudRunner with API submission
 4. Add CLI commands: `qwex run`, `qwex artifacts`, `qwex status`
 5. Add tests for both runners
+
+## Week 9: Nov 26, 2025
+
+### Qwex Protocol (QWP) v1.0
+
+After extensive design discussions, we're introducing the **Qwex Protocol (QWP)** — an open protocol for ML run orchestration. The goal is to make qwex a protocol, not just a tool.
+
+#### Design Philosophy
+
+- **Open protocol, flexible implementation**: Protocol is OSS, servers implement it however they want
+- **No lock-in**: Your code doesn't know qwex exists. Remove `qwex run`, scripts still work
+- **Coexists with W&B/MLflow**: qwex handles execution, they handle tracking
+
+#### Protocol Manifest
+
+Every qwex-compatible server exposes `/.well-known/qwex.json`:
+
+```json
+{
+  "qwex": "1.0",
+  
+  "server": {
+    "name": "string",
+    "version": "string",
+    "docs": "string (optional)"
+  },
+  
+  "api": {
+    "versions": ["v1"],
+    "base": "/api"
+  },
+  
+  "auth": {
+    "type": "oauth2 | api-key | local | none",
+    "spec": { }
+  },
+  
+  "features": {
+    "source": { },
+    "artifacts": { },
+    "runs": { }
+  }
+}
+```
+
+#### Auth Types
+
+```json
+// api-key (v1 focus)
+"auth": {
+  "type": "api-key",
+  "spec": {
+    "header": "X-API-Key"
+  }
+}
+
+// local (for qwex-local daemon)
+"auth": {
+  "type": "local",
+  "spec": {
+    "keyFile": "~/.qwex/local-api-key"
+  }
+}
+
+// oauth2 (future)
+"auth": {
+  "type": "oauth2",
+  "spec": {
+    "provider": "github",
+    "authUrl": "/auth/login",
+    "tokenUrl": "/auth/token"
+  }
+}
+```
+
+#### Features (Behavior Flags)
+
+Features don't change API shape, they change behavior:
+
+```json
+"features": {
+  "source": {
+    "transfer": "presigned-upload | mount",
+    "format": "git-bundle | tar | worktree",
+    "maxSize": 104857600,
+    "requireClean": true
+  },
+  
+  "artifacts": {
+    "enabled": true,
+    "autoUpload": true,
+    "patterns": ["*.pt", "*.onnx", "outputs/**"],
+    "maxSize": 1073741824
+  },
+  
+  "runs": {
+    "wait": true,
+    "cancel": true,
+    "logs": true,
+    "backends": ["local", "docker", "kueue"]
+  }
+}
+```
+
+#### Fixed API Routes (v1)
+
+| Method   | Route                                      | Description                         |
+| -------- | ------------------------------------------ | ----------------------------------- |
+| `POST`   | `{base}/v1/source/upload-url`              | Get presigned URL for source upload |
+| `POST`   | `{base}/v1/runs`                           | Submit run                          |
+| `GET`    | `{base}/v1/runs`                           | List runs                           |
+| `GET`    | `{base}/v1/runs/{id}`                      | Get run                             |
+| `DELETE` | `{base}/v1/runs/{id}`                      | Cancel run                          |
+| `GET`    | `{base}/v1/runs/{id}/logs`                 | Get logs                            |
+| `GET`    | `{base}/v1/runs/{id}/wait`                 | Wait for completion                 |
+| `GET`    | `{base}/v1/runs/{id}/artifacts`            | List artifacts                      |
+| `GET`    | `{base}/v1/runs/{id}/artifacts/{name}/url` | Get artifact download URL           |
+| `POST`   | `{base}/v1/runs/{id}/artifacts/upload-url` | Get artifact upload URL             |
+
+#### Source Code Transfer
+
+**Problem**: How does remote execution get your code?
+
+**Solution**: Git bundle approach (strict mode)
+- Must commit before run (enforces reproducibility)
+- Client creates git bundle of committed code
+- Bundle uploaded to S3 (for remote) or worktree created (for local)
+- Every run tied to exact git SHA
+
+**Local runs**: Git worktree (instant, no network)
+```bash
+git worktree add /tmp/qwex-runs/<run-id> <sha> --detach
+# Container mounts this directory
+# After run: git worktree remove ...
+```
+
+**Remote runs**: Git bundle + S3
+```bash
+git bundle create /tmp/repo.bundle --all
+# Upload to s3://qwex/source/<run-id>/repo.bundle
+# Container clones from bundle
+```
+
+**Benefits**:
+- No GitHub token needed (bundle contains everything)
+- Perfect reproducibility (exact SHA)
+- `qwex checkout <run-id>` can recreate exact state
+- Your working dir stays untouched while run executes
+
+#### Example Manifests
+
+**qwexcloud (production)**:
+```json
+{
+  "qwex": "1.0",
+  "server": { "name": "qwexcloud", "version": "1.0.0" },
+  "api": { "versions": ["v1"], "base": "/api" },
+  "auth": { "type": "api-key", "spec": { "header": "X-API-Key" } },
+  "features": {
+    "source": {
+      "transfer": "presigned-upload",
+      "format": "git-bundle",
+      "maxSize": 104857600,
+      "requireClean": true
+    },
+    "artifacts": {
+      "enabled": true,
+      "autoUpload": true,
+      "patterns": ["*.pt", "outputs/**"]
+    },
+    "runs": {
+      "wait": true,
+      "cancel": true,
+      "logs": true,
+      "backends": ["kueue"]
+    }
+  }
+}
+```
+
+**qwex-local (development)**:
+```json
+{
+  "qwex": "1.0",
+  "server": { "name": "qwex-local", "version": "1.0.0" },
+  "api": { "versions": ["v1"], "base": "/api" },
+  "auth": { "type": "local", "spec": { "keyFile": "~/.qwex/local-api-key" } },
+  "features": {
+    "source": {
+      "transfer": "mount",
+      "format": "worktree",
+      "requireClean": true
+    },
+    "artifacts": { "enabled": false },
+    "runs": {
+      "wait": true,
+      "cancel": true,
+      "logs": true,
+      "backends": ["local", "docker"]
+    }
+  }
+}
+```
+
+#### Request/Response Types (v1)
+
+```yaml
+# POST /v1/source/upload-url
+SourceUploadUrlRequest:
+  sha: string
+  size: integer
+
+SourceUploadUrlResponse:
+  url: string
+  key: string
+  expires: integer
+
+# POST /v1/runs
+SubmitRunRequest:
+  name: string (optional)
+  command: string
+  args: string[]
+  env: map[string]string
+  source:
+    sha: string
+    key: string
+  backend: string (optional)
+
+RunResponse:
+  id: string
+  name: string
+  status: "pending" | "running" | "succeeded" | "failed" | "cancelled"
+  command: string
+  args: string[]
+  createdAt: string (RFC3339)
+  startedAt: string (optional)
+  finishedAt: string (optional)
+  exitCode: integer (optional)
+  backend: string
+  source:
+    sha: string
+  artifacts: Artifact[]
+
+LogsResponse:
+  stdout: string
+  stderr: string
+
+ArtifactUrlResponse:
+  url: string
+  expires: integer
+```
+
+#### Implementation Plan
+
+**Phase 1: Protocol Foundation**
+1. Create `docs/protocol/qwp-v1.md` — Full spec
+2. Create `pkg/qwp/` — Go types for manifest + requests/responses
+3. Create `api/qwp/openapi.yaml` — OpenAPI spec for v1 routes
+
+**Phase 2: qwex-local Server**
+4. Create local server implementing QWP v1
+   - Auth: api-key (simple header check)
+   - Source: mount (git worktree)
+   - Runs: local + docker backends
+   - Artifacts: disabled initially
+
+**Phase 3: qwexctl Refactor**
+5. Create `pkg/qwp/client.go` — Protocol client
+6. Refactor qwexctl to use qwp client
+   - `qwexctl init <server>` — Register server
+   - `qwexctl run` — Use protocol
+
+**Phase 4: qwexcloud Alignment**
+7. Update qwexcloud to implement QWP v1
+   - Add `/.well-known/qwex.json`
+   - Align routes to spec
+   - Add source upload endpoint
+
+#### Key Decisions
+
+- **API versioning**: Bump entire API to v2 if any breaking change (like k8s, Stripe)
+- **Auth for v1**: api-key only (simplest, unblocks everything)
+- **Source naming**: "source" instead of "code" (more general)
+- **Features are flags**: They change behavior, not API shape
+- **Fixed routes**: No OpenAPI mapping complexity — we own the spec
