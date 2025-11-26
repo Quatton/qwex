@@ -1,10 +1,10 @@
 [project]
 name = "qwex"
 version = "0.1.0"
-description = "Queue-based Workload EXecution"
+description = "Queued Workspace-aware EXecution"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
 
 [tool.uv.workspace]
-members = []
+members = ["src/qwp", "apps/qwexcli"]
