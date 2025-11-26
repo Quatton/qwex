@@ -103,7 +103,7 @@ Examples:
 		switch backend {
 		case "local":
 			// Create local runner with base directory set to the spec's working directory
-			runner = qrunner.NewLocalRunnerWithBaseDir(spec.WorkingDir)
+			runner = qrunner.NewLocalRunner(qrunner.WithBaseDir(spec.WorkingDir))
 
 		case "docker":
 			// Create Docker runner with image from config

@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"io"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -71,6 +72,12 @@ func (jm *JobManager) GetPodLogs(ctx context.Context, podName string) (string, e
 	}
 
 	return string((*buf)[:n]), nil
+}
+
+// GetPodLogsReader retrieves logs from a pod as an io.ReadCloser
+func (jm *JobManager) GetPodLogsReader(ctx context.Context, podName string) (io.ReadCloser, error) {
+	req := jm.client.CoreV1().Pods(jm.namespace).GetLogs(podName, &corev1.PodLogOptions{})
+	return req.Stream(ctx)
 }
 
 // GetJobPods returns all pods for a given job

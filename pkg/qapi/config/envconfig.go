@@ -32,10 +32,22 @@ type EnvConfig struct {
 	ValkeyAddr     string `envconfig:"VALKEY_ADDR" default:"localhost:6379"`
 	ValkeyPassword string `envconfig:"VALKEY_PASSWORD" default:""`
 	ValkeyDB       int    `envconfig:"VALKEY_DB" default:"0"`
-	// Kubernetes configuration
-	K8sNamespace string `envconfig:"K8S_NAMESPACE" default:"default"`
-	K8sQueue     string `envconfig:"K8S_QUEUE" default:"user-queue"`
-	K8sImage     string `envconfig:"K8S_IMAGE" default:"python:3.11-slim"`
+
+	// Runner configuration
+	// RunnerEnabledBackends is a comma-separated list of enabled backends (local, docker, k8s)
+	// The client chooses which backend to use when submitting a job
+	RunnerEnabledBackends string `envconfig:"RUNNER_ENABLED_BACKENDS" default:"local"`
+	RunnerDataDir         string `envconfig:"RUNNER_DATA_DIR" default:".qwex/runs"`
+
+	// S3-compatible storage configuration (e.g., MinIO)
+	S3Enabled   bool   `envconfig:"S3_ENABLED" default:"true"`
+	S3Endpoint  string `envconfig:"S3_ENDPOINT" default:"localhost:9000"`
+	S3Bucket    string `envconfig:"S3_BUCKET" default:"qwex-artifacts"`
+	S3AccessKey string `envconfig:"S3_ACCESS_KEY" default:"minioadmin"`
+	S3SecretKey string `envconfig:"S3_SECRET_KEY" default:"minioadmin"`
+	S3UseSSL    bool   `envconfig:"S3_USE_SSL" default:"false"`
+	S3Region    string `envconfig:"S3_REGION" default:"us-east-1"`
+
 	// Allowed redirect URIs (comma-separated prefixes)
 	AllowedRedirects string `envconfig:"ALLOWED_REDIRECTS" default:"http://localhost"`
 }
@@ -103,6 +115,20 @@ func (c *EnvConfig) Print(fmtr func(string, ...interface{})) {
 	fmtr("  Refresh Token TTL: %ds\n", c.RefreshTokenTTL)
 	fmtr("  Allowed Redirects: %s\n", c.AllowedRedirects)
 
+	// Runner configuration
+	fmtr("  Runner Enabled Backends: %s\n", c.RunnerEnabledBackends)
+	fmtr("  Runner Data Dir: %s\n", c.RunnerDataDir)
+
+	// S3 storage
+	if c.S3Enabled {
+		fmtr("  S3: ✓ Enabled\n")
+		fmtr("    Endpoint: %s\n", c.S3Endpoint)
+		fmtr("    Bucket: %s\n", c.S3Bucket)
+		fmtr("    SSL: %v\n", c.S3UseSSL)
+	} else {
+		fmtr("  S3: ✗ Disabled\n")
+	}
+
 	if c.GitHubAppID != 0 {
 		fmtr("  GitHub App: ✓ Enabled (ID: %d)\n", c.GitHubAppID)
 	} else {
@@ -116,4 +142,30 @@ func (c *EnvConfig) Print(fmtr func(string, ...interface{})) {
 	} else {
 		fmtr("  GitHub OAuth: ✗ Disabled\n")
 	}
+}
+
+// EnabledBackends returns the list of enabled runner backends
+func (c *EnvConfig) EnabledBackends() []string {
+	if c.RunnerEnabledBackends == "" {
+		return []string{}
+	}
+	backends := strings.Split(c.RunnerEnabledBackends, ",")
+	result := make([]string, 0, len(backends))
+	for _, b := range backends {
+		b = strings.TrimSpace(b)
+		if b != "" {
+			result = append(result, b)
+		}
+	}
+	return result
+}
+
+// IsBackendEnabled checks if a specific backend is enabled
+func (c *EnvConfig) IsBackendEnabled(backend string) bool {
+	for _, b := range c.EnabledBackends() {
+		if b == backend {
+			return true
+		}
+	}
+	return false
 }

@@ -3,6 +3,7 @@ package qrunner
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/google/uuid"
@@ -103,7 +104,7 @@ func (r *K8sRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 	now := time.Now()
 	run := &Run{
 		ID:        runID,
-		JobID:     spec.Name,
+		Name:      spec.Name,
 		Status:    RunStatusPending,
 		Command:   spec.Command,
 		Args:      spec.Args,
@@ -182,7 +183,7 @@ func (r *K8sRunner) GetRun(ctx context.Context, runID string) (*Run, error) {
 		}
 		if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
 			run.FinishedAt = &condition.LastTransitionTime.Time
-			run.Error = condition.Message
+			run.Metadata["failure_message"] = condition.Message
 		}
 	}
 
@@ -249,6 +250,37 @@ func (r *K8sRunner) ListRuns(ctx context.Context, status *RunStatus) ([]*Run, er
 	}
 
 	return runs, nil
+}
+
+// GetLogs returns the logs for a run from the pod
+func (r *K8sRunner) GetLogs(ctx context.Context, runID string) (io.ReadCloser, error) {
+	run, err := r.GetRun(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+
+	jobName := run.Metadata["k8s_job_name"]
+	if jobName == "" {
+		return nil, fmt.Errorf("job name not found in run metadata")
+	}
+
+	// Get pods for this job
+	pods, err := r.jobManager.GetJobPods(ctx, jobName)
+	if err != nil {
+		return nil, fmt.Errorf("getting job pods: %w", err)
+	}
+
+	if len(pods.Items) == 0 {
+		return nil, fmt.Errorf("no pods found for job %s", jobName)
+	}
+
+	podName := pods.Items[0].Name
+	logs, err := r.jobManager.GetPodLogsReader(ctx, podName)
+	if err != nil {
+		return nil, fmt.Errorf("getting pod logs: %w", err)
+	}
+
+	return logs, nil
 }
 
 // Helper functions

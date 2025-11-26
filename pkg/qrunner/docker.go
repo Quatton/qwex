@@ -15,6 +15,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/google/uuid"
+	"github.com/quatton/qwex/pkg/qart"
 )
 
 // DockerRunner executes jobs by spinning up Docker containers that internally
@@ -28,13 +29,24 @@ import (
 //  4. LocalRunner inside container writes to /qwex/runs/<runID>/run.json
 //  5. Host reads from same directory (it's mounted!)
 type DockerRunner struct {
-	baseDir string // base directory for .qwex/runs (on host)
-	config  ContainerConfig
-	client  *client.Client
+	baseDir   string // base directory for .qwex/runs (on host)
+	config    ContainerConfig
+	client    *client.Client
+	artifacts qart.Store // artifact storage (optional)
+}
+
+// DockerRunnerOption configures a DockerRunner
+type DockerRunnerOption func(*DockerRunner)
+
+// WithDockerArtifactStore sets the artifact storage for the docker runner
+func WithDockerArtifactStore(store qart.Store) DockerRunnerOption {
+	return func(r *DockerRunner) {
+		r.artifacts = store
+	}
 }
 
 // NewDockerRunner creates a new Docker runner with the given configuration
-func NewDockerRunner(config ContainerConfig) (*DockerRunner, error) {
+func NewDockerRunner(config ContainerConfig, opts ...DockerRunnerOption) (*DockerRunner, error) {
 	cwd, _ := os.Getwd()
 
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -42,25 +54,33 @@ func NewDockerRunner(config ContainerConfig) (*DockerRunner, error) {
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
 	}
 
-	return &DockerRunner{
+	r := &DockerRunner{
 		baseDir: cwd,
 		config:  config,
 		client:  dockerClient,
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r, nil
 }
 
 // NewDockerRunnerWithBaseDir creates a Docker runner with a specific base directory
-func NewDockerRunnerWithBaseDir(baseDir string, config ContainerConfig) (*DockerRunner, error) {
+func NewDockerRunnerWithBaseDir(baseDir string, config ContainerConfig, opts ...DockerRunnerOption) (*DockerRunner, error) {
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
 	}
 
-	return &DockerRunner{
+	r := &DockerRunner{
 		baseDir: baseDir,
 		config:  config,
 		client:  dockerClient,
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r, nil
 }
 
 func (r *DockerRunner) getRunsDir() string {
@@ -138,6 +158,7 @@ func (r *DockerRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 
 	// Create log file path (we'll write Docker logs here)
 	logsPath := filepath.Join(runDir, "stdout.log")
+	stderrPath := filepath.Join(runDir, "stderr.log")
 
 	// Set working directory - use containerWorkDir if we mounted the working dir
 	workDir := containerWorkDir
@@ -168,7 +189,7 @@ func (r *DockerRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 	now := time.Now()
 	run := &Run{
 		ID:        runID,
-		JobID:     spec.Name,
+		Name:      spec.Name,
 		Status:    RunStatusPending,
 		Command:   spec.Command,
 		Args:      spec.Args,
@@ -181,8 +202,9 @@ func (r *DockerRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 			"backend":      "docker",
 			"image":        image,
 		},
-		RunDir:   runDir,
-		LogsPath: logsPath,
+		RunDir:     runDir,
+		LogsPath:   logsPath,
+		StderrPath: stderrPath,
 	}
 
 	// Save initial state
@@ -206,13 +228,19 @@ func (r *DockerRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 	return run, nil
 }
 
-// captureLogs retrieves container logs and writes them to the log file
+// captureLogs retrieves container logs and writes them to separate stdout/stderr files
 func (r *DockerRunner) captureLogs(ctx context.Context, containerID string, run *Run) {
-	logFile, err := os.Create(run.LogsPath)
+	stdoutFile, err := os.Create(run.LogsPath)
 	if err != nil {
 		return // Can't write logs, but don't fail the run
 	}
-	defer logFile.Close()
+	defer stdoutFile.Close()
+
+	stderrFile, err := os.Create(run.StderrPath)
+	if err != nil {
+		return // Can't write stderr, but don't fail the run
+	}
+	defer stderrFile.Close()
 
 	options := container.LogsOptions{
 		ShowStdout: true,
@@ -228,8 +256,8 @@ func (r *DockerRunner) captureLogs(ctx context.Context, containerID string, run 
 	defer logReader.Close()
 
 	// Docker log stream is multiplexed with 8-byte headers
-	// Use stdcopy to properly demultiplex stdout/stderr
-	_, err = stdcopy.StdCopy(logFile, logFile, logReader)
+	// Use stdcopy to properly demultiplex stdout/stderr into separate files
+	_, err = stdcopy.StdCopy(stdoutFile, stderrFile, logReader)
 	if err != nil {
 		// Log error but don't fail the run
 		return
@@ -276,11 +304,14 @@ func (r *DockerRunner) Wait(ctx context.Context, runID string) (*Run, error) {
 		run.Status = RunStatusSucceeded
 	} else {
 		run.Status = RunStatusFailed
-		run.Error = fmt.Sprintf("container exited with code %d", exitCode)
+		// Error details will be in stderr.log (captured by captureLogs)
 	}
 
 	// Capture logs
 	r.captureLogs(ctx, containerID, run)
+
+	// Upload artifacts
+	r.uploadArtifacts(ctx, run)
 
 	// Save final state
 	r.saveRun(run)
@@ -373,7 +404,7 @@ func (r *DockerRunner) ListRuns(ctx context.Context, status *RunStatus) ([]*Run,
 }
 
 func (r *DockerRunner) saveRun(run *Run) error {
-	runPath := filepath.Join(run.Metadata["run_dir"], "run.json")
+	runPath := filepath.Join(run.RunDir, "run.json")
 	data, err := json.MarshalIndent(run, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal run state: %w", err)
@@ -384,6 +415,105 @@ func (r *DockerRunner) saveRun(run *Run) error {
 	}
 
 	return nil
+}
+
+// uploadArtifacts uploads run artifacts to storage if configured
+func (r *DockerRunner) uploadArtifacts(ctx context.Context, run *Run) {
+	if r.artifacts == nil {
+		return
+	}
+
+	// Upload stdout.log
+	if run.LogsPath != "" {
+		logFile, err := os.Open(run.LogsPath)
+		if err == nil {
+			defer logFile.Close()
+			stat, _ := logFile.Stat()
+			key := qart.RunArtifactKey(run.ID, "stdout.log")
+			artifact, err := r.artifacts.Upload(ctx, key, logFile, "text/plain", map[string]string{
+				"run_id": run.ID,
+			})
+			if err == nil {
+				run.Artifacts = append(run.Artifacts, RunArtifact{
+					Key:         artifact.Key,
+					Filename:    "stdout.log",
+					Size:        stat.Size(),
+					ContentType: "text/plain",
+				})
+			}
+		}
+	}
+
+	// Upload stderr.log
+	if run.StderrPath != "" {
+		stderrFile, err := os.Open(run.StderrPath)
+		if err == nil {
+			defer stderrFile.Close()
+			stat, _ := stderrFile.Stat()
+			key := qart.RunArtifactKey(run.ID, "stderr.log")
+			artifact, err := r.artifacts.Upload(ctx, key, stderrFile, "text/plain", map[string]string{
+				"run_id": run.ID,
+			})
+			if err == nil {
+				run.Artifacts = append(run.Artifacts, RunArtifact{
+					Key:         artifact.Key,
+					Filename:    "stderr.log",
+					Size:        stat.Size(),
+					ContentType: "text/plain",
+				})
+			}
+		}
+	}
+
+	// Upload run.json metadata
+	runJSONPath := filepath.Join(run.RunDir, "run.json")
+	if runJSON, err := os.Open(runJSONPath); err == nil {
+		defer runJSON.Close()
+		stat, _ := runJSON.Stat()
+		key := qart.RunArtifactKey(run.ID, "run.json")
+		artifact, err := r.artifacts.Upload(ctx, key, runJSON, "application/json", map[string]string{
+			"run_id": run.ID,
+		})
+		if err == nil {
+			run.Artifacts = append(run.Artifacts, RunArtifact{
+				Key:         artifact.Key,
+				Filename:    "run.json",
+				Size:        stat.Size(),
+				ContentType: "application/json",
+			})
+		}
+	}
+}
+
+// GetLogs returns the logs for a run
+func (r *DockerRunner) GetLogs(ctx context.Context, runID string) (io.ReadCloser, error) {
+	run, err := r.GetRun(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Try to read from saved log file first
+	if run.LogsPath != "" {
+		logFile, err := os.Open(run.LogsPath)
+		if err == nil {
+			return logFile, nil
+		}
+	}
+
+	// Fall back to container logs if file not available
+	containerID := run.Metadata["container_id"]
+	if containerID == "" {
+		return nil, fmt.Errorf("no logs available for run %s", runID)
+	}
+
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     false,
+		Timestamps: false,
+	}
+
+	return r.client.ContainerLogs(ctx, containerID, options)
 }
 
 // StreamLogs streams the logs from the Docker container

@@ -73,52 +73,49 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
-// JobResponse defines model for JobResponse.
-type JobResponse struct {
+// GetArtifactURLOutputBody defines model for GetArtifactURLOutputBody.
+type GetArtifactURLOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 
-	// Args Command arguments
-	Args *[]string `json:"args"`
-
-	// Command Command
-	Command string `json:"command"`
-
-	// CreatedAt Creation timestamp
-	CreatedAt string `json:"created_at"`
-
-	// Error Error message if failed
-	Error *string `json:"error,omitempty"`
-
-	// ExitCode Exit code
-	ExitCode *int64 `json:"exit_code,omitempty"`
-
-	// FinishedAt Finish timestamp
-	FinishedAt *string `json:"finished_at,omitempty"`
-
-	// Id Job ID
-	Id string `json:"id"`
-
-	// Metadata Additional metadata
-	Metadata *map[string]string `json:"metadata,omitempty"`
-
-	// Name Job name
-	Name string `json:"name"`
-
-	// StartedAt Start timestamp
-	StartedAt *string `json:"started_at,omitempty"`
-
-	// Status Job status
-	Status string `json:"status"`
+	// Url Presigned download URL
+	Url string `json:"url"`
 }
 
-// ListJobsOutputBody defines model for ListJobsOutputBody.
-type ListJobsOutputBody struct {
+// GetRunLogsOutputBody defines model for GetRunLogsOutputBody.
+type GetRunLogsOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 
-	// Jobs List of jobs
-	Jobs *[]JobResponse `json:"jobs"`
+	// Logs Run logs
+	Logs string `json:"logs"`
+}
+
+// ListBackendsOutputBody defines model for ListBackendsOutputBody.
+type ListBackendsOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Backends List of enabled backends
+	Backends *[]string `json:"backends"`
+}
+
+// ListRunArtifactsOutputBody defines model for ListRunArtifactsOutputBody.
+type ListRunArtifactsOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Artifacts List of artifacts
+	Artifacts *[]RunArtifact `json:"artifacts"`
+}
+
+// ListRunsOutputBody defines model for ListRunsOutputBody.
+type ListRunsOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Runs List of runs
+	Runs *[]RunResponse `json:"runs"`
 }
 
 // MeResponseBody defines model for MeResponseBody.
@@ -155,13 +152,79 @@ type RefreshTokenResponseBody struct {
 	TokenType string `json:"token_type"`
 }
 
-// SubmitJobRequest defines model for SubmitJobRequest.
-type SubmitJobRequest struct {
+// RunArtifact defines model for RunArtifact.
+type RunArtifact struct {
+	// ContentType MIME type
+	ContentType string `json:"content_type"`
+
+	// Filename Original filename
+	Filename string `json:"filename"`
+
+	// Key Storage key
+	Key string `json:"key"`
+
+	// Size Size in bytes
+	Size int64 `json:"size"`
+
+	// Url Download URL (presigned)
+	Url *string `json:"url,omitempty"`
+}
+
+// RunResponse defines model for RunResponse.
+type RunResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 
 	// Args Command arguments
 	Args *[]string `json:"args"`
+
+	// Artifacts Run artifacts
+	Artifacts *[]RunArtifact `json:"artifacts"`
+
+	// Backend Backend used (local, docker, k8s)
+	Backend string `json:"backend"`
+
+	// Command Command
+	Command string `json:"command"`
+
+	// CreatedAt Creation timestamp
+	CreatedAt string `json:"created_at"`
+
+	// Error Error message if failed
+	Error *string `json:"error,omitempty"`
+
+	// ExitCode Exit code
+	ExitCode *int64 `json:"exit_code,omitempty"`
+
+	// FinishedAt Finish timestamp
+	FinishedAt *string `json:"finished_at,omitempty"`
+
+	// Id Run ID
+	Id string `json:"id"`
+
+	// Metadata Additional metadata
+	Metadata *map[string]string `json:"metadata,omitempty"`
+
+	// Name Run name
+	Name *string `json:"name,omitempty"`
+
+	// StartedAt Start timestamp
+	StartedAt *string `json:"started_at,omitempty"`
+
+	// Status Run status
+	Status string `json:"status"`
+}
+
+// SubmitRunRequest defines model for SubmitRunRequest.
+type SubmitRunRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Args Command arguments
+	Args *[]string `json:"args"`
+
+	// Backend Backend to use (local, docker, k8s). Defaults to local
+	Backend *string `json:"backend,omitempty"`
 
 	// Command Command to execute
 	Command string `json:"command"`
@@ -169,8 +232,11 @@ type SubmitJobRequest struct {
 	// Env Environment variables
 	Env *map[string]string `json:"env,omitempty"`
 
-	// Name Job name
-	Name string `json:"name"`
+	// Image Container image (for docker/k8s backends)
+	Image *string `json:"image,omitempty"`
+
+	// Name Run name (optional)
+	Name *string `json:"name,omitempty"`
 
 	// WorkingDir Working directory
 	WorkingDir *string `json:"working_dir,omitempty"`
@@ -215,8 +281,11 @@ type AuthLoginParams struct {
 // AuthLoginParamsProvider defines parameters for AuthLogin.
 type AuthLoginParamsProvider string
 
-// ListJobsParams defines parameters for ListJobs.
-type ListJobsParams struct {
+// ListRunsParams defines parameters for ListRuns.
+type ListRunsParams struct {
+	// Backend Filter by backend (local, docker, k8s)
+	Backend *string `form:"backend,omitempty" json:"backend,omitempty"`
+
 	// Status Filter by status
 	Status *string `form:"status,omitempty" json:"status,omitempty"`
 }
@@ -224,8 +293,8 @@ type ListJobsParams struct {
 // AuthRefreshJSONRequestBody defines body for AuthRefresh for application/json ContentType.
 type AuthRefreshJSONRequestBody = RefreshTokenRequestBody
 
-// SubmitJobJSONRequestBody defines body for SubmitJob for application/json ContentType.
-type SubmitJobJSONRequestBody = SubmitJobRequest
+// SubmitRunJSONRequestBody defines body for SubmitRun for application/json ContentType.
+type SubmitRunJSONRequestBody = SubmitRunRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -311,22 +380,34 @@ type ClientInterface interface {
 
 	AuthRefresh(ctx context.Context, body AuthRefreshJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ListJobs request
-	ListJobs(ctx context.Context, params *ListJobsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// SubmitJobWithBody request with any body
-	SubmitJobWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	SubmitJob(ctx context.Context, body SubmitJobJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// CancelJob request
-	CancelJob(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetJob request
-	GetJob(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ListBackends request
+	ListBackends(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetMe request
 	GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListRuns request
+	ListRuns(ctx context.Context, params *ListRunsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubmitRunWithBody request with any body
+	SubmitRunWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SubmitRun(ctx context.Context, body SubmitRunJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CancelRun request
+	CancelRun(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRun request
+	GetRun(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListRunArtifacts request
+	ListRunArtifacts(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetArtifactUrl request
+	GetArtifactUrl(ctx context.Context, runId string, filename string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetRunLogs request
+	GetRunLogs(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) AuthCallback(ctx context.Context, params *AuthCallbackParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -377,56 +458,8 @@ func (c *Client) AuthRefresh(ctx context.Context, body AuthRefreshJSONRequestBod
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListJobs(ctx context.Context, params *ListJobsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListJobsRequest(c.Server, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SubmitJobWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSubmitJobRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) SubmitJob(ctx context.Context, body SubmitJobJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewSubmitJobRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) CancelJob(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCancelJobRequest(c.Server, jobId)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetJob(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetJobRequest(c.Server, jobId)
+func (c *Client) ListBackends(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListBackendsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -439,6 +472,102 @@ func (c *Client) GetJob(ctx context.Context, jobId string, reqEditors ...Request
 
 func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetMeRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListRuns(ctx context.Context, params *ListRunsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListRunsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SubmitRunWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitRunRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SubmitRun(ctx context.Context, body SubmitRunJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitRunRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CancelRun(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelRunRequest(c.Server, runId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRun(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRunRequest(c.Server, runId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListRunArtifacts(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListRunArtifactsRequest(c.Server, runId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetArtifactUrl(ctx context.Context, runId string, filename string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetArtifactUrlRequest(c.Server, runId, filename)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetRunLogs(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRunLogsRequest(c.Server, runId)
 	if err != nil {
 		return nil, err
 	}
@@ -627,8 +756,8 @@ func NewAuthRefreshRequestWithBody(server string, contentType string, body io.Re
 	return req, nil
 }
 
-// NewListJobsRequest generates requests for ListJobs
-func NewListJobsRequest(server string, params *ListJobsParams) (*http.Request, error) {
+// NewListBackendsRequest generates requests for ListBackends
+func NewListBackendsRequest(server string) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -636,7 +765,61 @@ func NewListJobsRequest(server string, params *ListJobsParams) (*http.Request, e
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/jobs")
+	operationPath := fmt.Sprintf("/api/backends")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetMeRequest generates requests for GetMe
+func NewGetMeRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/me")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListRunsRequest generates requests for ListRuns
+func NewListRunsRequest(server string, params *ListRunsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/runs")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -648,6 +831,22 @@ func NewListJobsRequest(server string, params *ListJobsParams) (*http.Request, e
 
 	if params != nil {
 		queryValues := queryURL.Query()
+
+		if params.Backend != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", false, "backend", runtime.ParamLocationQuery, *params.Backend); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
 
 		if params.Status != nil {
 
@@ -676,19 +875,19 @@ func NewListJobsRequest(server string, params *ListJobsParams) (*http.Request, e
 	return req, nil
 }
 
-// NewSubmitJobRequest calls the generic SubmitJob builder with application/json body
-func NewSubmitJobRequest(server string, body SubmitJobJSONRequestBody) (*http.Request, error) {
+// NewSubmitRunRequest calls the generic SubmitRun builder with application/json body
+func NewSubmitRunRequest(server string, body SubmitRunJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewSubmitJobRequestWithBody(server, "application/json", bodyReader)
+	return NewSubmitRunRequestWithBody(server, "application/json", bodyReader)
 }
 
-// NewSubmitJobRequestWithBody generates requests for SubmitJob with any type of body
-func NewSubmitJobRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+// NewSubmitRunRequestWithBody generates requests for SubmitRun with any type of body
+func NewSubmitRunRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -696,7 +895,7 @@ func NewSubmitJobRequestWithBody(server string, contentType string, body io.Read
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/jobs")
+	operationPath := fmt.Sprintf("/api/runs")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -716,13 +915,13 @@ func NewSubmitJobRequestWithBody(server string, contentType string, body io.Read
 	return req, nil
 }
 
-// NewCancelJobRequest generates requests for CancelJob
-func NewCancelJobRequest(server string, jobId string) (*http.Request, error) {
+// NewCancelRunRequest generates requests for CancelRun
+func NewCancelRunRequest(server string, runId string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "jobId", runtime.ParamLocationPath, jobId)
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "runId", runtime.ParamLocationPath, runId)
 	if err != nil {
 		return nil, err
 	}
@@ -732,7 +931,7 @@ func NewCancelJobRequest(server string, jobId string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/jobs/%s", pathParam0)
+	operationPath := fmt.Sprintf("/api/runs/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -750,13 +949,13 @@ func NewCancelJobRequest(server string, jobId string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewGetJobRequest generates requests for GetJob
-func NewGetJobRequest(server string, jobId string) (*http.Request, error) {
+// NewGetRunRequest generates requests for GetRun
+func NewGetRunRequest(server string, runId string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "jobId", runtime.ParamLocationPath, jobId)
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "runId", runtime.ParamLocationPath, runId)
 	if err != nil {
 		return nil, err
 	}
@@ -766,7 +965,7 @@ func NewGetJobRequest(server string, jobId string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/jobs/%s", pathParam0)
+	operationPath := fmt.Sprintf("/api/runs/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -784,16 +983,98 @@ func NewGetJobRequest(server string, jobId string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewGetMeRequest generates requests for GetMe
-func NewGetMeRequest(server string) (*http.Request, error) {
+// NewListRunArtifactsRequest generates requests for ListRunArtifacts
+func NewListRunArtifactsRequest(server string, runId string) (*http.Request, error) {
 	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "runId", runtime.ParamLocationPath, runId)
+	if err != nil {
+		return nil, err
+	}
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/me")
+	operationPath := fmt.Sprintf("/api/runs/%s/artifacts", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetArtifactUrlRequest generates requests for GetArtifactUrl
+func NewGetArtifactUrlRequest(server string, runId string, filename string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "runId", runtime.ParamLocationPath, runId)
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithLocation("simple", false, "filename", runtime.ParamLocationPath, filename)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/runs/%s/artifacts/%s/url", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetRunLogsRequest generates requests for GetRunLogs
+func NewGetRunLogsRequest(server string, runId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "runId", runtime.ParamLocationPath, runId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/runs/%s/logs", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -865,22 +1146,34 @@ type ClientWithResponsesInterface interface {
 
 	AuthRefreshWithResponse(ctx context.Context, body AuthRefreshJSONRequestBody, reqEditors ...RequestEditorFn) (*AuthRefreshResponse, error)
 
-	// ListJobsWithResponse request
-	ListJobsWithResponse(ctx context.Context, params *ListJobsParams, reqEditors ...RequestEditorFn) (*ListJobsResponse, error)
-
-	// SubmitJobWithBodyWithResponse request with any body
-	SubmitJobWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitJobResponse, error)
-
-	SubmitJobWithResponse(ctx context.Context, body SubmitJobJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitJobResponse, error)
-
-	// CancelJobWithResponse request
-	CancelJobWithResponse(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*CancelJobResponse, error)
-
-	// GetJobWithResponse request
-	GetJobWithResponse(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*GetJobResponse, error)
+	// ListBackendsWithResponse request
+	ListBackendsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListBackendsResponse, error)
 
 	// GetMeWithResponse request
 	GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
+
+	// ListRunsWithResponse request
+	ListRunsWithResponse(ctx context.Context, params *ListRunsParams, reqEditors ...RequestEditorFn) (*ListRunsResponse, error)
+
+	// SubmitRunWithBodyWithResponse request with any body
+	SubmitRunWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitRunResponse, error)
+
+	SubmitRunWithResponse(ctx context.Context, body SubmitRunJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitRunResponse, error)
+
+	// CancelRunWithResponse request
+	CancelRunWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*CancelRunResponse, error)
+
+	// GetRunWithResponse request
+	GetRunWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*GetRunResponse, error)
+
+	// ListRunArtifactsWithResponse request
+	ListRunArtifactsWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*ListRunArtifactsResponse, error)
+
+	// GetArtifactUrlWithResponse request
+	GetArtifactUrlWithResponse(ctx context.Context, runId string, filename string, reqEditors ...RequestEditorFn) (*GetArtifactUrlResponse, error)
+
+	// GetRunLogsWithResponse request
+	GetRunLogsWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*GetRunLogsResponse, error)
 }
 
 type AuthCallbackResponse struct {
@@ -951,15 +1244,15 @@ func (r AuthRefreshResponse) StatusCode() int {
 	return 0
 }
 
-type ListJobsResponse struct {
+type ListBackendsResponse struct {
 	Body                          []byte
 	HTTPResponse                  *http.Response
-	JSON200                       *ListJobsOutputBody
+	JSON200                       *ListBackendsOutputBody
 	ApplicationproblemJSONDefault *ErrorModel
 }
 
 // Status returns HTTPResponse.Status
-func (r ListJobsResponse) Status() string {
+func (r ListBackendsResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -967,75 +1260,7 @@ func (r ListJobsResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r ListJobsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type SubmitJobResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *JobResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r SubmitJobResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r SubmitJobResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type CancelJobResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r CancelJobResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CancelJobResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetJobResponse struct {
-	Body                          []byte
-	HTTPResponse                  *http.Response
-	JSON200                       *JobResponse
-	ApplicationproblemJSONDefault *ErrorModel
-}
-
-// Status returns HTTPResponse.Status
-func (r GetJobResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetJobResponse) StatusCode() int {
+func (r ListBackendsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1059,6 +1284,166 @@ func (r GetMeResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetMeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListRunsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ListRunsOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListRunsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListRunsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SubmitRunResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RunResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r SubmitRunResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SubmitRunResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CancelRunResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r CancelRunResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CancelRunResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRunResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *RunResponse
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRunResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRunResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListRunArtifactsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *ListRunArtifactsOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r ListRunArtifactsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListRunArtifactsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetArtifactUrlResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *GetArtifactURLOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetArtifactUrlResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetArtifactUrlResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetRunLogsResponse struct {
+	Body                          []byte
+	HTTPResponse                  *http.Response
+	JSON200                       *GetRunLogsOutputBody
+	ApplicationproblemJSONDefault *ErrorModel
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRunLogsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRunLogsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1100,48 +1485,13 @@ func (c *ClientWithResponses) AuthRefreshWithResponse(ctx context.Context, body 
 	return ParseAuthRefreshResponse(rsp)
 }
 
-// ListJobsWithResponse request returning *ListJobsResponse
-func (c *ClientWithResponses) ListJobsWithResponse(ctx context.Context, params *ListJobsParams, reqEditors ...RequestEditorFn) (*ListJobsResponse, error) {
-	rsp, err := c.ListJobs(ctx, params, reqEditors...)
+// ListBackendsWithResponse request returning *ListBackendsResponse
+func (c *ClientWithResponses) ListBackendsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListBackendsResponse, error) {
+	rsp, err := c.ListBackends(ctx, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseListJobsResponse(rsp)
-}
-
-// SubmitJobWithBodyWithResponse request with arbitrary body returning *SubmitJobResponse
-func (c *ClientWithResponses) SubmitJobWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitJobResponse, error) {
-	rsp, err := c.SubmitJobWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSubmitJobResponse(rsp)
-}
-
-func (c *ClientWithResponses) SubmitJobWithResponse(ctx context.Context, body SubmitJobJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitJobResponse, error) {
-	rsp, err := c.SubmitJob(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseSubmitJobResponse(rsp)
-}
-
-// CancelJobWithResponse request returning *CancelJobResponse
-func (c *ClientWithResponses) CancelJobWithResponse(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*CancelJobResponse, error) {
-	rsp, err := c.CancelJob(ctx, jobId, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCancelJobResponse(rsp)
-}
-
-// GetJobWithResponse request returning *GetJobResponse
-func (c *ClientWithResponses) GetJobWithResponse(ctx context.Context, jobId string, reqEditors ...RequestEditorFn) (*GetJobResponse, error) {
-	rsp, err := c.GetJob(ctx, jobId, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetJobResponse(rsp)
+	return ParseListBackendsResponse(rsp)
 }
 
 // GetMeWithResponse request returning *GetMeResponse
@@ -1151,6 +1501,77 @@ func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors 
 		return nil, err
 	}
 	return ParseGetMeResponse(rsp)
+}
+
+// ListRunsWithResponse request returning *ListRunsResponse
+func (c *ClientWithResponses) ListRunsWithResponse(ctx context.Context, params *ListRunsParams, reqEditors ...RequestEditorFn) (*ListRunsResponse, error) {
+	rsp, err := c.ListRuns(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListRunsResponse(rsp)
+}
+
+// SubmitRunWithBodyWithResponse request with arbitrary body returning *SubmitRunResponse
+func (c *ClientWithResponses) SubmitRunWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitRunResponse, error) {
+	rsp, err := c.SubmitRunWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitRunResponse(rsp)
+}
+
+func (c *ClientWithResponses) SubmitRunWithResponse(ctx context.Context, body SubmitRunJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitRunResponse, error) {
+	rsp, err := c.SubmitRun(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitRunResponse(rsp)
+}
+
+// CancelRunWithResponse request returning *CancelRunResponse
+func (c *ClientWithResponses) CancelRunWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*CancelRunResponse, error) {
+	rsp, err := c.CancelRun(ctx, runId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelRunResponse(rsp)
+}
+
+// GetRunWithResponse request returning *GetRunResponse
+func (c *ClientWithResponses) GetRunWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*GetRunResponse, error) {
+	rsp, err := c.GetRun(ctx, runId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRunResponse(rsp)
+}
+
+// ListRunArtifactsWithResponse request returning *ListRunArtifactsResponse
+func (c *ClientWithResponses) ListRunArtifactsWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*ListRunArtifactsResponse, error) {
+	rsp, err := c.ListRunArtifacts(ctx, runId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListRunArtifactsResponse(rsp)
+}
+
+// GetArtifactUrlWithResponse request returning *GetArtifactUrlResponse
+func (c *ClientWithResponses) GetArtifactUrlWithResponse(ctx context.Context, runId string, filename string, reqEditors ...RequestEditorFn) (*GetArtifactUrlResponse, error) {
+	rsp, err := c.GetArtifactUrl(ctx, runId, filename, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetArtifactUrlResponse(rsp)
+}
+
+// GetRunLogsWithResponse request returning *GetRunLogsResponse
+func (c *ClientWithResponses) GetRunLogsWithResponse(ctx context.Context, runId string, reqEditors ...RequestEditorFn) (*GetRunLogsResponse, error) {
+	rsp, err := c.GetRunLogs(ctx, runId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRunLogsResponse(rsp)
 }
 
 // ParseAuthCallbackResponse parses an HTTP response from a AuthCallbackWithResponse call
@@ -1245,114 +1666,22 @@ func ParseAuthRefreshResponse(rsp *http.Response) (*AuthRefreshResponse, error) 
 	return response, nil
 }
 
-// ParseListJobsResponse parses an HTTP response from a ListJobsWithResponse call
-func ParseListJobsResponse(rsp *http.Response) (*ListJobsResponse, error) {
+// ParseListBackendsResponse parses an HTTP response from a ListBackendsWithResponse call
+func ParseListBackendsResponse(rsp *http.Response) (*ListBackendsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &ListJobsResponse{
+	response := &ListBackendsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ListJobsOutputBody
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseSubmitJobResponse parses an HTTP response from a SubmitJobWithResponse call
-func ParseSubmitJobResponse(rsp *http.Response) (*SubmitJobResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &SubmitJobResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest JobResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseCancelJobResponse parses an HTTP response from a CancelJobWithResponse call
-func ParseCancelJobResponse(rsp *http.Response) (*CancelJobResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &CancelJobResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorModel
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetJobResponse parses an HTTP response from a GetJobWithResponse call
-func ParseGetJobResponse(rsp *http.Response) (*GetJobResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetJobResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest JobResponse
+		var dest ListBackendsOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1386,6 +1715,230 @@ func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest MeResponseBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListRunsResponse parses an HTTP response from a ListRunsWithResponse call
+func ParseListRunsResponse(rsp *http.Response) (*ListRunsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListRunsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListRunsOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSubmitRunResponse parses an HTTP response from a SubmitRunWithResponse call
+func ParseSubmitRunResponse(rsp *http.Response) (*SubmitRunResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SubmitRunResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RunResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCancelRunResponse parses an HTTP response from a CancelRunWithResponse call
+func ParseCancelRunResponse(rsp *http.Response) (*CancelRunResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CancelRunResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRunResponse parses an HTTP response from a GetRunWithResponse call
+func ParseGetRunResponse(rsp *http.Response) (*GetRunResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRunResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RunResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListRunArtifactsResponse parses an HTTP response from a ListRunArtifactsWithResponse call
+func ParseListRunArtifactsResponse(rsp *http.Response) (*ListRunArtifactsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListRunArtifactsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListRunArtifactsOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetArtifactUrlResponse parses an HTTP response from a GetArtifactUrlWithResponse call
+func ParseGetArtifactUrlResponse(rsp *http.Response) (*GetArtifactUrlResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetArtifactUrlResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GetArtifactURLOutputBody
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetRunLogsResponse parses an HTTP response from a GetRunLogsWithResponse call
+func ParseGetRunLogsResponse(rsp *http.Response) (*GetRunLogsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRunLogsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GetRunLogsOutputBody
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

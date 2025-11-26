@@ -12,12 +12,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/quatton/qwex/pkg/qart"
 )
 
 type LocalRunner struct {
-	baseDir string // base directory for .qwex/runs
-	mu      sync.RWMutex
-	runs    map[string]*runProcess // in-memory tracking of active runs
+	baseDir   string     // base directory for .qwex/runs
+	artifacts qart.Store // artifact storage (optional)
+	mu        sync.RWMutex
+	runs      map[string]*runProcess // in-memory tracking of active runs
 }
 
 // runProcess tracks an active process
@@ -27,20 +29,33 @@ type runProcess struct {
 	cancel context.CancelFunc
 }
 
-func NewLocalRunner() *LocalRunner {
-	cwd, _ := os.Getwd()
-	return &LocalRunner{
-		baseDir: cwd,
-		runs:    make(map[string]*runProcess),
+// LocalRunnerOption configures a LocalRunner
+type LocalRunnerOption func(*LocalRunner)
+
+// WithArtifactStore sets the artifact storage for the runner
+func WithArtifactStore(store qart.Store) LocalRunnerOption {
+	return func(r *LocalRunner) {
+		r.artifacts = store
 	}
 }
 
-// NewLocalRunnerWithBaseDir creates a LocalRunner with a specific base directory
-func NewLocalRunnerWithBaseDir(baseDir string) *LocalRunner {
-	return &LocalRunner{
-		baseDir: baseDir,
+// WithBaseDir sets the base directory for runs
+func WithBaseDir(baseDir string) LocalRunnerOption {
+	return func(r *LocalRunner) {
+		r.baseDir = baseDir
+	}
+}
+
+func NewLocalRunner(opts ...LocalRunnerOption) *LocalRunner {
+	cwd, _ := os.Getwd()
+	r := &LocalRunner{
+		baseDir: cwd,
 		runs:    make(map[string]*runProcess),
 	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 // getRunsDir returns the runs directory
@@ -66,22 +81,24 @@ func (r *LocalRunner) Submit(ctx context.Context, spec JobSpec) (*Run, error) {
 		return nil, fmt.Errorf("failed to create run directory: %w", err)
 	}
 
-	// Create logs directory
+	// Create logs paths
 	logsPath := filepath.Join(runDir, "stdout.log")
+	stderrPath := filepath.Join(runDir, "stderr.log")
 
 	// Initialize run object
 	now := time.Now()
 	run := &Run{
-		ID:        runID,
-		JobID:     spec.Name,
-		Status:    RunStatusPending,
-		Command:   spec.Command,
-		Args:      spec.Args,
-		Env:       spec.Env,
-		CreatedAt: now,
-		Metadata:  make(map[string]string),
-		RunDir:    runDir,
-		LogsPath:  logsPath,
+		ID:         runID,
+		Name:       spec.Name,
+		Status:     RunStatusPending,
+		Command:    spec.Command,
+		Args:       spec.Args,
+		Env:        spec.Env,
+		CreatedAt:  now,
+		Metadata:   make(map[string]string),
+		RunDir:     runDir,
+		LogsPath:   logsPath,
+		StderrPath: stderrPath,
 	}
 
 	// Save initial state
@@ -125,20 +142,28 @@ func (r *LocalRunner) executeRun(ctx context.Context, run *Run, spec JobSpec) {
 	// Add qwex-specific env vars
 	cmd.Env = append(cmd.Env,
 		fmt.Sprintf("QWEX_RUN_ID=%s", run.ID),
-		fmt.Sprintf("QWEX_RUN_DIR=%s", run.Metadata["run_dir"]),
+		fmt.Sprintf("QWEX_RUN_DIR=%s", run.RunDir),
 	)
 
 	// Create log file
-	logFile, err := os.Create(run.Metadata["logs_path"])
+	logFile, err := os.Create(run.LogsPath)
 	if err != nil {
 		r.finishRunWithError(run, fmt.Errorf("failed to create log file: %w", err))
 		return
 	}
 	defer logFile.Close()
 
-	// Redirect stdout and stderr to log file
+	// Create stderr file
+	stderrFile, err := os.Create(run.StderrPath)
+	if err != nil {
+		r.finishRunWithError(run, fmt.Errorf("failed to create stderr file: %w", err))
+		return
+	}
+	defer stderrFile.Close()
+
+	// Redirect stdout and stderr to separate files
 	cmd.Stdout = logFile
-	cmd.Stderr = logFile
+	cmd.Stderr = stderrFile
 
 	// Track the process
 	r.mu.Lock()
@@ -166,17 +191,15 @@ func (r *LocalRunner) executeRun(ctx context.Context, run *Run, spec JobSpec) {
 		if execCtx.Err() == context.Canceled {
 			// Process was cancelled
 			run.Status = RunStatusCancelled
-			run.Error = "run was cancelled"
 		} else if exitErr, ok := err.(*exec.ExitError); ok {
 			// Process exited with non-zero code
 			exitCode := exitErr.ExitCode()
 			run.ExitCode = &exitCode
 			run.Status = RunStatusFailed
-			run.Error = fmt.Sprintf("process exited with code %d", exitCode)
 		} else {
-			// Other error (failed to start, etc.)
+			// Other error (failed to start, etc.) - write to stderr.log
 			run.Status = RunStatusFailed
-			run.Error = err.Error()
+			os.WriteFile(run.StderrPath, []byte(err.Error()), 0o644)
 		}
 	} else {
 		// Success
@@ -184,6 +207,9 @@ func (r *LocalRunner) executeRun(ctx context.Context, run *Run, spec JobSpec) {
 		run.ExitCode = &exitCode
 		run.Status = RunStatusSucceeded
 	}
+
+	// Upload artifacts if storage is configured
+	r.uploadArtifacts(ctx, run)
 
 	// Save final state
 	r.saveRun(run)
@@ -193,7 +219,8 @@ func (r *LocalRunner) finishRunWithError(run *Run, err error) {
 	now := time.Now()
 	run.FinishedAt = &now
 	run.Status = RunStatusFailed
-	run.Error = err.Error()
+	// Write error to stderr.log
+	os.WriteFile(run.StderrPath, []byte(err.Error()), 0o644)
 	r.saveRun(run)
 }
 
@@ -303,7 +330,7 @@ func (r *LocalRunner) ListRuns(ctx context.Context, status *RunStatus) ([]*Run, 
 }
 
 func (r *LocalRunner) saveRun(run *Run) error {
-	runPath := filepath.Join(run.Metadata["run_dir"], "run.json")
+	runPath := filepath.Join(run.RunDir, "run.json")
 	data, err := json.MarshalIndent(run, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal run state: %w", err)
@@ -316,6 +343,89 @@ func (r *LocalRunner) saveRun(run *Run) error {
 	return nil
 }
 
+// uploadArtifacts uploads run artifacts to storage if configured
+func (r *LocalRunner) uploadArtifacts(ctx context.Context, run *Run) {
+	if r.artifacts == nil {
+		return
+	}
+
+	// Upload stdout.log
+	if run.LogsPath != "" {
+		logFile, err := os.Open(run.LogsPath)
+		if err == nil {
+			defer logFile.Close()
+			stat, _ := logFile.Stat()
+			key := qart.RunArtifactKey(run.ID, "stdout.log")
+			artifact, err := r.artifacts.Upload(ctx, key, logFile, "text/plain", map[string]string{
+				"run_id": run.ID,
+			})
+			if err == nil {
+				run.Artifacts = append(run.Artifacts, RunArtifact{
+					Key:         artifact.Key,
+					Filename:    "stdout.log",
+					Size:        stat.Size(),
+					ContentType: "text/plain",
+				})
+			}
+		}
+	}
+
+	// Upload stderr.log
+	if run.StderrPath != "" {
+		stderrFile, err := os.Open(run.StderrPath)
+		if err == nil {
+			defer stderrFile.Close()
+			stat, _ := stderrFile.Stat()
+			key := qart.RunArtifactKey(run.ID, "stderr.log")
+			artifact, err := r.artifacts.Upload(ctx, key, stderrFile, "text/plain", map[string]string{
+				"run_id": run.ID,
+			})
+			if err == nil {
+				run.Artifacts = append(run.Artifacts, RunArtifact{
+					Key:         artifact.Key,
+					Filename:    "stderr.log",
+					Size:        stat.Size(),
+					ContentType: "text/plain",
+				})
+			}
+		}
+	}
+
+	// Upload run.json metadata
+	runJSONPath := filepath.Join(run.RunDir, "run.json")
+	if runJSON, err := os.Open(runJSONPath); err == nil {
+		defer runJSON.Close()
+		stat, _ := runJSON.Stat()
+		key := qart.RunArtifactKey(run.ID, "run.json")
+		artifact, err := r.artifacts.Upload(ctx, key, runJSON, "application/json", map[string]string{
+			"run_id": run.ID,
+		})
+		if err == nil {
+			run.Artifacts = append(run.Artifacts, RunArtifact{
+				Key:         artifact.Key,
+				Filename:    "run.json",
+				Size:        stat.Size(),
+				ContentType: "application/json",
+			})
+		}
+	}
+}
+
+// GetLogs returns the logs for a run
+func (r *LocalRunner) GetLogs(ctx context.Context, runID string) (io.ReadCloser, error) {
+	run, err := r.GetRun(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+
+	logFile, err := os.Open(run.LogsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open log file: %w", err)
+	}
+
+	return logFile, nil
+}
+
 // StreamLogs streams the logs of a run to the provided writer
 func (r *LocalRunner) StreamLogs(ctx context.Context, runID string, w io.Writer) error {
 	run, err := r.GetRun(ctx, runID)
@@ -323,7 +433,7 @@ func (r *LocalRunner) StreamLogs(ctx context.Context, runID string, w io.Writer)
 		return err
 	}
 
-	logFile, err := os.Open(run.Metadata["logs_path"])
+	logFile, err := os.Open(run.LogsPath)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
