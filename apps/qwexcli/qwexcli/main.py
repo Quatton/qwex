@@ -92,6 +92,11 @@ def run(
     detach: bool = typer.Option(
         False, "--detach", "-d", help="Detach after starting (don't follow logs)"
     ),
+    no_save: bool = typer.Option(
+        False,
+        "--no-save",
+        help="Do not persist run state (delete run folder after completion)",
+    ),
     env: list[str] = typer.Option(
         [], "--env", "-e", help="Environment variables (KEY=VALUE)"
     ),
@@ -124,7 +129,7 @@ def run(
     runner = get_runner()
 
     async def do_run():
-        run_obj = await runner.submit(job_spec, name=name)
+        run_obj = await runner.submit(job_spec, name=name, no_save=no_save)
         console.print(f"[green]✓[/green] Run [bold]{run_obj.id}[/bold] started")
         console.print(f"  Command: {job_spec.command_string()}")
 
@@ -132,6 +137,10 @@ def run(
             console.print(
                 f"\n[dim]Detached. Use 'qwex attach {run_obj.id}' to follow logs.[/dim]"
             )
+            if no_save:
+                console.print(
+                    "[dim]Note: --no-save was used; run state will be removed after completion.[/dim]"
+                )
             return
 
         console.print("\n[dim]Following logs (Ctrl+C to detach)...[/dim]\n")
@@ -145,10 +154,17 @@ def run(
             console.print(f"  Use 'qwex cancel {run_obj.id}' to stop")
             return
 
-        # Show final status
-        final_run = await runner.get_run(run_obj.id)
-        console.print()
-        console.print(format_run(final_run))
+        # Show final status (may not exist if --no-save was used)
+        try:
+            final_run = await runner.get_run(run_obj.id)
+            console.print()
+            console.print(format_run(final_run))
+        except Exception:
+            # Run was deleted (--no-save)
+            if no_save:
+                console.print("\n[dim]Run completed and state removed (--no-save).[/dim]")
+            else:
+                raise
 
     asyncio.run(do_run())
 

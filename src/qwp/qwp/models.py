@@ -99,6 +99,12 @@ class Run(BaseModel):
     exit_code: int | None = Field(default=None, description="Exit code (when finished)")
     error: str | None = Field(default=None, description="Error message (if failed)")
 
+    # Options
+    no_save: bool = Field(
+        default=False,
+        description="If True, delete run directory after completion",
+    )
+
     # Metadata
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata"

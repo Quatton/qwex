@@ -49,7 +49,9 @@ class Runner(ABC):
         self.store = store or RunStore(workspace=workspace)
 
     @abstractmethod
-    async def submit(self, job_spec: JobSpec, name: str | None = None) -> Run:
+    async def submit(
+        self, job_spec: JobSpec, name: str | None = None, no_save: bool = False
+    ) -> Run:
         """Submit a job for execution.
 
         Args:
@@ -123,9 +125,21 @@ class Runner(ABC):
         pass
 
     async def list_runs(self) -> list[Run]:
-        """List all runs.
+        """List all runs, syncing status for each.
+
+        This also triggers cleanup for no_save runs that have completed.
 
         Returns:
-            List of all runs.
+            List of all runs (excluding those deleted by cleanup).
         """
-        return list(self.store.list_runs())
+        runs = []
+        for run in self.store.list_runs():
+            try:
+                synced = self.store.sync_status(run)
+                # sync_status deletes no_save runs when terminal, so check if still exists
+                if self.store.exists(synced.id):
+                    runs.append(synced)
+            except Exception:
+                # Run may have been deleted during sync
+                pass
+        return runs

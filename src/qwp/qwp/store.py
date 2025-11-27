@@ -209,6 +209,8 @@ class RunStore:
         If the run is marked as RUNNING but the process is dead,
         check the exit_code file to determine success/failure.
 
+        If the run has no_save=True and is now terminal, delete it.
+
         Args:
             run: The run to sync.
 
@@ -231,6 +233,13 @@ class RunStore:
                 # No exit code file - process was killed or crashed
                 run.mark_failed(error="Process terminated unexpectedly")
             self.update(run)
+
+        # If no_save is set and run is terminal, delete it
+        if run.no_save and run.status.is_terminal():
+            try:
+                self.delete(run.id)
+            except Exception:
+                pass  # Ignore errors if already deleted
 
         return run
 

@@ -45,7 +45,9 @@ class LocalRunner(Runner):
         super().__init__(workspace=workspace, store=store)
         self._processes: dict[str, asyncio.subprocess.Process] = {}
 
-    async def submit(self, job_spec: JobSpec, name: str | None = None) -> Run:
+    async def submit(
+        self, job_spec: JobSpec, name: str | None = None, no_save: bool = False
+    ) -> Run:
         """Submit a job for local execution.
 
         Creates a run, spawns subprocess wrapped in a shell script that
@@ -82,7 +84,13 @@ class LocalRunner(Runner):
         import shlex
 
         cmd_str = shlex.join(job_spec.full_command())
+        # Shell wrapper just captures exit code; cleanup (if no_save) happens
+        # in sync_status after the run completes and status is updated.
         wrapper_cmd = f"{cmd_str}; echo $? > {shlex.quote(str(exit_code_path))}"
+
+        # Set no_save flag on the run (persisted so detached runs get cleaned up)
+        if no_save:
+            run.no_save = True
 
         try:
             # Open log files
@@ -101,6 +109,7 @@ class LocalRunner(Runner):
 
             # Update run with PID
             run.mark_running(pid=process.pid)
+            # persist marker whether or not we will remove later (store.create already saved)
             self.store.update(run)
 
             # Store process reference for this session
@@ -133,16 +142,24 @@ class LocalRunner(Runner):
             stderr_file.close()
 
             # Write exit code to file (for recovery after detach)
-            self.store.exit_code_path(run_id).write_text(str(exit_code))
+            try:
+                self.store.exit_code_path(run_id).write_text(str(exit_code))
+            except Exception:
+                pass
 
-            # Update run status
-            run = self.store.get(run_id)
-            if run.status == RunStatus.RUNNING:  # Not cancelled
-                if exit_code == 0:
-                    run.mark_succeeded(exit_code)
-                else:
-                    run.mark_failed(exit_code)
-                self.store.update(run)
+            # Update run status and handle no_save cleanup via sync_status
+            try:
+                run = self.store.get(run_id)
+                if run.status == RunStatus.RUNNING:  # Not cancelled
+                    if exit_code == 0:
+                        run.mark_succeeded(exit_code)
+                    else:
+                        run.mark_failed(exit_code)
+                    self.store.update(run)
+                # sync_status will delete if no_save is set
+                self.store.sync_status(run)
+            except Exception:
+                pass
 
         except Exception:
             pass  # Ignore errors in background task
@@ -247,9 +264,18 @@ class LocalRunner(Runner):
                     yield line.rstrip("\n")
                 elif follow:
                     # Check if run is still going
-                    run = await self.get_run(run_id)
-                    if run.status.is_terminal():
-                        # Read any remaining content
+                    try:
+                        run = await self.get_run(run_id)
+                        if run.status.is_terminal():
+                            # Read any remaining content
+                            remaining = f.read()
+                            if remaining:
+                                for line in remaining.splitlines():
+                                    yield line
+                            break
+                    except Exception:
+                        # Run was deleted (no_save) or otherwise unavailable;
+                        # read any remaining content and exit
                         remaining = f.read()
                         if remaining:
                             for line in remaining.splitlines():
