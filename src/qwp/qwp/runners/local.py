@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import AsyncIterator
+from typing import TYPE_CHECKING, AsyncIterator
 
-from qwp.models import Run, RunStatus, JobSpec
-from qwp.store import RunStore
-from qwp.runners.base import Runner
 from qwp.exceptions import RunNotAliveError
+from qwp.models import JobSpec, Run, RunStatus
+from qwp.runners.base import Runner
+from qwp.store import RunStore
+
+if TYPE_CHECKING:
+    from qwp.workspace import Workspace
 
 
 class LocalRunner(Runner):
@@ -28,13 +31,18 @@ class LocalRunner(Runner):
     Note: This runner skips qwp.json manifest checking - it executes directly.
     """
 
-    def __init__(self, store: RunStore | None = None):
+    def __init__(
+        self,
+        workspace: Workspace | None = None,
+        store: RunStore | None = None,
+    ):
         """Initialize the local runner.
 
         Args:
-            store: Run store for persistence. Creates default if not provided.
+            workspace: Workspace instance. If None, discovers from cwd.
+            store: Run store for persistence. Creates from workspace if not provided.
         """
-        super().__init__(store)
+        super().__init__(workspace=workspace, store=store)
         self._processes: dict[str, asyncio.subprocess.Process] = {}
 
     async def submit(self, job_spec: JobSpec, name: str | None = None) -> Run:
@@ -59,10 +67,10 @@ class LocalRunner(Runner):
         env = os.environ.copy()
         env.update(job_spec.env)
         env["QWEX_RUN_ID"] = run.id
-        env["QWEX_RUN_DIR"] = str(self.store._run_dir(run.id))
+        env["QWEX_RUN_DIR"] = str(self.store.runs_path / run.id)
 
         # Determine working directory
-        cwd = job_spec.working_dir or str(self.store.base_path)
+        cwd = job_spec.working_dir or str(self.workspace.root)
 
         # File paths
         stdout_path = self.store.stdout_path(run.id)

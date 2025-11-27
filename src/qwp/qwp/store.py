@@ -9,40 +9,52 @@ import json
 import os
 import signal
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 
+from qwp.exceptions import RunAlreadyExistsError, RunNotFoundError
 from qwp.models import Run, RunStatus
-from qwp.exceptions import RunNotFoundError, RunAlreadyExistsError
+
+if TYPE_CHECKING:
+    from qwp.workspace import Workspace
 
 
 class RunStore:
     """Filesystem-based run storage.
 
     Directory structure:
-        .qwex/
-          runs/
-            <run_id>/
-              run.json      # Run metadata
-              stdout.log    # Standard output
-              stderr.log    # Standard error
+        <workspace>/
+          .qwex/
+            runs/
+              <run_id>/
+                run.json      # Run metadata
+                stdout.log    # Standard output
+                stderr.log    # Standard error
+                exit_code     # Exit code file
     """
 
-    QWEX_DIR = ".qwex"
-    RUNS_DIR = "runs"
     RUN_FILE = "run.json"
     STDOUT_FILE = "stdout.log"
     STDERR_FILE = "stderr.log"
     EXIT_CODE_FILE = "exit_code"
 
-    def __init__(self, base_path: Path | str | None = None):
+    def __init__(self, workspace: Workspace | None = None):
         """Initialize the store.
 
         Args:
-            base_path: Base directory for .qwex folder. Defaults to current directory.
+            workspace: Workspace instance. If None, discovers workspace from cwd.
         """
-        self.base_path = Path(base_path) if base_path else Path.cwd()
-        self.qwex_path = self.base_path / self.QWEX_DIR
-        self.runs_path = self.qwex_path / self.RUNS_DIR
+        if workspace is None:
+            from qwp.workspace import Workspace
+
+            workspace = Workspace.discover()
+
+        self.workspace = workspace
+        self.runs_path = workspace.runs_dir
+
+    @property
+    def base_path(self) -> Path:
+        """Get the workspace root path (for backwards compatibility)."""
+        return self.workspace.root
 
     def _run_dir(self, run_id: str) -> Path:
         """Get the directory for a run."""

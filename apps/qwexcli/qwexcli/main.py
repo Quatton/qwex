@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from qwp import LocalRunner, JobSpec, Run, RunStatus, RunStore
+from qwp import JobSpec, LocalRunner, Run, RunStatus, RunStore, Workspace
 
 app = typer.Typer(
     name="qwex",
@@ -20,9 +20,15 @@ app = typer.Typer(
 console = Console()
 
 
-def get_runner() -> LocalRunner:
+def get_workspace() -> Workspace:
+    """Discover and return the current workspace."""
+    return Workspace.discover()
+
+
+def get_runner(workspace: Workspace | None = None) -> LocalRunner:
     """Get a local runner instance."""
-    return LocalRunner()
+    ws = workspace or get_workspace()
+    return LocalRunner(workspace=ws)
 
 
 def format_status(status: RunStatus) -> Text:
@@ -318,7 +324,8 @@ def clean(
     ),
 ) -> None:
     """Clean up finished runs."""
-    store = RunStore()
+    workspace = get_workspace()
+    store = RunStore(workspace=workspace)
 
     runs = list(store.list_runs())
     if not all_runs:
@@ -342,6 +349,36 @@ def clean(
         console.print(f"[red]✗[/red] Deleted {run_obj.id}")
 
     console.print(f"[green]✓[/green] Cleaned {len(runs)} run(s)")
+
+
+@app.command()
+def init() -> None:
+    """Initialize a new qwex workspace.
+
+    Creates an empty qwex.yaml in the current directory.
+    """
+    try:
+        workspace = Workspace.init()
+        console.print("[green]✓[/green] Created qwex.yaml")
+        console.print(f"  Workspace root: {workspace.root}")
+    except FileExistsError:
+        console.print("[yellow]qwex.yaml already exists in this directory.[/yellow]")
+        raise typer.Exit(1)
+
+
+@app.command()
+def info() -> None:
+    """Show workspace information."""
+    workspace = get_workspace()
+
+    if workspace.is_explicit:
+        console.print("[green]✓[/green] Explicit workspace (qwex.yaml found)")
+        console.print(f"  Config: {workspace.config_path}")
+    else:
+        console.print("[yellow]![/yellow] Implicit workspace (no qwex.yaml found)")
+
+    console.print(f"  Root: {workspace.root}")
+    console.print(f"  Runs: {workspace.runs_dir}")
 
 
 if __name__ == "__main__":

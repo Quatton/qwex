@@ -6,10 +6,13 @@ Abstract base class for all runners.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import AsyncIterator
+from typing import TYPE_CHECKING, AsyncIterator
 
-from qwp.models import Run, JobSpec
+from qwp.models import JobSpec, Run
 from qwp.store import RunStore
+
+if TYPE_CHECKING:
+    from qwp.workspace import Workspace
 
 
 class Runner(ABC):
@@ -26,13 +29,24 @@ class Runner(ABC):
     - (Future) QwexCloudRunner: Submits to Qwex Cloud API
     """
 
-    def __init__(self, store: RunStore | None = None):
+    def __init__(
+        self,
+        workspace: Workspace | None = None,
+        store: RunStore | None = None,
+    ):
         """Initialize the runner.
 
         Args:
-            store: Run store for persistence. Creates default if not provided.
+            workspace: Workspace instance. If None, discovers from cwd.
+            store: Run store for persistence. Creates from workspace if not provided.
         """
-        self.store = store or RunStore()
+        if workspace is None:
+            from qwp.workspace import Workspace
+
+            workspace = Workspace.discover()
+
+        self.workspace = workspace
+        self.store = store or RunStore(workspace=workspace)
 
     @abstractmethod
     async def submit(self, job_spec: JobSpec, name: str | None = None) -> Run:

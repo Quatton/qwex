@@ -5,12 +5,17 @@ Core models for the Qwex Protocol: Run, RunStatus, JobSpec.
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from uuid_extensions import uuid7
 from pydantic import BaseModel, Field
+
+
+def generate_run_id() -> str:
+    """Generate a time-sortable run ID using UUIDv7."""
+    return str(uuid7())
 
 
 class RunStatus(str, Enum):
@@ -69,7 +74,7 @@ class Run(BaseModel):
     """
 
     id: str = Field(
-        default_factory=lambda: uuid.uuid4().hex[:12],
+        default_factory=generate_run_id,
         description="Unique run identifier",
     )
     name: str | None = Field(default=None, description="Optional human-readable name")
