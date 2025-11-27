@@ -162,7 +162,9 @@ def run(
         except Exception:
             # Run was deleted (--no-save)
             if no_save:
-                console.print("\n[dim]Run completed and state removed (--no-save).[/dim]")
+                console.print(
+                    "\n[dim]Run completed and state removed (--no-save).[/dim]"
+                )
             else:
                 raise
 
