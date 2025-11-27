@@ -10,7 +10,17 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
-from qwp import JobSpec, LocalRunner, Run, RunStatus, RunStore, Workspace
+from qwp import (
+    DockerRunner,
+    ImageSpec,
+    JobSpec,
+    LocalRunner,
+    Run,
+    RunStatus,
+    RunStore,
+    Workspace,
+)
+from qwp.runners.base import Runner
 
 app = typer.Typer(
     name="qwex",
@@ -25,9 +35,24 @@ def get_workspace() -> Workspace:
     return Workspace.discover()
 
 
-def get_runner(workspace: Workspace | None = None) -> LocalRunner:
-    """Get a local runner instance."""
+def get_runner(
+    workspace: Workspace | None = None,
+    docker: bool = False,
+    image: str | None = None,
+) -> Runner:
+    """Get a runner instance.
+
+    Args:
+        workspace: Workspace instance. If None, discovers from cwd.
+        docker: If True, use DockerRunner instead of LocalRunner.
+        image: Override default image for Docker runner.
+
+    Returns:
+        Runner instance.
+    """
     ws = workspace or get_workspace()
+    if docker:
+        return DockerRunner(workspace=ws, default_image=image)
     return LocalRunner(workspace=ws)
 
 
@@ -53,6 +78,12 @@ def format_run(run: Run, verbose: bool = False) -> Panel:
 
     if run.name:
         lines.insert(1, f"[bold]Name:[/bold] {run.name}")
+
+    # Show container info if present
+    if run.metadata.get("runner") == "docker":
+        lines.append("[bold]Runner:[/bold] docker")
+        if run.metadata.get("image"):
+            lines.append(f"[bold]Image:[/bold] {run.metadata['image']}")
 
     if run.created_at:
         lines.append(
@@ -97,17 +128,30 @@ def run(
         "--no-save",
         help="Do not persist run state (delete run folder after completion)",
     ),
+    docker: bool = typer.Option(
+        False,
+        "--docker",
+        help="Run in a Docker container",
+    ),
+    image: Optional[str] = typer.Option(
+        None,
+        "--image",
+        "-i",
+        help="Container image to use (implies --docker)",
+    ),
     env: list[str] = typer.Option(
         [], "--env", "-e", help="Environment variables (KEY=VALUE)"
     ),
 ) -> None:
-    """Run a command locally.
+    """Run a command locally or in a container.
 
     Examples:
         qwex run python train.py
         qwex run python train.py --epochs 10 --lr 0.001
         qwex run --name "experiment-1" python train.py
         qwex run --detach python long_running.py
+        qwex run --docker python train.py
+        qwex run --image python:3.12-slim python train.py
     """
     # Parse environment variables
     env_dict = {}
@@ -119,19 +163,26 @@ def run(
             console.print(f"[red]Invalid env format: {e}. Use KEY=VALUE[/red]")
             raise typer.Exit(1)
 
-    # Create job spec
+    # If image is specified, enable docker mode
+    use_docker = docker or (image is not None)
+
+    # Create job spec (image is set on JobSpec for container runs)
     job_spec = JobSpec(
         command=command,
         args=args or [],
         env=env_dict,
+        image=ImageSpec.from_string_or_dict(image) if image else None,
     )
 
-    runner = get_runner()
+    runner = get_runner(docker=use_docker, image=image)
 
     async def do_run():
         run_obj = await runner.submit(job_spec, name=name, no_save=no_save)
         console.print(f"[green]✓[/green] Run [bold]{run_obj.id}[/bold] started")
         console.print(f"  Command: {job_spec.command_string()}")
+        if use_docker:
+            display_image = image or getattr(runner, "default_image", "unknown")
+            console.print(f"  Image: {display_image}")
 
         if detach:
             console.print(
@@ -305,6 +356,11 @@ def logs(
     stderr: bool = typer.Option(
         False, "--stderr", help="Show stderr instead of stdout"
     ),
+    runner_log: bool = typer.Option(
+        False,
+        "--runner-log",
+        help="Show runner/backend errors (e.g. Docker failures)",
+    ),
 ) -> None:
     """Show logs for a run."""
     runner = get_runner()
@@ -317,10 +373,20 @@ def logs(
             console.print(f"[red]Error:[/red] {e}")
             raise typer.Exit(1)
 
-        log_path = store.stderr_path(run_id) if stderr else store.stdout_path(run_id)
+        if runner_log:
+            log_path = store.runner_log_path(run_id)
+        elif stderr:
+            log_path = store.stderr_path(run_id)
+        else:
+            log_path = store.stdout_path(run_id)
 
         if not log_path.exists():
             console.print("[dim]No logs found.[/dim]")
+            return
+
+        # For runner logs, just read the file directly (no follow support)
+        if runner_log:
+            console.print(log_path.read_text())
             return
 
         try:

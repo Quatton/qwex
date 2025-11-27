@@ -26,16 +26,18 @@ class RunStore:
           .qwex/
             runs/
               <run_id>/
-                run.json      # Run metadata
-                stdout.log    # Standard output
-                stderr.log    # Standard error
-                exit_code     # Exit code file
+                run.json         # Run metadata
+                stdout.log       # Standard output
+                stderr.log       # Standard error
+                exit_code        # Exit code file
+                runner.log       # Runner/backend errors (e.g. Docker failures)
     """
 
     RUN_FILE = "run.json"
     STDOUT_FILE = "stdout.log"
     STDERR_FILE = "stderr.log"
     EXIT_CODE_FILE = "exit_code"
+    RUNNER_LOG_FILE = "runner.log"
 
     def __init__(self, workspace: Workspace | None = None):
         """Initialize the store.
@@ -75,6 +77,17 @@ class RunStore:
     def exit_code_path(self, run_id: str) -> Path:
         """Get the exit_code file path for a run."""
         return self._run_dir(run_id) / self.EXIT_CODE_FILE
+
+    def runner_log_path(self, run_id: str) -> Path:
+        """Get the runner.log path for a run.
+
+        This file captures errors or messages from the runner/backend itself,
+        separate from the executed command's stderr. Examples:
+        - Docker container start failures
+        - Image pull errors
+        - Volume mount failures
+        """
+        return self._run_dir(run_id) / self.RUNNER_LOG_FILE
 
     def exists(self, run_id: str) -> bool:
         """Check if a run exists."""

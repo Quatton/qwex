@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 CONFIG_FILENAME = "qwex.yaml"
 QWEX_DIR = ".qwex"
+DEFAULT_IMAGE = "ghcr.io/astral-sh/uv:0.9.13-python3.12-bookworm-slim"
 
 
 class WorkspaceConfig(BaseModel):
@@ -29,6 +30,12 @@ class WorkspaceConfig(BaseModel):
         default=".",
         alias="workspaceDir",
         description="Workspace root directory, relative to config file or absolute",
+    )
+
+    default_image: str = Field(
+        default=DEFAULT_IMAGE,
+        alias="defaultImage",
+        description="Default container image for containerized runs",
     )
 
     # Future extensions

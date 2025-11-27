@@ -4,8 +4,8 @@ A Python SDK for ML run orchestration following the Qwex Protocol.
 """
 
 from qwp.exceptions import QwpError, RunAlreadyExistsError, RunNotFoundError
-from qwp.models import JobSpec, Run, RunStatus
-from qwp.runners import LocalRunner, Runner
+from qwp.models import ImageSpec, JobSpec, Run, RunStatus
+from qwp.runners import DockerRunner, LocalRunner, Runner
 from qwp.store import RunStore
 from qwp.workspace import Workspace, WorkspaceConfig
 
@@ -19,11 +19,13 @@ __all__ = [
     "Run",
     "RunStatus",
     "JobSpec",
+    "ImageSpec",
     # Store
     "RunStore",
     # Runners
     "Runner",
     "LocalRunner",
+    "DockerRunner",
     # Exceptions
     "QwpError",
     "RunNotFoundError",

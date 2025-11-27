@@ -122,7 +122,8 @@ class Runner(ABC):
         Raises:
             RunNotFoundError: If the run is not found.
         """
-        pass
+        if False:
+            yield "unreachable"
 
     async def list_runs(self) -> list[Run]:
         """List all runs, syncing status for each.

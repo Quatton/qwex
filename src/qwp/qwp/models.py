@@ -10,7 +10,7 @@ from enum import Enum
 from typing import Any
 
 from uuid_extensions import uuid7
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 def generate_run_id() -> str:
@@ -40,10 +40,46 @@ class RunStatus(str, Enum):
         return self in (RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED)
 
 
+class ImageSpec(BaseModel):
+    """Container image specification.
+
+    Supports OCI format images (Docker, Singularity, etc).
+    Can be created from a simple string or a structured dict.
+    """
+
+    name: str = Field(..., description="Image name/path/URI")
+    # Future: format, pullSecret, etc.
+    # format: str = Field(default="oci", description="Image format (oci, singularity)")
+    # pull_secret: str | None = Field(default=None, alias="pullSecret")
+
+    @classmethod
+    def from_string_or_dict(
+        cls, value: str | dict | ImageSpec | None
+    ) -> ImageSpec | None:
+        """Create ImageSpec from string, dict, or existing ImageSpec.
+
+        Args:
+            value: Image specification as string (image name) or dict.
+
+        Returns:
+            ImageSpec instance or None if value is None.
+        """
+        if value is None:
+            return None
+        if isinstance(value, ImageSpec):
+            return value
+        if isinstance(value, str):
+            return cls(name=value)
+        if isinstance(value, dict):
+            return cls.model_validate(value)
+        raise ValueError(f"Invalid image specification: {value}")
+
+
 class JobSpec(BaseModel):
     """Job specification - the template/definition of work.
 
     Defines what to execute: command, environment, working directory.
+    Optionally specifies a container image for containerized execution.
     """
 
     command: str = Field(..., description="The command to execute")
@@ -54,6 +90,17 @@ class JobSpec(BaseModel):
     working_dir: str | None = Field(
         default=None, description="Working directory for execution"
     )
+    image: ImageSpec | None = Field(
+        default=None, description="Container image for containerized execution"
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_image(cls, data: Any) -> Any:
+        """Parse image field from string or dict."""
+        if isinstance(data, dict) and "image" in data:
+            data["image"] = ImageSpec.from_string_or_dict(data["image"])
+        return data
 
     def full_command(self) -> list[str]:
         """Get the full command as a list for subprocess."""
