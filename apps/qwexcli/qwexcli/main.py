@@ -14,7 +14,7 @@ from qwp import JobSpec, LocalRunner, Run, RunStatus, RunStore, Workspace
 
 app = typer.Typer(
     name="qwex",
-    help="Qwex - Run orchestration for ML workflows",
+    help="Queued Workspace-aware Execution",
     no_args_is_help=True,
 )
 console = Console()
