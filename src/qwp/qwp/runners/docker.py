@@ -82,7 +82,7 @@ class DockerRunner(Runner):
             run: The run object.
             job_spec: The job specification.
             stdout_path: Path to stdout log file.
-            stderr_path: Path to stderr log file.
+            stderr_path: Path to stder`r log file.
             exit_code_path: Path to exit code file.
             runner_log_path: Path to runner log file (Docker/runner messages).
 
