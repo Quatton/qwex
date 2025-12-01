@@ -536,10 +536,23 @@ ArtifactUrlResponse:
    - Align routes to spec
    - Add source upload endpoint
 
-#### Key Decisions
+## Week 9: Nov 29, 2025
 
-- **API versioning**: Bump entire API to v2 if any breaking change (like k8s, Stripe)
-- **Auth for v1**: api-key only (simplest, unblocks everything)
-- **Source naming**: "source" instead of "code" (more general)
-- **Features are flags**: They change behavior, not API shape
-- **Fixed routes**: No OpenAPI mapping complexity — we own the spec
+### Go Code Removal
+
+In preparation for the new Python-based daemon and client architecture, we have removed the legacy Go codebase. This allows us to focus on a single language stack and iterate faster on the new daemon design.
+
+**Safety Measures:**
+- A backup branch was created before deletion: `wip/go-backup-20251129T115607Z`
+- The deletion commit on `main` is: `45323bc`
+
+**Removed Components:**
+- `apps/qwexcloud` (Go server)
+- `apps/qwexctl` (Go CLI)
+- `pkg/*` (Go packages: k8s, qapi, qrunner, etc.)
+- `go.mod`, `go.sum`
+
+**Next Steps:**
+- Implement the Python daemon with UDS/HTTP support.
+- Refactor `qwexctl` (Python) to communicate with the daemon.
+- Implement the plugin system for runners.
