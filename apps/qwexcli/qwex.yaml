@@ -1,3 +1,0 @@
-# qwex workspace config
-# Testing config override - using python:3.12-slim instead of default uv image
-defaultImage: python:3.12-slim

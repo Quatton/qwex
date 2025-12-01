@@ -6,10 +6,9 @@ servers: 1
 agents: 2
 image: rancher/k3s:latest
 volumes:
-  - volume: ${PWD}:/mnt
+  - volume: qwex-data:/var/qwex-data
     nodeFilters:
       - server:*
-      - agent:*
 ports:
   - port: 8080:80
     nodeFilters:
