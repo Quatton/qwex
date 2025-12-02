@@ -16,8 +16,7 @@ from rich.prompt import Prompt
 from qwp.models import Run, RunStatus
 from qwp.workspace import Workspace, find_workspace, find_workspace_or_cwd
 from qwp.config import QwexConfig
-from qwp.layers import Layer, LayerContext, ShellCommand
-from qwp.layers.docker import DockerLayer
+from qwp.layers import Layer, LayerContext, ShellCommand, create_layer
 
 app = typer.Typer(
     name="qwex",
@@ -66,17 +65,11 @@ def run(
                 console.print(f"[red]Error:[/red] Layer '{layer_name}' not found")
                 raise typer.Exit(1)
 
-            if layer_config.type == "docker":
-                if not layer_config.image:
-                    console.print(
-                        f"[red]Error:[/red] Docker layer '{layer_name}' missing image"
-                    )
-                    raise typer.Exit(1)
-                layers.append(DockerLayer(image=layer_config.image))
-            else:
-                console.print(
-                    f"[yellow]Warning:[/yellow] Layer type '{layer_config.type}' not implemented yet"
-                )
+            try:
+                layers.append(create_layer(layer_config))
+            except ValueError as e:
+                console.print(f"[red]Error:[/red] {e}")
+                raise typer.Exit(1)
 
     # Create run
     run_obj = Run(

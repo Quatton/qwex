@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
+
+from .docker import DockerLayer
+from .ssh import SSHLayer
+
+if TYPE_CHECKING:
+    from ..config import LayerConfig
 
 
 class ShellCommand(BaseModel):
@@ -57,3 +64,30 @@ class Layer(ABC):
     def name(self) -> str:
         """Layer name for logging"""
         return self.__class__.__name__
+
+
+def create_layer(config: "LayerConfig") -> Layer:
+    """Create a layer instance from configuration"""
+    if config.type == "docker":
+        if not config.image:
+            raise ValueError("Docker layer requires 'image'")
+        return DockerLayer(
+            image=config.image,
+            workdir=config.workdir,
+            mounts=[(m["host"], m["container"]) for m in (config.mounts or [])],
+            env=config.env or {},
+            extra_args=config.extra_args or [],
+        )
+    elif config.type == "ssh":
+        if not config.host:
+            raise ValueError("SSH layer requires 'host'")
+        return SSHLayer(
+            host=config.host,
+            user=config.user,
+            key_file=config.key_file,
+            port=config.port or 22,
+            workdir=config.workdir,
+            extra_args=config.extra_args or [],
+        )
+    else:
+        raise ValueError(f"Unknown layer type: {config.type}")

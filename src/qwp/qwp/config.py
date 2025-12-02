@@ -12,10 +12,18 @@ class LayerConfig(BaseModel):
     """Configuration for a layer"""
 
     type: str
-    # Additional fields depend on type
-    image: str | None = None  # for docker/singularity
-    host: str | None = None  # for ssh
-    # ... more fields as needed
+    # Docker/Singularity fields
+    image: str | None = None
+    # SSH fields
+    host: str | None = None
+    user: str | None = None
+    key_file: str | None = None
+    port: int | None = None
+    # Common fields
+    workdir: str | None = None
+    mounts: list[dict[str, str]] | None = None
+    env: dict[str, str] | None = None
+    extra_args: list[str] | None = None
 
     class Config:
         extra = "allow"  # allow additional fields
