@@ -67,9 +67,33 @@ class StorageConfig(BaseModel):
     type: str
     source: str | None = None
     path: str | None = None
+    depends_on: str | None = None  # layer dependency (e.g., "ssh")
+    # Git fields
+    repo: str | None = None
+    ref: str | None = None
+    # Auth
+    auth: dict | None = None
+    # Sync policies
+    sync: str | None = None  # "on-exit", "manual", etc.
 
     class Config:
         extra = "allow"
+
+
+class GitDirectStorageConfig(BaseModel):
+    """Configuration for git-direct storage type.
+
+    Push: git push to $QWEX_HOME/repos/<workspace>.git via SSH
+    Pull: no-op (always up-to-date on remote)
+    """
+
+    depends_on: str  # layer name that provides SSH access
+
+    @classmethod
+    def from_storage_config(cls, config: StorageConfig) -> "GitDirectStorageConfig":
+        if not config.depends_on:
+            raise ValueError("git-direct storage requires 'depends_on' layer")
+        return cls(depends_on=config.depends_on)
 
 
 class RunnerConfig(BaseModel):

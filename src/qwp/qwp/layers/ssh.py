@@ -22,6 +22,7 @@ class SSHLayerConfig:
         port: int = 22,
         config: str | None = None,
         workdir: str | None = None,
+        qwex_home: str | None = None,  # remote QWEX_HOME override
         extra_args: list[str] | None = None,
     ):
         self.host = host
@@ -30,6 +31,7 @@ class SSHLayerConfig:
         self.port = port
         self.config = config
         self.workdir = workdir
+        self.qwex_home = qwex_home or "~/.qwex"
         self.extra_args = extra_args or []
 
     @classmethod
@@ -38,7 +40,7 @@ class SSHLayerConfig:
         if not config.host:
             raise ValueError("SSH layer requires 'host'")
 
-        # Expand ~ in paths
+        # Expand ~ in paths (local paths only)
         config_path = None
         if config.config:
             config_path = str(Path(config.config).expanduser())
@@ -50,6 +52,9 @@ class SSHLayerConfig:
         # Support both 'workdir' and 'cwd' fields
         workdir = config.workdir or config.cwd
 
+        # Get qwex_home from extra fields
+        qwex_home = getattr(config, "qwex_home", None)
+
         return cls(
             host=config.host,
             user=config.user,
@@ -57,6 +62,7 @@ class SSHLayerConfig:
             port=config.port or 22,
             config=config_path,
             workdir=workdir,
+            qwex_home=qwex_home,
             extra_args=config.extra_args or [],
         )
 
@@ -144,3 +150,88 @@ class SSHLayer(Layer):
     def name(self) -> str:
         user_part = f"{self.config.user}@" if self.config.user else ""
         return f"SSHLayer({user_part}{self.config.host})"
+
+    def build_ssh_args(self) -> list[str]:
+        """Build SSH command arguments (without target and remote command)"""
+        args: list[str] = []
+
+        if self.config.config:
+            args.extend(["-F", self.config.config])
+
+        if self.config.key_file:
+            args.extend(["-i", self.config.key_file])
+
+        if self.config.port != 22:
+            args.extend(["-p", str(self.config.port)])
+
+        args.extend(self.config.extra_args)
+
+        return args
+
+    def get_target(self) -> str:
+        """Get SSH target (user@host or just host)"""
+        if self.config.user:
+            return f"{self.config.user}@{self.config.host}"
+        return self.config.host
+
+    def build_remote_runner_script(
+        self,
+        run_id: str,
+        commit: str,
+        workspace_name: str,
+        command: str,
+        args: list[str],
+    ) -> str:
+        """Build a shell script to run on remote with worktree isolation.
+
+        This script:
+        1. Creates worktree from the pushed commit
+        2. Runs the command
+        3. Writes logs to $QWEX_HOME/runs/<run-id>/
+        4. Cleans up worktree
+        """
+        import shlex
+
+        qwex_home = self.config.qwex_home
+        repo_path = f"{qwex_home}/repos/{workspace_name}.git"
+        space_path = f"{qwex_home}/spaces/{run_id}"
+        run_path = f"{qwex_home}/runs/{run_id}"
+
+        cmd_str = shlex.join([command, *args])
+
+        # Build the remote script
+        script = f"""
+set -e
+
+# Ensure directories exist
+mkdir -p {qwex_home}/repos {qwex_home}/spaces {qwex_home}/runs
+
+# Create run directory
+mkdir -p {run_path}
+
+# Log status: running
+echo '{{"status": "running", "ts": "'$(date -u +%Y-%m-%dT%H:%M:%S+00:00)'"}}' >> {run_path}/statuses.jsonl
+
+# Create worktree from commit
+cd {repo_path}
+git worktree add --detach {space_path} {commit}
+
+# Run command
+cd {space_path}
+{cmd_str} > {run_path}/stdout.log 2>&1
+EXIT_CODE=$?
+
+# Log status based on exit code
+if [ $EXIT_CODE -eq 0 ]; then
+    echo '{{"status": "succeeded", "ts": "'$(date -u +%Y-%m-%dT%H:%M:%S+00:00)'"}}' >> {run_path}/statuses.jsonl
+else
+    echo '{{"status": "failed", "ts": "'$(date -u +%Y-%m-%dT%H:%M:%S+00:00)'"}}' >> {run_path}/statuses.jsonl
+fi
+
+# Cleanup worktree
+cd {repo_path}
+git worktree remove --force {space_path} || true
+
+exit $EXIT_CODE
+"""
+        return script.strip()

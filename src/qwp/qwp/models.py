@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -19,6 +20,17 @@ class RunStatus(str, Enum):
     DETACHED = "detached"  # running in background
 
 
+class StatusEntry(BaseModel):
+    """A single status change entry for statuses.jsonl"""
+
+    status: RunStatus
+    ts: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_jsonl(self) -> str:
+        """Convert to JSON line"""
+        return json.dumps({"status": self.status.value, "ts": self.ts.isoformat()})
+
+
 class Run(BaseModel):
     """Represents a running or completed job."""
 
@@ -29,6 +41,10 @@ class Run(BaseModel):
     cwd: str = "."
     env: dict[str, str] = {}
 
+    # Git info for reproducibility
+    commit: str | None = None
+    workspace_name: str | None = None
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -38,12 +54,26 @@ class Run(BaseModel):
     pid: int | None = None  # for detached processes
 
     def save(self, runs_dir: Path) -> Path:
-        """Save run to .qwex/runs/<id>/run.json"""
+        """Save run to runs/<id>/run.json"""
         run_dir = runs_dir / self.id
         run_dir.mkdir(parents=True, exist_ok=True)
         run_file = run_dir / "run.json"
         run_file.write_text(self.model_dump_json(indent=2))
         return run_file
+
+    def append_status(self, runs_dir: Path, status: RunStatus) -> None:
+        """Append status entry to runs/<id>/statuses.jsonl"""
+        run_dir = runs_dir / self.id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        statuses_file = run_dir / "statuses.jsonl"
+        entry = StatusEntry(status=status)
+        with open(statuses_file, "a") as f:
+            f.write(entry.to_jsonl() + "\n")
+        self.status = status
+
+    def stdout_log_path(self, runs_dir: Path) -> Path:
+        """Path to stdout.log"""
+        return runs_dir / self.id / "stdout.log"
 
     @classmethod
     def load(cls, run_dir: Path) -> "Run":
@@ -71,7 +101,7 @@ class Run(BaseModel):
 
     @property
     def log_file(self) -> Path:
-        """Path to stdout/stderr log file"""
+        """Path to stdout/stderr log file (legacy, use stdout_log_path instead)"""
         return Path(self.cwd) / ".qwex" / "runs" / self.id / "output.log"
 
     @property
