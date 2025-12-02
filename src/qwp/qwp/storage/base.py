@@ -10,10 +10,7 @@ from pydantic import BaseModel
 
 
 class StorageConfig(BaseModel):
-    """Base configuration for storage backends"""
-
     type: str
-
     model_config = {"extra": "allow"}
 
 
@@ -42,7 +39,6 @@ _STORAGE_REGISTRY: dict[str, tuple[type[Storage], type[StorageConfig]]] = {}
 
 
 def _get_literal_value(annotation) -> str | None:
-    """Extract the string value from a Literal type annotation"""
     if get_origin(annotation) is type(None):
         return None
     args = get_args(annotation)
@@ -51,8 +47,8 @@ def _get_literal_value(annotation) -> str | None:
     return None
 
 
-def register_storage(cls: type[Storage]) -> type[Storage]:
-    """Decorator to register a storage type (infers type from config's Literal)"""
+def storage(cls: type[Storage]) -> type[Storage]:
+    """Decorator to register a storage type"""
     hints = get_type_hints(cls.__init__)
     config_cls = hints.get("config")
     if not config_cls:
@@ -71,7 +67,6 @@ def register_storage(cls: type[Storage]) -> type[Storage]:
 
 
 def create_storage(config: StorageConfig | dict) -> Storage:
-    """Create a storage instance from configuration"""
     type_key = config.get("type") if isinstance(config, dict) else config.type
     if not type_key:
         raise ValueError("Storage config must have 'type' field")

@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import shlex
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel
 
-from qwp.layers import Layer, LayerContext, ShellCommand, register_layer
+from qwp.layers import Layer, LayerContext, ShellCommand, layer
+
+log = logging.getLogger(__name__)
 
 
 class SSHLayerConfig(BaseModel):
-    """Configuration for SSH layer"""
-
     type: Literal["ssh"] = "ssh"
     host: str
     user: str | None = None
@@ -35,7 +36,7 @@ class SSHLayerConfig(BaseModel):
         return str(Path(self.key_file).expanduser()) if self.key_file else None
 
 
-@register_layer
+@layer
 class SSHLayer(Layer):
     """Wraps commands to run on a remote host via SSH"""
 
@@ -55,20 +56,32 @@ class SSHLayer(Layer):
             args.extend(["-p", str(self.config.port)])
 
         args.extend(self.config.extra_args)
-        args.append("-t")
+        # Don't use -t (tty) for non-interactive batch commands
+        # It can cause issues with output streaming and git operations
 
-        target = (
-            f"{self.config.user}@{self.config.host}"
-            if self.config.user
-            else self.config.host
-        )
+        target = self.get_target()
         args.append(target)
 
-        workdir = self.config.get_workdir()
-        remote_cmd = (
-            f"cd {workdir} && {inner.to_string()}" if workdir else inner.to_string()
-        )
-        args.append(remote_cmd)
+        # If we have a commit, use the worktree script for isolated execution
+        if ctx.commit and ctx.workspace_name:
+            log.info(f"Using worktree isolation on remote (commit: {ctx.commit[:8]})")
+            remote_cmd = self.build_remote_runner_script(
+                run_id=ctx.run_id,
+                commit=ctx.commit,
+                workspace_name=ctx.workspace_name,
+                command=inner.command,
+                args=inner.args,
+            )
+            # Wrap the script in bash -c
+            args.append(f"bash -c {shlex.quote(remote_cmd)}")
+        else:
+            # Fallback: just run in workdir (no worktree isolation)
+            workdir = self.config.get_workdir()
+            remote_cmd = (
+                f"cd {workdir} && {inner.to_string()}" if workdir else inner.to_string()
+            )
+            log.warning("No commit available, running without worktree isolation")
+            args.append(remote_cmd)
 
         return ShellCommand(command="ssh", args=args, env={})
 
@@ -115,16 +128,17 @@ mkdir -p {qwex_home}/repos {qwex_home}/spaces {qwex_home}/runs
 mkdir -p {run_path}
 echo '{{"status": "running", "ts": "'$(date -u +%Y-%m-%dT%H:%M:%S+00:00)'"}}' >> {run_path}/statuses.jsonl
 cd {repo_path}
-git worktree add --detach {space_path} {commit}
+git worktree add --detach {space_path} {commit} 2>/dev/null
 cd {space_path}
-{cmd_str} > {run_path}/stdout.log 2>&1
-EXIT_CODE=$?
+# Use tee to stream output to both console and log file
+{cmd_str} 2>&1 | tee {run_path}/stdout.log
+EXIT_CODE=${{PIPESTATUS[0]}}
 if [ $EXIT_CODE -eq 0 ]; then
     echo '{{"status": "succeeded", "ts": "'$(date -u +%Y-%m-%dT%H:%M:%S+00:00)'"}}' >> {run_path}/statuses.jsonl
 else
     echo '{{"status": "failed", "ts": "'$(date -u +%Y-%m-%dT%H:%M:%S+00:00)'"}}' >> {run_path}/statuses.jsonl
 fi
-cd {repo_path}
-git worktree remove --force {space_path} || true
+cd /
+git -C {repo_path} worktree remove --force {space_path} 2>/dev/null || rm -rf {space_path}
 exit $EXIT_CODE
 """.strip()

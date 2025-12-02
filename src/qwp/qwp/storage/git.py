@@ -8,18 +8,20 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from qwp.storage.base import Storage, register_storage
+from qwp.storage.base import Storage, storage
 
 
 class GitDirectStorageConfig(BaseModel):
-    """Configuration for git-direct storage"""
-
     type: Literal["git-direct"] = "git-direct"
     ssh_host: str
-    base_path: str = "~/.qwex/repos"
+    qwex_home: str = "~/.qwex"  # remote QWEX_HOME, repos stored at {qwex_home}/repos
+
+    @property
+    def repos_path(self) -> str:
+        return f"{self.qwex_home.rstrip('/')}/repos"
 
 
-@register_storage
+@storage
 class GitDirectStorage(Storage):
     """Git-direct storage: push via SSH, pull is no-op (uses worktrees)"""
 
@@ -27,7 +29,7 @@ class GitDirectStorage(Storage):
         self.config = config
 
     def push(self, local_path: Path, remote_ref: str) -> None:
-        repo_path = f"{self.config.base_path}/{remote_ref}.git"
+        repo_path = f"{self.config.repos_path}/{remote_ref}.git"
         _ensure_bare_repo_exists(self.config.ssh_host, repo_path)
         remote_url = f"{self.config.ssh_host}:{repo_path}"
         _git_push_to_remote(local_path, remote_url)

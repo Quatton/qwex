@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -9,6 +10,8 @@ from pathlib import Path
 
 from qwp.core.home import QwexHome
 from qwp.models import Run, RunStatus
+
+log = logging.getLogger(__name__)
 
 
 def get_current_commit(repo_path: Path) -> str | None:
@@ -40,24 +43,36 @@ def _create_worktree(
     """Create a detached worktree at target_path from commit."""
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
+    log.debug(f"Creating worktree: {target_path} from {commit[:8]}")
     result = subprocess.run(
         ["git", "worktree", "add", "--detach", str(target_path), commit],
         cwd=repo_path,
         capture_output=True,
         text=True,
     )
-    return result.returncode == 0
+    if result.returncode == 0:
+        log.info(f"Created worktree at {target_path}")
+        return True
+    else:
+        log.error(f"Failed to create worktree: {result.stderr}")
+        return False
 
 
 def _remove_worktree(repo_path: Path, target_path: Path) -> bool:
     """Remove a worktree."""
+    log.debug(f"Removing worktree: {target_path}")
     result = subprocess.run(
         ["git", "worktree", "remove", "--force", str(target_path)],
         cwd=repo_path,
         capture_output=True,
         text=True,
     )
-    return result.returncode == 0
+    if result.returncode == 0:
+        log.info(f"Removed worktree at {target_path}")
+        return True
+    else:
+        log.warning(f"Failed to remove worktree: {result.stderr}")
+        return False
 
 
 class LocalRunner:
@@ -89,18 +104,22 @@ class LocalRunner:
         Returns:
             Updated Run object
         """
-        self.qwex_home.ensure_dirs()
-        runs_dir = self.qwex_home.runs
+        self.qwex_home.ensure_dirs(self.workspace_name)
+        runs_dir = self.qwex_home.runs(self.workspace_name)
 
         # Get commit for reproducibility
         commit = get_current_commit(self.workspace_root)
         run_obj.commit = commit
         run_obj.workspace_name = self.workspace_name
 
+        log.debug(
+            f"Starting run {run_obj.id} (commit: {commit[:8] if commit else 'none'})"
+        )
+
         # Determine working directory
         if self.use_worktree and commit:
             # Create worktree for isolated execution
-            space_dir = self.qwex_home.space_dir(run_obj.id)
+            space_dir = self.qwex_home.space_dir(run_obj.id, self.workspace_name)
             if not _create_worktree(self.workspace_root, space_dir, commit):
                 run_obj.status = RunStatus.FAILED
                 run_obj.error = "Failed to create worktree"
@@ -110,6 +129,7 @@ class LocalRunner:
         else:
             # Run directly in workspace
             work_dir = self.workspace_root
+            log.debug(f"Running in workspace (no worktree): {work_dir}")
 
         # Update status
         run_obj.append_status(runs_dir, RunStatus.RUNNING)
@@ -122,6 +142,7 @@ class LocalRunner:
 
         # Execute command
         cmd = [run_obj.command, *run_obj.args]
+        log.debug(f"Executing: {' '.join(cmd)} in {work_dir}")
 
         try:
             with open(log_file, "w") as log_f:
@@ -147,6 +168,7 @@ class LocalRunner:
                 run_obj.exit_code = process.returncode
 
         except Exception as e:
+            log.exception(f"Error during run {run_obj.id}")
             run_obj.error = str(e)
             run_obj.exit_code = -1
 
@@ -154,14 +176,16 @@ class LocalRunner:
         run_obj.finished_at = datetime.now(timezone.utc)
         if run_obj.exit_code == 0:
             run_obj.append_status(runs_dir, RunStatus.SUCCEEDED)
+            log.info(f"Run {run_obj.id} succeeded")
         else:
             run_obj.append_status(runs_dir, RunStatus.FAILED)
+            log.info(f"Run {run_obj.id} failed (exit code {run_obj.exit_code})")
 
         run_obj.save(runs_dir)
 
         # Cleanup worktree
         if self.use_worktree and commit:
-            space_dir = self.qwex_home.space_dir(run_obj.id)
+            space_dir = self.qwex_home.space_dir(run_obj.id, self.workspace_name)
             _remove_worktree(self.workspace_root, space_dir)
 
         return run_obj

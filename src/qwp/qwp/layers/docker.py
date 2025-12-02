@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from qwp.layers import Layer, LayerContext, ShellCommand, register_layer
+from qwp.layers import Layer, LayerContext, ShellCommand, layer
 
 
 class MountConfig(BaseModel):
@@ -23,7 +23,7 @@ class DockerLayerConfig(BaseModel):
     extra_args: list[str] = []
 
 
-@register_layer
+@layer
 class DockerLayer(Layer):
     """Wraps commands to run inside a Docker container"""
 

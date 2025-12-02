@@ -2,80 +2,144 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import NamedTuple
 
+log = logging.getLogger(__name__)
+
 
 class QwexHome(NamedTuple):
-    """Resolved QWEX_HOME paths"""
+    """
+    Resolved QWEX_HOME paths.
 
-    root: Path  # $QWEX_HOME
+    Structure:
+        $QWEX_HOME/
+        ├── workspaces/<workspace-name>/
+        │   ├── runs/       # run outputs (logs, status)
+        │   ├── spaces/     # ephemeral worktree checkouts
+        │   └── repos/      # bare git repo cache (for remote)
+        └── logs/           # qwex internal logs (future)
+    """
+
+    root: Path  # $QWEX_HOME (default: ~/.qwex)
+    workspace_name: str | None = None  # resolved workspace name
 
     @property
-    def repos(self) -> Path:
-        """$QWEX_HOME/repos/ - bare git repo caches"""
-        return self.root / "repos"
+    def workspaces(self) -> Path:
+        """$QWEX_HOME/workspaces/"""
+        return self.root / "workspaces"
 
-    @property
-    def spaces(self) -> Path:
-        """$QWEX_HOME/spaces/ - ephemeral worktree checkouts"""
-        return self.root / "spaces"
+    def workspace_dir(self, name: str | None = None) -> Path:
+        """$QWEX_HOME/workspaces/<workspace-name>/"""
+        ws_name = name or self.workspace_name
+        if not ws_name:
+            raise ValueError("workspace_name required")
+        return self.workspaces / ws_name
 
-    @property
-    def runs(self) -> Path:
-        """$QWEX_HOME/runs/ - run outputs (logs, status, artifacts)"""
-        return self.root / "runs"
+    def runs(self, workspace: str | None = None) -> Path:
+        """$QWEX_HOME/workspaces/<workspace>/runs/"""
+        return self.workspace_dir(workspace) / "runs"
 
-    def run_dir(self, run_id: str) -> Path:
-        """$QWEX_HOME/runs/<run-id>/"""
-        return self.runs / run_id
+    def spaces(self, workspace: str | None = None) -> Path:
+        """$QWEX_HOME/workspaces/<workspace>/spaces/"""
+        return self.workspace_dir(workspace) / "spaces"
 
-    def space_dir(self, run_id: str) -> Path:
-        """$QWEX_HOME/spaces/<run-id>/"""
-        return self.spaces / run_id
+    def repos(self, workspace: str | None = None) -> Path:
+        """$QWEX_HOME/workspaces/<workspace>/repos/"""
+        return self.workspace_dir(workspace) / "repos"
 
-    def repo_path(self, workspace_name: str) -> Path:
-        """$QWEX_HOME/repos/<workspace-name>.git"""
-        return self.repos / f"{workspace_name}.git"
+    def run_dir(self, run_id: str, workspace: str | None = None) -> Path:
+        """$QWEX_HOME/workspaces/<workspace>/runs/<run-id>/"""
+        return self.runs(workspace) / run_id
 
-    def ensure_dirs(self) -> None:
-        """Create all necessary directories"""
-        self.repos.mkdir(parents=True, exist_ok=True)
-        self.spaces.mkdir(parents=True, exist_ok=True)
-        self.runs.mkdir(parents=True, exist_ok=True)
+    def space_dir(self, run_id: str, workspace: str | None = None) -> Path:
+        """$QWEX_HOME/workspaces/<workspace>/spaces/<run-id>/"""
+        return self.spaces(workspace) / run_id
+
+    def ensure_dirs(self, workspace: str | None = None) -> None:
+        """Create all necessary directories for a workspace"""
+        ws = workspace or self.workspace_name
+        if not ws:
+            raise ValueError("workspace_name required")
+        self.runs(ws).mkdir(parents=True, exist_ok=True)
+        self.spaces(ws).mkdir(parents=True, exist_ok=True)
+        self.repos(ws).mkdir(parents=True, exist_ok=True)
+        log.debug(
+            f"Ensured directories for workspace '{ws}' at {self.workspace_dir(ws)}"
+        )
+
+    def ensure_workspace_symlink(
+        self, workspace_root: Path, workspace: str | None = None
+    ) -> Path:
+        """
+        Ensure .qwex symlink in workspace points to QWEX_HOME/workspaces/<name>.
+
+        Returns the symlink path.
+        """
+        ws = workspace or self.workspace_name
+        if not ws:
+            raise ValueError("workspace_name required")
+
+        target = self.workspace_dir(ws)
+        symlink = workspace_root / ".qwex"
+
+        # Ensure target exists
+        target.mkdir(parents=True, exist_ok=True)
+
+        if symlink.is_symlink():
+            current_target = symlink.resolve()
+            if current_target == target.resolve():
+                log.debug(f"Symlink {symlink} already points to {target}")
+                return symlink
+            # Remove old symlink
+            symlink.unlink()
+            log.debug(f"Removed old symlink {symlink} -> {current_target}")
+        elif symlink.exists():
+            # It's a real directory, not a symlink
+            # TODO: migrate existing data?
+            log.warning(f"{symlink} is a directory, not a symlink. Consider migrating.")
+            return symlink
+
+        symlink.symlink_to(target)
+        log.info(f"Created symlink {symlink} -> {target}")
+        return symlink
 
 
 def resolve_qwex_home(
     layer_override: str | None = None,
-    workspace_root: Path | None = None,
+    workspace_name: str | None = None,
 ) -> QwexHome:
     """
-    Resolve QWEX_HOME with priority:
-    1. Layer override (e.g., ssh.qwex_home)
+    Resolve QWEX_HOME.
+
+    Priority:
+    1. Layer override (e.g., ssh.qwex_home for remote)
     2. QWEX_HOME environment variable
-    3. .qwex in workspace root (if workspace_root provided)
-    4. ~/.qwex (default)
+    3. ~/.qwex (default)
 
     Args:
         layer_override: Explicit path from layer config
-        workspace_root: Path to workspace root (for .qwex fallback)
+        workspace_name: Workspace name for workspace-specific paths
 
     Returns:
         Resolved QwexHome
     """
     # 1. Layer override
     if layer_override:
-        return QwexHome(root=Path(layer_override).expanduser())
+        root = Path(layer_override).expanduser()
+        log.debug(f"Using layer override QWEX_HOME: {root}")
+        return QwexHome(root=root, workspace_name=workspace_name)
 
     # 2. Environment variable
     env_home = os.environ.get("QWEX_HOME")
     if env_home:
-        return QwexHome(root=Path(env_home).expanduser())
+        root = Path(env_home).expanduser()
+        log.debug(f"Using QWEX_HOME from env: {root}")
+        return QwexHome(root=root, workspace_name=workspace_name)
 
-    # 3. Workspace .qwex directory
-    if workspace_root:
-        return QwexHome(root=workspace_root / ".qwex")
-
-    # 4. Default: ~/.qwex
-    return QwexHome(root=Path.home() / ".qwex")
+    # 3. Default: ~/.qwex
+    root = Path.home() / ".qwex"
+    log.debug(f"Using default QWEX_HOME: {root}")
+    return QwexHome(root=root, workspace_name=workspace_name)

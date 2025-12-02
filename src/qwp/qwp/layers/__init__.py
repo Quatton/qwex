@@ -12,8 +12,6 @@ if TYPE_CHECKING:
 
 
 class ShellCommand(BaseModel):
-    """Represents a command to be executed by a shell"""
-
     command: str
     args: list[str] = []
     env: dict[str, str] = {}
@@ -28,17 +26,17 @@ class ShellCommand(BaseModel):
 
 
 class LayerContext(BaseModel):
-    """Context passed to layers during wrapping"""
-
     workspace_root: str
+    workspace_name: str
     run_id: str
     run_dir: str
+    commit: str | None = None  # Git commit hash for worktree checkout
 
     model_config = {"arbitrary_types_allowed": True}
 
 
 class Layer(ABC):
-    """Base class for execution layers that wrap commands"""
+    """Base class for execution layers"""
 
     @abstractmethod
     def __init__(self, config: BaseModel):
@@ -57,7 +55,6 @@ _LAYER_REGISTRY: dict[str, tuple[type[Layer], type[BaseModel]]] = {}
 
 
 def _get_literal_value(annotation) -> str | None:
-    """Extract the string value from a Literal type annotation"""
     if get_origin(annotation) is type(None):
         return None
     args = get_args(annotation)
@@ -66,8 +63,8 @@ def _get_literal_value(annotation) -> str | None:
     return None
 
 
-def register_layer(cls: type[Layer]) -> type[Layer]:
-    """Decorator to register a layer type (infers type from config's Literal)"""
+def layer(cls: type[Layer]) -> type[Layer]:
+    """Decorator to register a layer type"""
     hints = get_type_hints(cls.__init__)
     config_cls = hints.get("config")
     if not config_cls:
@@ -86,7 +83,6 @@ def register_layer(cls: type[Layer]) -> type[Layer]:
 
 
 def create_layer(config: "LayerConfig | dict") -> Layer:
-    """Create a layer instance from configuration"""
     type_key = config.get("type") if isinstance(config, dict) else config.type
     if not type_key:
         raise ValueError("Layer config must have 'type' field")

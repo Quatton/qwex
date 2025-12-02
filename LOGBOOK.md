@@ -1,5 +1,135 @@
 > For the sake of academic transparency, this logbook is created on Sun Oct 19 2025, which is way past the beginning date of this project. I will not backdate entries on Week 1 - 2 to misrepresent the actual timeline of development.
 
+## Week 10: Dec 2, 2025
+
+### Execution Model Finalized: Git Worktree Isolation
+
+After discovering design flaws in the current implementation, we're documenting the correct execution model.
+
+#### Core Invariant
+
+**Every run executes in a git worktree, not the working directory.**
+
+This ensures:
+1. **Reproducibility**: Run tied to exact commit SHA
+2. **Isolation**: Concurrent runs don't interfere
+3. **Clean state**: No uncommitted changes affect execution
+
+#### QWEX_HOME Structure
+
+```
+$QWEX_HOME/                    # ~/.qwex by default, or workspace/.qwex
+  repos/                       # bare git repos (for remote storage)
+    <workspace-name>.git/
+  spaces/                      # ephemeral worktrees (deleted after run)
+    <run-id>/
+  runs/                        # persistent run metadata + logs
+    <run-id>/
+      run.json                 # MUST have commit field
+      statuses.jsonl
+      stdout.log
+```
+
+#### Run Lifecycle
+
+```
+1. User runs: qwex run python train.py
+
+2. Pre-flight checks:
+   - Is this a git repo? (required)
+   - Get current commit SHA (required, stored in run.json)
+
+3. Create worktree:
+   - git worktree add --detach $QWEX_HOME/spaces/<run-id> <commit>
+
+4. Execute in worktree:
+   - cd $QWEX_HOME/spaces/<run-id>
+   - python train.py > $QWEX_HOME/runs/<run-id>/stdout.log 2>&1
+
+5. Cleanup:
+   - git worktree remove $QWEX_HOME/spaces/<run-id>
+   - Run metadata persists in $QWEX_HOME/runs/<run-id>/
+```
+
+#### run.json Schema (Required Fields)
+
+```json
+{
+  "id": "uuid7",
+  "commit": "abc123...",        // REQUIRED - for reproducibility
+  "workspace_name": "my-project",
+  "command": "python",
+  "args": ["train.py"],
+  "status": "succeeded",
+  "created_at": "...",
+  "started_at": "...",
+  "finished_at": "..."
+}
+```
+
+#### Storage Backends
+
+Storage handles syncing code to remote execution environments.
+
+**git-direct**: Push to bare repo via SSH
+- Used with SSH layer
+- Remote creates worktree from pushed commit
+- `base_path` should come from layer's `qwex_home`, not hardcoded
+
+**mount**: Direct filesystem mount
+- Used with local/docker execution
+- No transfer needed, worktree created locally
+
+#### Layer + Storage Relationship
+
+```yaml
+# qwex.yaml
+layers:
+  ssh:
+    type: ssh
+    host: csc
+    qwex_home: ~/.qwex        # remote QWEX_HOME
+
+storage:
+  code:
+    type: git-direct
+    layer: ssh                # inherits ssh_host and qwex_home from layer
+
+runners:
+  remote:
+    layers: [ssh]
+    storage:
+      source: code            # uses git-direct storage
+```
+
+Storage config should reference layer to avoid duplication:
+- `ssh_host` comes from layer
+- `base_path` = `{layer.qwex_home}/repos`
+
+#### Registry Decorators
+
+Simplified decorator names:
+- `@layer` instead of `@register_layer`
+- `@storage` instead of `@register_storage`
+
+#### Checkout a Run
+
+To reproduce a run:
+```bash
+qwex checkout <run-id>
+# reads run.json, gets commit, creates worktree
+git worktree add ./run-<run-id> <commit>
+```
+
+#### Key Fixes Needed
+
+1. **Run must require commit**: No run without git commit
+2. **Storage depends on layer**: `git-direct` gets `ssh_host` and `base_path` from SSH layer
+3. **Worktree is mandatory**: All execution happens in worktrees
+4. **Shorter decorators**: `@layer`, `@storage`
+
+---
+
 ## Week 3: Oct 16 - Oct 22, 2025
 
 ### Goals

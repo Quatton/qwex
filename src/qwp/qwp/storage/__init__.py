@@ -1,13 +1,14 @@
 """Storage backends"""
 
-from .base import Storage, StorageConfig, create_storage, register_storage
+from .base import Storage, StorageConfig, _STORAGE_REGISTRY, create_storage, storage
 from .git import GitDirectStorage, GitDirectStorageConfig
 
 __all__ = [
     "Storage",
     "StorageConfig",
+    "_STORAGE_REGISTRY",
     "create_storage",
-    "register_storage",
+    "storage",
     "GitDirectStorage",
     "GitDirectStorageConfig",
 ]
