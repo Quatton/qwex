@@ -2,15 +2,37 @@
 
 from __future__ import annotations
 
-from qwp.layers import Layer, LayerContext, ShellCommand
+from pydantic import BaseModel
+
+from qwp.layers import Layer, LayerContext, ShellCommand, register_layer
 
 
+class MountConfig(BaseModel):
+    """Configuration for a volume mount"""
+
+    host: str
+    container: str
+
+
+class DockerLayerConfig(BaseModel):
+    """Configuration for Docker layer"""
+
+    type: str = "docker"  # discriminator
+    image: str
+    workdir: str = "/workspace"
+    mounts: list[MountConfig] = []
+    env: dict[str, str] = {}
+    extra_args: list[str] = []
+
+
+@register_layer("docker")
 class DockerLayer(Layer):
     """
     Wraps commands to run inside a Docker container.
 
     Example:
-        layer = DockerLayer(image="python:3.12")
+        config = DockerLayerConfig(image="python:3.12")
+        layer = DockerLayer(config)
         wrapped = layer.wrap(
             ShellCommand(command="python", args=["train.py"]),
             ctx
@@ -18,28 +40,9 @@ class DockerLayer(Layer):
         # Results in: docker run --rm -v /workspace:/workspace python:3.12 python train.py
     """
 
-    def __init__(
-        self,
-        image: str,
-        *,
-        workdir: str | None = None,
-        mounts: list[tuple[str, str]] | None = None,
-        env: dict[str, str] | None = None,
-        extra_args: list[str] | None = None,
-    ):
-        """
-        Args:
-            image: Docker image to use
-            workdir: Working directory inside container (default: /workspace)
-            mounts: Additional (host_path, container_path) mounts
-            env: Environment variables to set
-            extra_args: Extra arguments to pass to docker run
-        """
-        self.image = image
-        self.workdir = workdir or "/workspace"
-        self.mounts = mounts or []
-        self.env = env or {}
-        self.extra_args = extra_args or []
+    def __init__(self, config: DockerLayerConfig):
+        """Initialize from DockerLayerConfig"""
+        self.config = config
 
     def wrap(self, inner: ShellCommand, ctx: LayerContext) -> ShellCommand:
         """Wrap command to run inside Docker container"""
@@ -50,27 +53,27 @@ class DockerLayer(Layer):
         ]
 
         # Mount workspace
-        args.extend(["-v", f"{ctx.workspace_root}:{self.workdir}"])
+        args.extend(["-v", f"{ctx.workspace_root}:{self.config.workdir}"])
 
         # Mount run directory for logs
         args.extend(["-v", f"{ctx.run_dir}:/qwex/runs"])
 
         # Set working directory
-        args.extend(["-w", self.workdir])
+        args.extend(["-w", self.config.workdir])
 
         # Add environment variables
-        for key, value in {**self.env, **inner.env}.items():
+        for key, value in {**self.config.env, **inner.env}.items():
             args.extend(["-e", f"{key}={value}"])
 
         # Add custom mounts
-        for host_path, container_path in self.mounts:
-            args.extend(["-v", f"{host_path}:{container_path}"])
+        for mount in self.config.mounts:
+            args.extend(["-v", f"{mount.host}:{mount.container}"])
 
         # Add extra args
-        args.extend(self.extra_args)
+        args.extend(self.config.extra_args)
 
         # Add image
-        args.append(self.image)
+        args.append(self.config.image)
 
         # Add the inner command
         args.append(inner.command)
@@ -84,4 +87,4 @@ class DockerLayer(Layer):
 
     @property
     def name(self) -> str:
-        return f"DockerLayer({self.image})"
+        return f"DockerLayer({self.config.image})"

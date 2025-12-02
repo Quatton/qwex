@@ -7,11 +7,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-# Concrete layer implementations are imported lazily inside `create_layer`
-# to avoid circular imports during package import-time.
-
 if TYPE_CHECKING:
-    from ..config import LayerConfig
+    from qwp.core.config import LayerConfig
 
 
 class ShellCommand(BaseModel):
@@ -39,8 +36,7 @@ class LayerContext(BaseModel):
     run_id: str
     run_dir: str  # .qwex/runs/<run_id>
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class Layer(ABC):
@@ -66,23 +62,56 @@ class Layer(ABC):
         return self.__class__.__name__
 
 
-def create_layer(config: "LayerConfig") -> Layer:
-    """Create a layer instance from configuration"""
-    if config.type == "docker":
-        if not config.image:
-            raise ValueError("Docker layer requires 'image'")
-        from .docker import DockerLayer
+# Layer registry for dynamic creation
+_LAYER_REGISTRY: dict[str, tuple[type[Layer], type[BaseModel]]] = {}
 
-        return DockerLayer(
-            image=config.image,
-            workdir=config.workdir,
-            mounts=[(m["host"], m["container"]) for m in (config.mounts or [])],
-            env=config.env or {},
-            extra_args=config.extra_args or [],
-        )
-    elif config.type == "ssh":
-        from .ssh import SSHLayer
 
-        return SSHLayer(config)
+def register_layer(type_name: str):
+    """Decorator to register a layer type with its config class"""
+
+    def decorator(cls: type[Layer]) -> type[Layer]:
+        # Find the config class from the layer's __init__ type hints
+        import inspect
+
+        sig = inspect.signature(cls.__init__)
+        config_param = sig.parameters.get("config")
+        if config_param and config_param.annotation != inspect.Parameter.empty:
+            config_cls = config_param.annotation
+            _LAYER_REGISTRY[type_name] = (cls, config_cls)
+        else:
+            raise ValueError(f"Layer {cls} must have a typed 'config' parameter")
+        return cls
+
+    return decorator
+
+
+def create_layer(config: "LayerConfig | dict") -> Layer:
+    """Create a layer instance from configuration using registry"""
+    # Handle dict input
+    if isinstance(config, dict):
+        type_name = config.get("type")
+        if not type_name:
+            raise ValueError("Layer config must have 'type' field")
     else:
-        raise ValueError(f"Unknown layer type: {config.type}")
+        type_name = config.type
+
+    entry = _LAYER_REGISTRY.get(type_name)
+    if entry is None:
+        raise ValueError(f"Unknown layer type: {type_name}")
+
+    layer_cls, config_cls = entry
+
+    # Convert to the proper config type if needed
+    if isinstance(config, dict):
+        typed_config = config_cls(**config)
+    elif isinstance(config, config_cls):
+        typed_config = config
+    else:
+        # Try to convert from generic LayerConfig
+        typed_config = config_cls(**config.model_dump())
+
+    return layer_cls(typed_config)
+
+
+# Import concrete layers to trigger registration
+from qwp.layers import docker, ssh  # noqa: E402, F401

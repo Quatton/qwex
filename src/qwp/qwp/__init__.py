@@ -1,6 +1,36 @@
 """Qwp - Queue Worker Protocol"""
 
-from qwp.models import Run, RunStatus
-from qwp.workspace import Workspace, find_workspace, find_workspace_or_cwd
+# Re-export from core
+from qwp.core import (
+    QwexConfig,
+    QwexHome,
+    LocalRunner,
+    RunnerConfig,
+    Workspace,
+    find_workspace,
+    find_workspace_or_cwd,
+    get_current_commit,
+    get_workspace_name,
+    resolve_qwex_home,
+)
 
-__all__ = ["Run", "RunStatus", "Workspace", "find_workspace", "find_workspace_or_cwd"]
+# Re-export from models
+from qwp.models import Run, RunStatus, StatusEntry
+
+__all__ = [
+    # core
+    "QwexConfig",
+    "QwexHome",
+    "LocalRunner",
+    "RunnerConfig",
+    "Workspace",
+    "find_workspace",
+    "find_workspace_or_cwd",
+    "get_current_commit",
+    "get_workspace_name",
+    "resolve_qwex_home",
+    # models
+    "Run",
+    "RunStatus",
+    "StatusEntry",
+]

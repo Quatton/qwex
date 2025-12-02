@@ -14,8 +14,7 @@ from rich.console import Console
 from rich.prompt import Prompt
 
 from qwp.models import Run, RunStatus
-from qwp.workspace import Workspace, find_workspace, find_workspace_or_cwd
-from qwp.config import QwexConfig
+from qwp.core import Workspace, find_workspace, find_workspace_or_cwd, QwexConfig
 from qwp.layers import Layer, LayerContext, ShellCommand, create_layer
 
 app = typer.Typer(

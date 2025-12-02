@@ -3,70 +3,44 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
-from qwp.layers import Layer, LayerContext, ShellCommand
+from pydantic import BaseModel
 
-if TYPE_CHECKING:
-    from qwp.config import LayerConfig
+from qwp.layers import Layer, LayerContext, ShellCommand, register_layer
 
 
-class SSHLayerConfig:
+class SSHLayerConfig(BaseModel):
     """Configuration for SSH layer"""
 
-    def __init__(
-        self,
-        host: str,
-        user: str | None = None,
-        key_file: str | None = None,
-        port: int = 22,
-        config: str | None = None,
-        workdir: str | None = None,
-        qwex_home: str | None = None,  # remote QWEX_HOME override
-        extra_args: list[str] | None = None,
-    ):
-        self.host = host
-        self.user = user
-        self.key_file = key_file
-        self.port = port
-        self.config = config
-        self.workdir = workdir
-        self.qwex_home = qwex_home or "~/.qwex"
-        self.extra_args = extra_args or []
+    type: str = "ssh"  # discriminator
+    host: str
+    user: str | None = None
+    key_file: str | None = None
+    port: int = 22
+    config: str | None = None  # SSH config file path
+    workdir: str | None = None
+    cwd: str | None = None  # alias for workdir
+    qwex_home: str = "~/.qwex"  # remote QWEX_HOME
+    extra_args: list[str] = []
 
-    @classmethod
-    def from_layer_config(cls, config: "LayerConfig") -> "SSHLayerConfig":
-        """Create SSHLayerConfig from generic LayerConfig"""
-        if not config.host:
-            raise ValueError("SSH layer requires 'host'")
+    def get_workdir(self) -> str | None:
+        """Get effective workdir (prefers workdir over cwd)"""
+        return self.workdir or self.cwd
 
-        # Expand ~ in paths (local paths only)
-        config_path = None
-        if config.config:
-            config_path = str(Path(config.config).expanduser())
+    def get_config_path(self) -> str | None:
+        """Get expanded config path"""
+        if self.config:
+            return str(Path(self.config).expanduser())
+        return None
 
-        key_file = None
-        if config.key_file:
-            key_file = str(Path(config.key_file).expanduser())
-
-        # Support both 'workdir' and 'cwd' fields
-        workdir = config.workdir or config.cwd
-
-        # Get qwex_home from extra fields
-        qwex_home = getattr(config, "qwex_home", None)
-
-        return cls(
-            host=config.host,
-            user=config.user,
-            key_file=key_file,
-            port=config.port or 22,
-            config=config_path,
-            workdir=workdir,
-            qwex_home=qwex_home,
-            extra_args=config.extra_args or [],
-        )
+    def get_key_file_path(self) -> str | None:
+        """Get expanded key file path"""
+        if self.key_file:
+            return str(Path(self.key_file).expanduser())
+        return None
 
 
+@register_layer("ssh")
 class SSHLayer(Layer):
     """
     Wraps commands to run on a remote host via SSH.
@@ -83,36 +57,23 @@ class SSHLayer(Layer):
         # Results in: ssh -F ~/.ssh/config -t csc 'cd /workspace && python -c ...'
     """
 
-    def __init__(self, config: "SSHLayerConfig | LayerConfig | dict[str, Any]"):
-        """Accept SSHLayerConfig, LayerConfig, or dict and normalize."""
-        if isinstance(config, SSHLayerConfig):
-            self.config = config
-        elif isinstance(config, dict):
-            # Build from dict
-            self.config = SSHLayerConfig(
-                host=config["host"],
-                user=config.get("user"),
-                key_file=config.get("key_file"),
-                port=config.get("port", 22),
-                config=config.get("config"),
-                workdir=config.get("workdir") or config.get("cwd"),
-                extra_args=config.get("extra_args"),
-            )
-        else:
-            # LayerConfig
-            self.config = SSHLayerConfig.from_layer_config(config)
+    def __init__(self, config: SSHLayerConfig):
+        """Initialize from SSHLayerConfig"""
+        self.config = config
 
     def wrap(self, inner: ShellCommand, ctx: LayerContext) -> ShellCommand:
         """Wrap command to run on remote host via SSH"""
         args: list[str] = []
 
         # Add config file if specified (allows using aliases like 'csc')
-        if self.config.config:
-            args.extend(["-F", self.config.config])
+        config_path = self.config.get_config_path()
+        if config_path:
+            args.extend(["-F", config_path])
 
         # Add key file if specified
-        if self.config.key_file:
-            args.extend(["-i", self.config.key_file])
+        key_file = self.config.get_key_file_path()
+        if key_file:
+            args.extend(["-i", key_file])
 
         # Add port if not default
         if self.config.port != 22:
@@ -132,7 +93,7 @@ class SSHLayer(Layer):
         args.append(target)
 
         # Build remote command
-        workdir = self.config.workdir
+        workdir = self.config.get_workdir()
         if workdir:
             remote_cmd = f"cd {workdir} && {inner.to_string()}"
         else:
@@ -155,11 +116,13 @@ class SSHLayer(Layer):
         """Build SSH command arguments (without target and remote command)"""
         args: list[str] = []
 
-        if self.config.config:
-            args.extend(["-F", self.config.config])
+        config_path = self.config.get_config_path()
+        if config_path:
+            args.extend(["-F", config_path])
 
-        if self.config.key_file:
-            args.extend(["-i", self.config.key_file])
+        key_file = self.config.get_key_file_path()
+        if key_file:
+            args.extend(["-i", key_file])
 
         if self.config.port != 22:
             args.extend(["-p", str(self.config.port)])
@@ -192,7 +155,7 @@ class SSHLayer(Layer):
         """
         import shlex
 
-        qwex_home = self.config.qwex_home
+        qwex_home = self.config.qwex_home.rstrip("/")
         repo_path = f"{qwex_home}/repos/{workspace_name}.git"
         space_path = f"{qwex_home}/spaces/{run_id}"
         run_path = f"{qwex_home}/runs/{run_id}"
