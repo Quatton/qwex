@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from .docker import DockerLayer
-from .ssh import SSHLayer
+# Concrete layer implementations are imported lazily inside `create_layer`
+# to avoid circular imports during package import-time.
 
 if TYPE_CHECKING:
     from ..config import LayerConfig
@@ -71,6 +71,8 @@ def create_layer(config: "LayerConfig") -> Layer:
     if config.type == "docker":
         if not config.image:
             raise ValueError("Docker layer requires 'image'")
+        from .docker import DockerLayer
+
         return DockerLayer(
             image=config.image,
             workdir=config.workdir,
@@ -79,15 +81,8 @@ def create_layer(config: "LayerConfig") -> Layer:
             extra_args=config.extra_args or [],
         )
     elif config.type == "ssh":
-        if not config.host:
-            raise ValueError("SSH layer requires 'host'")
-        return SSHLayer(
-            host=config.host,
-            user=config.user,
-            key_file=config.key_file,
-            port=config.port or 22,
-            workdir=config.workdir,
-            extra_args=config.extra_args or [],
-        )
+        from .ssh import SSHLayer
+
+        return SSHLayer(config)
     else:
         raise ValueError(f"Unknown layer type: {config.type}")

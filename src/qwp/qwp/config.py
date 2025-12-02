@@ -19,6 +19,8 @@ class LayerConfig(BaseModel):
     user: str | None = None
     key_file: str | None = None
     port: int | None = None
+    config: str | None = None  # path to ssh config file
+    cwd: str | None = None  # alias for workdir
     # Common fields
     workdir: str | None = None
     mounts: list[dict[str, str]] | None = None
@@ -27,6 +29,36 @@ class LayerConfig(BaseModel):
 
     class Config:
         extra = "allow"  # allow additional fields
+
+
+class SSHLayerConfig(BaseModel):
+    """Typed configuration for SSH layers.
+
+    This is a small convenience wrapper so the backend can accept either the
+    generic LayerConfig (as parsed from YAML) or a plain dict and get a
+    strongly-typed object with defaults.
+    """
+
+    host: str
+    user: str | None = None
+    key_file: str | None = None
+    port: int = 22
+    workdir: str | None = None
+    extra_args: list[str] | None = None
+
+    @classmethod
+    def from_layer_config(cls, obj: LayerConfig | dict) -> "SSHLayerConfig":
+        """Construct from a LayerConfig or raw dict."""
+        if isinstance(obj, LayerConfig):
+            data = obj.model_dump()
+        else:
+            data = dict(obj or {})
+
+        # Normalize fields: some configs use `workdir` or `cwd`
+        if "cwd" in data and "workdir" not in data:
+            data["workdir"] = data.get("cwd")
+
+        return cls.model_validate(data)
 
 
 class StorageConfig(BaseModel):

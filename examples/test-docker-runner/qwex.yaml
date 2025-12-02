@@ -1,7 +1,0 @@
-# qwex configuration for Docker runner testing
-backend: docker
-image: python:3.12-slim # Use slim instead of alpine (more compatible)
-
-# Environment variables
-env:
-  PYTHONUNBUFFERED: "1"

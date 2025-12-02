@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
 from qwp.layers import Layer, LayerContext, ShellCommand
 
+if TYPE_CHECKING:
+    from qwp.config import LayerConfig
 
-class SSHLayer(Layer):
-    """
-    Wraps commands to run on a remote host via SSH.
 
-    Example:
-        layer = SSHLayer(host="remote.example.com", user="user")
-        wrapped = layer.wrap(
-            ShellCommand(command="python", args=["train.py"]),
-            ctx
-        )
-        # Results in: ssh -t user@remote.example.com 'cd /workspace && python train.py'
-    """
+class SSHLayerConfig:
+    """Configuration for SSH layer"""
 
     def __init__(
         self,
@@ -24,61 +20,127 @@ class SSHLayer(Layer):
         user: str | None = None,
         key_file: str | None = None,
         port: int = 22,
+        config: str | None = None,
         workdir: str | None = None,
         extra_args: list[str] | None = None,
     ):
-        """
-        Args:
-            host: Remote host to connect to
-            user: SSH user (default: current user)
-            key_file: Path to SSH private key file
-            port: SSH port (default: 22)
-            workdir: Working directory on remote host (default: /workspace)
-            extra_args: Extra arguments to pass to ssh
-        """
         self.host = host
         self.user = user
         self.key_file = key_file
         self.port = port
-        self.workdir = workdir or "/workspace"
+        self.config = config
+        self.workdir = workdir
         self.extra_args = extra_args or []
+
+    @classmethod
+    def from_layer_config(cls, config: "LayerConfig") -> "SSHLayerConfig":
+        """Create SSHLayerConfig from generic LayerConfig"""
+        if not config.host:
+            raise ValueError("SSH layer requires 'host'")
+
+        # Expand ~ in paths
+        config_path = None
+        if config.config:
+            config_path = str(Path(config.config).expanduser())
+
+        key_file = None
+        if config.key_file:
+            key_file = str(Path(config.key_file).expanduser())
+
+        # Support both 'workdir' and 'cwd' fields
+        workdir = config.workdir or config.cwd
+
+        return cls(
+            host=config.host,
+            user=config.user,
+            key_file=key_file,
+            port=config.port or 22,
+            config=config_path,
+            workdir=workdir,
+            extra_args=config.extra_args or [],
+        )
+
+
+class SSHLayer(Layer):
+    """
+    Wraps commands to run on a remote host via SSH.
+
+    Supports SSH config aliases (e.g., 'csc' from ~/.ssh/config).
+
+    Example:
+        config = SSHLayerConfig(host="csc", config="~/.ssh/config")
+        layer = SSHLayer(config)
+        wrapped = layer.wrap(
+            ShellCommand(command="python", args=["-c", "print('hello')"]),
+            ctx
+        )
+        # Results in: ssh -F ~/.ssh/config -t csc 'cd /workspace && python -c ...'
+    """
+
+    def __init__(self, config: "SSHLayerConfig | LayerConfig | dict[str, Any]"):
+        """Accept SSHLayerConfig, LayerConfig, or dict and normalize."""
+        if isinstance(config, SSHLayerConfig):
+            self.config = config
+        elif isinstance(config, dict):
+            # Build from dict
+            self.config = SSHLayerConfig(
+                host=config["host"],
+                user=config.get("user"),
+                key_file=config.get("key_file"),
+                port=config.get("port", 22),
+                config=config.get("config"),
+                workdir=config.get("workdir") or config.get("cwd"),
+                extra_args=config.get("extra_args"),
+            )
+        else:
+            # LayerConfig
+            self.config = SSHLayerConfig.from_layer_config(config)
 
     def wrap(self, inner: ShellCommand, ctx: LayerContext) -> ShellCommand:
         """Wrap command to run on remote host via SSH"""
-        args = []
+        args: list[str] = []
+
+        # Add config file if specified (allows using aliases like 'csc')
+        if self.config.config:
+            args.extend(["-F", self.config.config])
 
         # Add key file if specified
-        if self.key_file:
-            args.extend(["-i", self.key_file])
+        if self.config.key_file:
+            args.extend(["-i", self.config.key_file])
 
         # Add port if not default
-        if self.port != 22:
-            args.extend(["-p", str(self.port)])
+        if self.config.port != 22:
+            args.extend(["-p", str(self.config.port)])
 
         # Add extra args
-        args.extend(self.extra_args)
+        args.extend(self.config.extra_args)
 
         # Add -t for pseudo-terminal
         args.append("-t")
 
-        # Build target
-        target = self.host
-        if self.user:
-            target = f"{self.user}@{self.host}"
+        # Build target - use host directly (can be an alias from ssh config)
+        target = self.config.host
+        if self.config.user:
+            target = f"{self.config.user}@{self.config.host}"
 
         args.append(target)
 
-        # Build remote command: cd to workdir and run inner command
-        remote_cmd = f"cd {self.workdir} && {inner.to_string()}"
+        # Build remote command
+        workdir = self.config.workdir
+        if workdir:
+            remote_cmd = f"cd {workdir} && {inner.to_string()}"
+        else:
+            remote_cmd = inner.to_string()
+
         args.append(remote_cmd)
 
         return ShellCommand(
             command="ssh",
             args=args,
-            env={},  # env handled in remote command if needed
+            env={},
         )
 
     @property
     def name(self) -> str:
-        user_part = f"{self.user}@" if self.user else ""
-        return f"SSHLayer({user_part}{self.host})"
+        user_part = f"{self.config.user}@" if self.config.user else ""
+        return f"SSHLayer({user_part}{self.config.host})"
