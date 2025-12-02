@@ -21,6 +21,10 @@ class Storage(ABC):
     """Base class for storage backends"""
 
     @abstractmethod
+    def __init__(self, config: StorageConfig):
+        self.config = config
+
+    @abstractmethod
     def push(self, local_path: Path, remote_ref: str) -> None:
         pass
 

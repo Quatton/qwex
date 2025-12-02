@@ -41,6 +41,10 @@ class Layer(ABC):
     """Base class for execution layers that wrap commands"""
 
     @abstractmethod
+    def __init__(self, config: BaseModel):
+        self.config = config
+
+    @abstractmethod
     def wrap(self, inner: ShellCommand, ctx: LayerContext) -> ShellCommand:
         pass
 

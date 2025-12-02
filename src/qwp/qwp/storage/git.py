@@ -51,6 +51,8 @@ def _git_push_to_remote(local_repo: Path, remote_url: str, ref: str = "HEAD") ->
 
 
 def _ensure_bare_repo_exists(ssh_host: str, repo_path: str) -> bool:
-    cmd = f"mkdir -p {repo_path} && cd {repo_path} && git init --bare 2>/dev/null || true"
+    cmd = (
+        f"mkdir -p {repo_path} && cd {repo_path} && git init --bare 2>/dev/null || true"
+    )
     result = subprocess.run(["ssh", ssh_host, cmd], capture_output=True, text=True)
     return result.returncode == 0
