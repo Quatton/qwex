@@ -1,0 +1,3 @@
+[submodule "examples/ssh-slurm-singularity-gdrive"]
+	path = examples/ssh-slurm-singularity-gdrive
+	url = https://github.com/Quatton/ssh-slurm-singularity-gdrive.git
