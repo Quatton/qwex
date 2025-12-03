@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from rich.prompt import Prompt
 
-from qwp.core import Workspace, resolve_qwex_home, get_current_commit, QwexConfig
+from qwp.core import Workspace, get_current_commit, QwexConfig
 from qwp.layers import Layer, LayerContext, ShellCommand
 from qwp.models import Run, RunStatus
 
@@ -41,25 +41,27 @@ def _push_code_to_remote(
         if depends_on:
             layer_config = config.layers.get(depends_on)
             if layer_config:
-                # Get ssh_host from layer config
+                # Get ssh_host and qwex_home from layer config
                 ssh_host = getattr(layer_config, "host", None)
                 user = getattr(layer_config, "user", None)
+                remote_qwex_home = getattr(layer_config, "qwex_home", "~/.qwex")
                 if ssh_host:
                     target = f"{user}@{ssh_host}" if user else ssh_host
                     log.info(
-                        f"Pushing code to {target}:~/.qwex/repos/{workspace_name}.git"
+                        f"Pushing code to {target}:{remote_qwex_home}/repos/{workspace_name}.git"
                     )
-                    _git_push_direct(ws.root, target, workspace_name)
+                    _git_push_direct(ws.root, target, workspace_name, remote_qwex_home)
                     return
 
     log.debug(f"No push needed for storage type: {storage_config.type}")
 
 
-def _git_push_direct(local_repo, ssh_target: str, workspace_name: str) -> bool:
+def _git_push_direct(
+    local_repo, ssh_target: str, workspace_name: str, qwex_home: str = "~/.qwex"
+) -> bool:
     """Push code directly via git to remote bare repo."""
     import subprocess
 
-    qwex_home = "~/.qwex"  # TODO: get from config
     repo_path = f"{qwex_home}/repos/{workspace_name}.git"
 
     # Ensure bare repo exists on remote
@@ -100,7 +102,7 @@ def run_with_layers(
     verbose: bool = False,
 ) -> None:
     """Run with layers (remote execution)."""
-    qwex_home = resolve_qwex_home(workspace_name=workspace_name)
+    qwex_home = config.resolve_qwex_home(workspace_name)
     qwex_home.ensure_workspace_symlink(ws.root, workspace_name)
     qwex_home.ensure_dirs(workspace_name)
 

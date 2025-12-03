@@ -108,6 +108,7 @@ class QwexHome(NamedTuple):
 
 
 def resolve_qwex_home(
+    config_override: str | None = None,
     layer_override: str | None = None,
     workspace_name: str | None = None,
 ) -> QwexHome:
@@ -116,30 +117,38 @@ def resolve_qwex_home(
 
     Priority:
     1. Layer override (e.g., ssh.qwex_home for remote)
-    2. QWEX_HOME environment variable
-    3. ~/.qwex (default)
+    2. Config override (from qwex.yaml settings.home)
+    3. QWEX_HOME environment variable
+    4. ~/.qwex (default)
 
     Args:
-        layer_override: Explicit path from layer config
+        config_override: Explicit path from qwex.yaml settings.home
+        layer_override: Explicit path from layer config (highest priority)
         workspace_name: Workspace name for workspace-specific paths
 
     Returns:
         Resolved QwexHome
     """
-    # 1. Layer override
+    # 1. Layer override (highest priority for remote execution)
     if layer_override:
         root = Path(layer_override).expanduser()
         log.debug(f"Using layer override QWEX_HOME: {root}")
         return QwexHome(root=root, workspace_name=workspace_name)
 
-    # 2. Environment variable
+    # 2. Config override
+    if config_override:
+        root = Path(config_override).expanduser()
+        log.debug(f"Using config QWEX_HOME: {root}")
+        return QwexHome(root=root, workspace_name=workspace_name)
+
+    # 3. Environment variable
     env_home = os.environ.get("QWEX_HOME")
     if env_home:
         root = Path(env_home).expanduser()
         log.debug(f"Using QWEX_HOME from env: {root}")
         return QwexHome(root=root, workspace_name=workspace_name)
 
-    # 3. Default: ~/.qwex
+    # 4. Default: ~/.qwex
     root = Path.home() / ".qwex"
     log.debug(f"Using default QWEX_HOME: {root}")
     return QwexHome(root=root, workspace_name=workspace_name)

@@ -11,7 +11,6 @@ import typer
 from qwp.core import (
     LocalRunner,
     QwexConfig,
-    resolve_qwex_home,
 )
 from qwp.layers import Layer, create_layer
 from qwp.models import Run, RunStatus
@@ -64,7 +63,7 @@ def run_command(
 
     if not layers:
         # Local execution with worktree isolation
-        _run_local(ws, run_obj, workspace_name, verbose)
+        _run_local(ws, run_obj, config, workspace_name, verbose)
     else:
         # Remote/layered execution
         layer_names = " → ".join(layer.name for layer in layers)
@@ -72,9 +71,12 @@ def run_command(
         run_with_layers(ws, run_obj, layers, workspace_name, config, runner, verbose)
 
 
-def _run_local(ws, run_obj: Run, workspace_name: str, verbose: bool) -> None:
+def _run_local(
+    ws, run_obj: Run, config: QwexConfig, workspace_name: str, verbose: bool
+) -> None:
     """Run locally with worktree isolation using LocalRunner."""
-    qwex_home = resolve_qwex_home(workspace_name=workspace_name)
+    # Use config to resolve QWEX_HOME
+    qwex_home = config.resolve_qwex_home(workspace_name)
 
     # Ensure symlink exists
     qwex_home.ensure_workspace_symlink(ws.root, workspace_name)
@@ -83,7 +85,7 @@ def _run_local(ws, run_obj: Run, workspace_name: str, verbose: bool) -> None:
         qwex_home=qwex_home,
         workspace_root=ws.root,
         workspace_name=workspace_name,
-        use_worktree=True,
+        use_worktree=config.settings.worktree,
     )
 
     if verbose:

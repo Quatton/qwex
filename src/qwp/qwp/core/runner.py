@@ -1,4 +1,4 @@
-"""Runner - executes commands with worktree isolation"""
+"""Runner - executes commands locally using POSIX scripts"""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from qwp.core.home import QwexHome
+from qwp.core.script import build_run_script
 from qwp.models import Run, RunStatus
 
 log = logging.getLogger(__name__)
@@ -35,48 +36,12 @@ def get_workspace_name(workspace_root: Path) -> str:
     return workspace_root.name
 
 
-def _create_worktree(
-    repo_path: Path,
-    target_path: Path,
-    commit: str,
-) -> bool:
-    """Create a detached worktree at target_path from commit."""
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-
-    log.debug(f"Creating worktree: {target_path} from {commit[:8]}")
-    result = subprocess.run(
-        ["git", "worktree", "add", "--detach", str(target_path), commit],
-        cwd=repo_path,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        log.info(f"Created worktree at {target_path}")
-        return True
-    else:
-        log.error(f"Failed to create worktree: {result.stderr}")
-        return False
-
-
-def _remove_worktree(repo_path: Path, target_path: Path) -> bool:
-    """Remove a worktree."""
-    log.debug(f"Removing worktree: {target_path}")
-    result = subprocess.run(
-        ["git", "worktree", "remove", "--force", str(target_path)],
-        cwd=repo_path,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode == 0:
-        log.info(f"Removed worktree at {target_path}")
-        return True
-    else:
-        log.warning(f"Failed to remove worktree: {result.stderr}")
-        return False
-
-
 class LocalRunner:
-    """Runs commands locally with optional worktree isolation"""
+    """Runs commands locally using POSIX script wrapper.
+
+    Uses the same script as remote execution for consistency.
+    Output is streamed via subprocess for rich formatting.
+    """
 
     def __init__(
         self,
@@ -95,7 +60,7 @@ class LocalRunner:
         run_obj: Run,
         on_output: Callable[[str], None] | None = None,
     ) -> Run:
-        """Execute a run.
+        """Execute a run using POSIX script.
 
         Args:
             run_obj: Run object with command/args
@@ -108,7 +73,7 @@ class LocalRunner:
         runs_dir = self.qwex_home.runs(self.workspace_name)
 
         # Get commit for reproducibility
-        commit = get_current_commit(self.workspace_root)
+        commit = get_current_commit(self.workspace_root) if self.use_worktree else None
         run_obj.commit = commit
         run_obj.workspace_name = self.workspace_name
 
@@ -116,76 +81,60 @@ class LocalRunner:
             f"Starting run {run_obj.id} (commit: {commit[:8] if commit else 'none'})"
         )
 
-        # Determine working directory
-        if self.use_worktree and commit:
-            # Create worktree for isolated execution
-            space_dir = self.qwex_home.space_dir(run_obj.id, self.workspace_name)
-            if not _create_worktree(self.workspace_root, space_dir, commit):
-                run_obj.status = RunStatus.FAILED
-                run_obj.error = "Failed to create worktree"
-                run_obj.save(runs_dir)
-                return run_obj
-            work_dir = space_dir
-        else:
-            # Run directly in workspace
-            work_dir = self.workspace_root
-            log.debug(f"Running in workspace (no worktree): {work_dir}")
+        # Build the POSIX script (same as remote execution)
+        script = build_run_script(
+            run_id=run_obj.id,
+            workspace_name=self.workspace_name,
+            command=[run_obj.command, *run_obj.args],
+            commit=commit,
+            qwex_home=str(self.qwex_home.root),
+            repo_path=str(self.workspace_root),  # Local: use workspace as repo
+            stream_output=True,  # Use tee so we can capture output
+        )
 
-        # Update status
-        run_obj.append_status(runs_dir, RunStatus.RUNNING)
+        log.debug(f"Running script:\n{script}")
+
+        # Save initial state
         run_obj.started_at = datetime.now(timezone.utc)
         run_obj.save(runs_dir)
 
-        # Prepare log file
-        log_file = run_obj.stdout_log_path(runs_dir)
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-
-        # Execute command
-        cmd = [run_obj.command, *run_obj.args]
-        log.debug(f"Executing: {' '.join(cmd)} in {work_dir}")
-
         try:
-            with open(log_file, "w") as log_f:
-                process = subprocess.Popen(
-                    cmd,
-                    cwd=work_dir,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                )
-                run_obj.pid = process.pid
-                run_obj.save(runs_dir)
+            # Execute via sh -c
+            # We run from workspace_root so git operations work
+            process = subprocess.Popen(
+                ["sh", "-c", script],
+                cwd=self.workspace_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            run_obj.pid = process.pid
+            run_obj.save(runs_dir)
 
-                assert process.stdout is not None
-                for line in process.stdout:
-                    log_f.write(line)
-                    log_f.flush()
-                    if on_output:
-                        on_output(line)
+            # Stream output
+            assert process.stdout is not None
+            for line in process.stdout:
+                if on_output:
+                    on_output(line)
 
-                process.wait()
-                run_obj.exit_code = process.returncode
+            process.wait()
+            run_obj.exit_code = process.returncode
 
         except Exception as e:
             log.exception(f"Error during run {run_obj.id}")
             run_obj.error = str(e)
             run_obj.exit_code = -1
 
-        # Update final status
+        # Update Run object (status already written by script)
         run_obj.finished_at = datetime.now(timezone.utc)
         if run_obj.exit_code == 0:
-            run_obj.append_status(runs_dir, RunStatus.SUCCEEDED)
+            run_obj.status = RunStatus.SUCCEEDED
             log.info(f"Run {run_obj.id} succeeded")
         else:
-            run_obj.append_status(runs_dir, RunStatus.FAILED)
+            run_obj.status = RunStatus.FAILED
             log.info(f"Run {run_obj.id} failed (exit code {run_obj.exit_code})")
 
         run_obj.save(runs_dir)
-
-        # Cleanup worktree
-        if self.use_worktree and commit:
-            space_dir = self.qwex_home.space_dir(run_obj.id, self.workspace_name)
-            _remove_worktree(self.workspace_root, space_dir)
 
         return run_obj

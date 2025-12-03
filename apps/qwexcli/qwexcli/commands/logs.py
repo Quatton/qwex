@@ -7,7 +7,7 @@ from typing import Optional
 
 import typer
 
-from qwp.core import resolve_qwex_home, QwexConfig
+from qwp.core import QwexConfig
 from qwp.models import Run, RunStatus
 
 from .utils import console, get_workspace, get_workspace_name
@@ -22,7 +22,7 @@ def logs_command(
     config = QwexConfig.load(ws.config_file)
     workspace_name = get_workspace_name(ws, config)
 
-    qwex_home = resolve_qwex_home(workspace_name=workspace_name)
+    qwex_home = config.resolve_qwex_home(workspace_name)
     runs_dir = qwex_home.runs(workspace_name)
 
     if run_id is None:

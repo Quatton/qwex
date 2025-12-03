@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import yaml
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from qwp.core.home import QwexHome
 
 
 # =============================================================================
@@ -159,10 +162,19 @@ class RunnerConfig(BaseModel):
     storage: dict[str, str] = {}
 
 
+class QwexSettings(BaseModel):
+    """Global qwex settings"""
+
+    home: str | None = None  # Override QWEX_HOME (default: ~/.qwex)
+    worktree: bool = True  # Use worktree isolation
+    stream_output: bool = True  # Stream output via tee
+
+
 class QwexConfig(BaseModel):
     """Full qwex.yaml configuration"""
 
     name: str | None = None
+    settings: QwexSettings = QwexSettings()
     layers: dict[str, LayerConfig] = {}
     storage: dict[str, StorageConfig] = {}
     runners: dict[str, RunnerConfig] = {}
@@ -176,6 +188,10 @@ class QwexConfig(BaseModel):
         with open(path) as f:
             data = yaml.safe_load(f) or {}
 
+        # Parse settings
+        settings_data = data.get("settings", {})
+        settings = QwexSettings.model_validate(settings_data)
+
         # Parse layers with registry
         layers = {}
         for name, layer_data in data.get("layers", {}).items():
@@ -188,6 +204,7 @@ class QwexConfig(BaseModel):
 
         return cls(
             name=data.get("name"),
+            settings=settings,
             layers=layers,
             storage=storage,
             runners={
@@ -201,3 +218,12 @@ class QwexConfig(BaseModel):
         if name is None:
             return None
         return self.runners.get(name)
+
+    def resolve_qwex_home(self, workspace_name: str | None = None) -> "QwexHome":
+        """Resolve QWEX_HOME from config, env, or default."""
+        from qwp.core.home import resolve_qwex_home
+
+        return resolve_qwex_home(
+            config_override=self.settings.home,
+            workspace_name=workspace_name or self.name,
+        )
