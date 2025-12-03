@@ -6,17 +6,40 @@ from typing import Optional
 
 import typer
 
+from ._version import __version__
 from .commands.utils import setup_logging
 from .commands.run import run_command
 from .commands.logs import logs_command
 from .commands.cancel import cancel_command
 from .commands.list import list_command
 
+
+def version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"qwex {__version__}")
+        raise typer.Exit()
+
+
 app = typer.Typer(
     name="qwex",
     help="Queued Workspace-aware Execution",
     no_args_is_help=True,
 )
+
+
+@app.callback()
+def main(
+    version: Optional[bool] = typer.Option(
+        None,
+        "--version",
+        "-V",
+        callback=version_callback,
+        is_eager=True,
+        help="Show version and exit.",
+    ),
+) -> None:
+    """Queued Workspace-aware Execution - Run orchestration for ML workflows."""
+    pass
 
 
 @app.command()
