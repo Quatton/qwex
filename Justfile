@@ -8,3 +8,9 @@ default:
 # Create k3d cluster with apps directory mounted at /mnt/apps
 k3d-create:
     k3d cluster create -c infra/k3d-config.yaml
+
+clie:
+    uv tool install -e apps/qwexcli
+
+clii:
+    uv tool install apps/qwexcli --force-reinstall
