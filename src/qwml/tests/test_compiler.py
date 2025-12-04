@@ -90,6 +90,33 @@ def test_layer_chaining():
     assert '"L2"' in script
 
 
+def test_inline_template_with_jinja():
+    """Inline template content should support Jinja interpolation."""
+    layer = template(
+        content='ssh {{ user }}@{{ host }} "$@"',
+        props={"user": "admin", "host": "server.com"},
+        name="ssh-inline",
+    )
+    rendered = layer.render({})
+    assert "admin@server.com" in rendered
+
+
+def test_template_requires_path_or_content():
+    """Template must have either path or content."""
+    import pytest
+
+    with pytest.raises(ValueError, match="Must provide either"):
+        template()  # Neither path nor content
+
+
+def test_template_not_both_path_and_content():
+    """Template cannot have both path and content."""
+    import pytest
+
+    with pytest.raises(ValueError, match="Cannot provide both"):
+        template("noop.sh.j2", content='exec "$@"')
+
+
 if __name__ == "__main__":
     test_noop_template_renders()
     test_single_noop_compiles()
@@ -99,4 +126,6 @@ if __name__ == "__main__":
     test_template_with_props()
     test_mixed_layers_compile()
     test_layer_chaining()
+    test_inline_template_with_jinja()
+    # Skip pytest-dependent tests in direct run
     print("All tests passed!")

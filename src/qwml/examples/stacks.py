@@ -35,9 +35,9 @@ script = compile_stack(
 )
 print(script)
 
-# 3. SSH + bare metal (using inline for custom script)
+# 3. SSH + bare metal (using inline for static script)
 print("=" * 60)
-print("STACK 3: SSH (inline script)")
+print("STACK 3: SSH (inline static script)")
 print("=" * 60)
 script = compile_stack(
     access=inline(
@@ -64,5 +64,21 @@ script = compile_stack(
     ),
     arena=template("singularity.sh.j2", props={"image": "pytorch.sif", "nv": True}),
     agent=agent(qwex_home="~/.qwex", run_id="gpu-train-001", stream_output=True),
+)
+print(script)
+
+# 5. NEW: Inline template with Jinja interpolation
+print("=" * 60)
+print("STACK 5: Inline Jinja template")
+print("=" * 60)
+script = compile_stack(
+    access=template(
+        content='# SSH to {{ host }}\nssh {{ user }}@{{ host }} "$@"',
+        props={"host": "my-server.com", "user": "admin"},
+        name="ssh-inline",
+    ),
+    allocation=noop(),
+    arena=noop(),
+    agent=template(content='exec "$@"', name="passthrough"),
 )
 print(script)

@@ -50,19 +50,25 @@ class Layer(ABC):
 class TemplateLayer(Layer):
     """A layer that renders from a Jinja2 template.
 
-    This is the workhorse - most layers should use this.
-    Like a React component that returns JSX (but it's shell).
+    Supports two modes:
+    1. File-based: template="ssh.sh.j2" (loads from templates dir)
+    2. Inline: content="exec ssh {{ host }} \"$@\"" (template string)
+
+    Like a React component - can be from a file or inline JSX.
 
     Usage:
-        layer = TemplateLayer(
-            template_path="noop.sh.j2",
-            props={"some_var": "value"},
-        )
-        output = layer.render(ctx)
+        # From file
+        layer = TemplateLayer(template="noop.sh.j2", props={"var": "value"})
+
+        # Inline template
+        layer = TemplateLayer(content='exec "$@"', props={})
     """
 
-    # Path to template file (relative to templates dir or absolute)
-    template: str
+    # Option 1: Path to template file (relative to templates dir or absolute)
+    template: str | None = None
+
+    # Option 2: Inline template content
+    content: str | None = None
 
     # Props passed to the template (like React props)
     props: dict[str, Any] = field(default_factory=dict)
@@ -73,14 +79,27 @@ class TemplateLayer(Layer):
     # Template loader (defaults to built-in templates)
     _env: Environment | None = field(default=None, repr=False)
 
+    def __post_init__(self):
+        """Validate that exactly one of template or content is provided."""
+        if self.template is None and self.content is None:
+            raise ValueError("Must provide either 'template' or 'content'")
+        if self.template is not None and self.content is not None:
+            raise ValueError("Cannot provide both 'template' and 'content'")
+
     def render(self, ctx: dict[str, Any]) -> str:
         """Render the template with props and context merged."""
         env = self._get_env()
-        template = env.get_template(self.template)
+
+        if self.content is not None:
+            # Inline template - compile from string
+            tmpl = env.from_string(self.content)
+        else:
+            # File-based template
+            tmpl = env.get_template(self.template)  # type: ignore
 
         # Merge props and ctx (props take precedence)
         variables = {**ctx, **self.props}
-        return template.render(**variables)
+        return tmpl.render(**variables)
 
     def _get_env(self) -> Environment:
         """Get or create Jinja2 environment."""
@@ -100,23 +119,25 @@ class TemplateLayer(Layer):
     def name(self) -> str:
         if self.layer_name:
             return self.layer_name
-        # Extract name from template path: "foo/bar.sh.j2" -> "bar"
-        return Path(self.template).stem.removesuffix(".sh")
+        if self.template:
+            # Extract name from template path: "foo/bar.sh.j2" -> "bar"
+            return Path(self.template).stem.removesuffix(".sh")
+        return "inline"
 
 
 @dataclass
 class InlineLayer(Layer):
-    """A layer with inline shell script (no template file).
+    """A layer with inline shell script (no template, no Jinja).
 
-    Useful for quick one-offs or dynamically generated scripts.
+    For static scripts that don't need templating.
+    Use TemplateLayer with content= for Jinja interpolation.
     """
 
     script: str
     layer_name: str = "inline"
 
     def render(self, ctx: dict[str, Any]) -> str:
-        # Simple string interpolation with ctx
-        # For complex logic, use TemplateLayer instead
+        # No templating - return script as-is
         return self.script
 
     @property
@@ -128,24 +149,35 @@ class InlineLayer(Layer):
 
 
 def template(
-    template: str,
+    path: str | None = None,
+    *,
+    content: str | None = None,
     props: dict[str, Any] | None = None,
     name: str | None = None,
 ) -> TemplateLayer:
     """Create a template-based layer.
 
     Args:
-        template: Template file path (e.g., "noop.sh.j2")
+        path: Template file path (e.g., "noop.sh.j2")
+        content: Inline template string (alternative to path)
         props: Variables to pass to template
         name: Optional layer name
+
+    Examples:
+        # From file
+        template("ssh.sh.j2", props={"host": "cluster"})
+
+        # Inline template with Jinja
+        template(content='exec ssh {{ host }} "$@"', props={"host": "cluster"})
     """
     return TemplateLayer(
-        template=template,
+        template=path,
+        content=content,
         props=props or {},
         layer_name=name,
     )
 
 
 def inline(script: str, name: str = "inline") -> InlineLayer:
-    """Create an inline script layer."""
+    """Create an inline script layer (no Jinja templating)."""
     return InlineLayer(script=script, layer_name=name)
