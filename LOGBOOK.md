@@ -1,135 +1,5 @@
 > For the sake of academic transparency, this logbook is created on Sun Oct 19 2025, which is way past the beginning date of this project. I will not backdate entries on Week 1 - 2 to misrepresent the actual timeline of development.
 
-## Week 10: Dec 2, 2025
-
-### Execution Model Finalized: Git Worktree Isolation
-
-After discovering design flaws in the current implementation, we're documenting the correct execution model.
-
-#### Core Invariant
-
-**Every run executes in a git worktree, not the working directory.**
-
-This ensures:
-1. **Reproducibility**: Run tied to exact commit SHA
-2. **Isolation**: Concurrent runs don't interfere
-3. **Clean state**: No uncommitted changes affect execution
-
-#### QWEX_HOME Structure
-
-```
-$QWEX_HOME/                    # ~/.qwex by default, or workspace/.qwex
-  repos/                       # bare git repos (for remote storage)
-    <workspace-name>.git/
-  spaces/                      # ephemeral worktrees (deleted after run)
-    <run-id>/
-  runs/                        # persistent run metadata + logs
-    <run-id>/
-      run.json                 # MUST have commit field
-      statuses.jsonl
-      stdout.log
-```
-
-#### Run Lifecycle
-
-```
-1. User runs: qwex run python train.py
-
-2. Pre-flight checks:
-   - Is this a git repo? (required)
-   - Get current commit SHA (required, stored in run.json)
-
-3. Create worktree:
-   - git worktree add --detach $QWEX_HOME/spaces/<run-id> <commit>
-
-4. Execute in worktree:
-   - cd $QWEX_HOME/spaces/<run-id>
-   - python train.py > $QWEX_HOME/runs/<run-id>/stdout.log 2>&1
-
-5. Cleanup:
-   - git worktree remove $QWEX_HOME/spaces/<run-id>
-   - Run metadata persists in $QWEX_HOME/runs/<run-id>/
-```
-
-#### run.json Schema (Required Fields)
-
-```json
-{
-  "id": "uuid7",
-  "commit": "abc123...",        // REQUIRED - for reproducibility
-  "workspace_name": "my-project",
-  "command": "python",
-  "args": ["train.py"],
-  "status": "succeeded",
-  "created_at": "...",
-  "started_at": "...",
-  "finished_at": "..."
-}
-```
-
-#### Storage Backends
-
-Storage handles syncing code to remote execution environments.
-
-**git-direct**: Push to bare repo via SSH
-- Used with SSH layer
-- Remote creates worktree from pushed commit
-- `base_path` should come from layer's `qwex_home`, not hardcoded
-
-**mount**: Direct filesystem mount
-- Used with local/docker execution
-- No transfer needed, worktree created locally
-
-#### Layer + Storage Relationship
-
-```yaml
-# qwex.yaml
-layers:
-  ssh:
-    type: ssh
-    host: csc
-    qwex_home: ~/.qwex        # remote QWEX_HOME
-
-storage:
-  code:
-    type: git-direct
-    layer: ssh                # inherits ssh_host and qwex_home from layer
-
-runners:
-  remote:
-    layers: [ssh]
-    storage:
-      source: code            # uses git-direct storage
-```
-
-Storage config should reference layer to avoid duplication:
-- `ssh_host` comes from layer
-- `base_path` = `{layer.qwex_home}/repos`
-
-#### Registry Decorators
-
-Simplified decorator names:
-- `@layer` instead of `@register_layer`
-- `@storage` instead of `@register_storage`
-
-#### Checkout a Run
-
-To reproduce a run:
-```bash
-qwex checkout <run-id>
-# reads run.json, gets commit, creates worktree
-git worktree add ./run-<run-id> <commit>
-```
-
-#### Key Fixes Needed
-
-1. **Run must require commit**: No run without git commit
-2. **Storage depends on layer**: `git-direct` gets `ssh_host` and `base_path` from SSH layer
-3. **Worktree is mandatory**: All execution happens in worktrees
-4. **Shorter decorators**: `@layer`, `@storage`
-
----
-
 ## Week 3: Oct 16 - Oct 22, 2025
 
 ### Goals
@@ -686,3 +556,271 @@ In preparation for the new Python-based daemon and client architecture, we have 
 - Implement the Python daemon with UDS/HTTP support.
 - Refactor `qwexctl` (Python) to communicate with the daemon.
 - Implement the plugin system for runners.
+
+---
+
+## Week 10: Dec 2, 2025
+
+### Execution Model Finalized: Git Worktree Isolation
+
+After discovering design flaws in the current implementation, we're documenting the correct execution model.
+
+#### Core Invariant
+
+**Every run executes in a git worktree, not the working directory.**
+
+This ensures:
+1. **Reproducibility**: Run tied to exact commit SHA
+2. **Isolation**: Concurrent runs don't interfere
+3. **Clean state**: No uncommitted changes affect execution
+
+#### QWEX_HOME Structure
+
+```
+$QWEX_HOME/                    # ~/.qwex by default, or workspace/.qwex
+  repos/                       # bare git repos (for remote storage)
+    <workspace-name>.git/
+  spaces/                      # ephemeral worktrees (deleted after run)
+    <run-id>/
+  runs/                        # persistent run metadata + logs
+    <run-id>/
+      run.json                 # MUST have commit field
+      statuses.jsonl
+      stdout.log
+```
+
+#### Run Lifecycle
+
+```
+1. User runs: qwex run python train.py
+
+2. Pre-flight checks:
+   - Is this a git repo? (required)
+   - Get current commit SHA (required, stored in run.json)
+
+3. Create worktree:
+   - git worktree add --detach $QWEX_HOME/spaces/<run-id> <commit>
+
+4. Execute in worktree:
+   - cd $QWEX_HOME/spaces/<run-id>
+   - python train.py > $QWEX_HOME/runs/<run-id>/stdout.log 2>&1
+
+5. Cleanup:
+   - git worktree remove $QWEX_HOME/spaces/<run-id>
+   - Run metadata persists in $QWEX_HOME/runs/<run-id>/
+```
+
+#### run.json Schema (Required Fields)
+
+```json
+{
+  "id": "uuid7",
+  "commit": "abc123...",        // REQUIRED - for reproducibility
+  "workspace_name": "my-project",
+  "command": "python",
+  "args": ["train.py"],
+  "status": "succeeded",
+  "created_at": "...",
+  "started_at": "...",
+  "finished_at": "..."
+}
+```
+
+#### Storage Backends
+
+Storage handles syncing code to remote execution environments.
+
+**git-direct**: Push to bare repo via SSH
+- Used with SSH layer
+- Remote creates worktree from pushed commit
+- `base_path` should come from layer's `qwex_home`, not hardcoded
+
+**mount**: Direct filesystem mount
+- Used with local/docker execution
+- No transfer needed, worktree created locally
+
+#### Layer + Storage Relationship
+
+```yaml
+# qwex.yaml
+layers:
+  ssh:
+    type: ssh
+    host: csc
+    qwex_home: ~/.qwex        # remote QWEX_HOME
+
+storage:
+  code:
+    type: git-direct
+    layer: ssh                # inherits ssh_host and qwex_home from layer
+
+runners:
+  remote:
+    layers: [ssh]
+    storage:
+      source: code            # uses git-direct storage
+```
+
+Storage config should reference layer to avoid duplication:
+- `ssh_host` comes from layer
+- `base_path` = `{layer.qwex_home}/repos`
+
+#### Registry Decorators
+
+Simplified decorator names:
+- `@layer` instead of `@register_layer`
+- `@storage` instead of `@register_storage`
+
+#### Checkout a Run
+
+To reproduce a run:
+```bash
+qwex checkout <run-id>
+# reads run.json, gets commit, creates worktree
+git worktree add ./run-<run-id> <commit>
+```
+
+#### Key Fixes Needed
+
+1. **Run must require commit**: No run without git commit
+2. **Storage depends on layer**: `git-direct` gets `ssh_host` and `base_path` from SSH layer
+3. **Worktree is mandatory**: All execution happens in worktrees
+4. **Shorter decorators**: `@layer`, `@storage`
+
+---
+
+
+## Week 10: Dec 3, 2025
+
+### Template-Based Architecture: "shadcn for shell scripts"
+
+After reflecting on the current Python-heavy implementation, we're exploring a radical simplification: **qwex as a template compiler**.
+
+#### Core Insight
+
+> "qwex is just a compiler that turns YAML + templates into a single executable command"
+
+Instead of hiding layers behind Python abstractions, expose them as **user-owned shell script templates** that users can inspect, copy, and modify — like [shadcn/ui](https://ui.shadcn.com/) for shell scripts.
+
+#### Architecture: Rigid Core + Flexible Templates
+
+| **Core (rigid, built-in)** | **Templates (user-owned, `.qwex/templates/`)** |
+|---|---|
+| Run lifecycle management | SSH connection/execution |
+| `run.json` generation & tracking | Docker container execution |
+| Run ID generation (UUID) | Slurm job submission |
+| Logging infrastructure | Singularity/Apptainer |
+| `qwex list` / `qwex logs` / `qwex cancel` | Kubernetes Job templates |
+| Artifact tracking (inputs/outputs) | Git worktree setup |
+| Process detachment / background runs | Storage mount commands |
+| Exit code capture & status | Custom wrappers (conda, nix, etc.) |
+| Backend storage for run metadata | |
+| Template rendering engine (Jinja) | |
+
+#### Directory Structure
+
+```
+.qwex/
+  templates/           # user-owned, inspectable shell templates
+    ssh.sh.j2
+    docker.sh.j2
+    slurm.sh.j2
+    singularity.sh.j2
+    worktree.sh.j2
+  targets/             # gitignored - secrets/host configs
+    hpc.yaml
+```
+
+#### Template Contract
+
+Each template:
+1. Receives context variables (run ID, workspace, layer config, etc.)
+2. Wraps `{{ inner }}` or `{{ command }}` 
+3. Outputs valid shell
+
+**Example `ssh.sh.j2`:**
+```bash
+#!/bin/bash
+ssh {{ layers.ssh.user }}@{{ layers.ssh.host }} bash -c '
+{{ inner | indent(2) }}
+'
+```
+
+**Composition (ssh → docker):**
+```bash
+# Rendered for: qwex run -r hpc echo hello
+ssh qtn@csc bash -c '
+  docker run --rm ghcr.io/astral-sh/uv:latest bash -c '
+    echo hello
+  '
+'
+```
+
+#### Comparison with Similar Tools
+
+| | GitHub Workflows | Taskfile | qwex |
+|---|---|---|---|
+| **Focus** | CI/CD on GitHub runners | Local task runner | Remote execution anywhere |
+| **Templates** | Built-in actions | None | User-owned `.j2` files |
+| **Registry** | GitHub Marketplace | None | `qwex add ssh` (shadcn-style) |
+| **Composition** | Steps in sequence | Task dependencies | Nested shell wrappers |
+
+#### Design Questions (Open)
+
+1. **Language**: Go (single binary, `text/template` stdlib) vs Python (already working, faster iteration)?
+   - **Decision**: Validate in Python first, port to Go if distribution matters.
+
+2. **GitHub Workflow syntax**: Worth inheriting for familiarity, or too heavy?
+   - **Decision**: Keep `qwex run` simple. Workflows syntax is optional power feature.
+
+3. **Overlay/patching**: Kustomize-like JSON/YAML patching?
+   - **Decision**: Defer. Scope creep. Templates are enough for MVP.
+
+#### Next Steps
+
+1. Prove concept: Make `qwex run -r ssh echo hello` use a `.qwex/templates/ssh.sh.j2` template instead of Python code.
+2. Add second layer (docker) and prove composition works.
+3. Only then consider Go rewrite, registry, etc.
+
+
+---
+
+## Dec 3, 2025: Global Qwex Home Architecture
+
+### File-Based Metadata Storage Revolution
+
+**Problem**: JSON manipulation in bash is too limited for complex operations. Need a simpler way to store and update run metadata.
+
+**Solution**: Replace JSON with file-based key-value storage where each metadata field is stored in its own file:
+
+```
+$HOME/.qwex/$WORKSPACE_NAME/runs/$RUN_ID/
+├── meta/
+│   ├── id
+│   ├── command_line  
+│   ├── status
+│   ├── created_at
+│   ├── started_at
+│   ├── finished_at (optional)
+│   └── exit_code (optional)
+├── logs/
+│   ├── stdout.log
+│   └── stderr.log
+```
+
+**Benefits**:
+- Bash can easily read/write individual files with `>` and `cat`
+- No JSON parsing complexity
+- Simple directory structure for run discovery
+- Easy to extend with new metadata fields
+- Atomic updates (each file is independent)
+
+**Implementation**:
+- Workspace name extracted from `qwex.yaml` `name:` field
+- Global qwex home at `$HOME/.qwex/$WORKSPACE_NAME/runs/`
+- File-based metadata creation and status updates
+- Preserves working directory and environment
+
+**Test Results**: Successfully tested from workspace root and deep subdirectories. Run lifecycle (create → running → succeeded/failed) works correctly with proper timestamp tracking.
+
+---
