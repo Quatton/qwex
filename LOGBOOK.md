@@ -824,3 +824,30 @@ $HOME/.qwex/$WORKSPACE_NAME/runs/$RUN_ID/
 **Test Results**: Successfully tested from workspace root and deep subdirectories. Run lifecycle (create → running → succeeded/failed) works correctly with proper timestamp tracking.
 
 ---
+
+## Dec 5, 2025: Asking questions
+
+
+1. What core problem are you actually trying to solve? Beyond the surface-level features (running jobs on SSH/SLURM/Singularity, etc.), what's the fundamental pain point or inefficiency in distributed computing/ML workflows that motivated qwex? Why isn't this just a wrapper around existing tools like Kubernetes, Ray, or even plain SSH scripts? What evidence do you have that this problem is widespread enough to warrant a new tool?
+
+> Sure. Due to the emergence of AI, machine learning models have become smaller and smarter. The foundational model became a commodity. The code, the sdk, the agentic pipeline, everything has become open-source. the last thing is that the infrastructure does not yet have a standard protocol. the research codes (public not so much, but especially private e.g. in github orgs) are notoriously difficult to reproduce. here's the data. here's the source. run it on any gpu or container or whatever you want! and that has wasted a lot of researcher's time. Moreover if the machine is shared, now you get stuck in that env and wasted idle GPU hours when it could've been used by someone else. It is a wrapper around existing tools, but it's not a wrapper of one existing tool. It's a wrapper of any tool you want to integrate. It's not even "evidence". This is a well-known, widespread problem as confirmed by my interview. Everybody has their own ways of doing things.
+
+2. Why this modular, layered architecture (with qwml, qwp, qwexcli) instead of a monolithic or simpler design? Looking at your workspace structure, you've split things into engines, layers, commands, and models. What drove this decomposition? Is it truly necessary for extensibility, or is it premature abstraction that adds complexity without proven benefits? How do you justify the overhead of maintaining separate packages (pyproject.toml files everywhere) versus a single, cohesive codebase?
+
+> This solves the N x M problems. It's like well you could have just pack everything into one html file. Why make react? now it makes swapping things in and out much easier. Modules should be first-class support for a programming language. (looking at you C++). Sure it could be a premature abstraction, but saying that it's a premature abstraction means there is a proof that this is a premature abstraction, then that research proving such a thing could be a great contribution. Also there is no pyproject.toml. it's just ssh.sh.j2. can you can just call qwex run. it's cohesive. I'm managing multiple files because im stupid ok?
+
+3. What are the key trade-offs in your runner system (SSH, Docker, Singularity, etc.), and why prioritize these over cloud-native alternatives? Why not build on top of something like AWS Batch, Google Cloud Run, or even Kueue directly (since I see kueue configs in your infra)? Are you assuming on-prem or hybrid environments are the primary use case? What data or benchmarks show that your custom runners outperform or simplify compared to off-the-shelf solutions?
+
+> Because I need a baseline to say that: as you can see cloud native integrations are much easier to do. And see the trade-off by the complexity itself. On K8S you might know you have to setup PVC? Ingress? you could have just place an agree-upon cache folder in user dir! On SSH you might see wtf k8s has kubectl secrets and it just does things for you automatically??? i had to envelope things and encrypt it. Then you can see both tradeoffs very clearly instead of doing undocumented works. Also it's not a custom runner is a runner compiler!
+
+4. How do you handle failure modes and edge cases in job execution? From the terminal output, I see errors like "No such file or directory" and panics in Rust (uv-related). Why not design for robustness from the start—e.g., better error handling, retries, or state persistence? Is this a deliberate minimalism, or an oversight that could undermine reliability in production?
+
+> so there are cases where it's user error. cases where you pulled a footgun on yourself. it's not minimal because it's like a port where you can plug everything in.
+
+5. What makes qwex uniquely valuable compared to competitors like MLflow, Prefect, or Dask? Why would someone choose qwex over these established tools? What novel insights or innovations justify the effort? If it's about simplicity or integration with specific stacks (e.g., Singularity on SLURM), quantify the benefits—e.g., performance metrics, user adoption, or reduced setup time.
+
+> You can use MLflow Prefect or Dask under qwex so that's not a good question honestly. qwex is a shell compiler. so you can just make dask.sh.j2 it's just that now the under-layer has a good starting point where you can compose things. This wasn't achievable with Makefile because there's no Makefile distro or anything like that.
+
+6. Finally, what's your thesis's overarching narrative? How does qwex fit into the broader story of distributed systems or ML engineering? Are you claiming it's a paradigm shift, or just an incremental improvement? What risks are you downplaying, and how will you defend against criticisms that this is "yet another orchestration tool" with unclear differentiation?
+
+> It's a paradigm shift. because now it fills the gap between the last layer of knowledge sharing in ML space: executing the code. Everything else is shared but not this specific part.
