@@ -9,7 +9,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from apps.qwexcli.qwexcli.lib.project import (
+from qwexcli.lib.project import (
     check_already_initialized,
     find_project_root,
     scaffold,

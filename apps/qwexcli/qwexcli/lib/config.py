@@ -1,7 +1,7 @@
 """Configuration management for qwexcli."""
 
 from pathlib import Path
-from typing import List
+from typing import Dict, Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -12,8 +12,13 @@ class QwexConfig(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     version: int = Field(default=1, description="Config version")
-    workspaces: List[str] = Field(
-        default=["."], description="List of workspace relative paths"
+    defaults: Dict[str, Any] = Field(
+        default_factory=lambda: {"runner": "base"},
+        description="Default runtime configuration (e.g., default runner)",
+    )
+    runners: Dict[str, Any] = Field(
+        default_factory=lambda: {"base": {"plugins": ["base"]}},
+        description="Named runner configurations and their plugins",
     )
     name: str = Field(
         default_factory=lambda: Path.cwd().name, description="Project name"
@@ -37,10 +42,12 @@ def load_config(config_path: Path) -> QwexConfig:
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
+    data = {}
+
     with open(config_path, "r") as f:
         data = yaml.safe_load(f)
 
-    return QwexConfig(**data)
+    return QwexConfig(**(data))
 
 
 def save_config(config: QwexConfig, config_path: Path) -> None:

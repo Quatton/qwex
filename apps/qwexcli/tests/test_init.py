@@ -22,6 +22,10 @@ def test_create_config_file_writes_yaml(tmp_path):
 
     assert data is not None
     assert data.get("name") == cwd.name
+    # Defaults and runners should be present because create_config_file writes them
+    assert data.get("defaults", {}).get("runner") == "base"
+    assert "base" in data.get("runners", {})
+    assert "plugins" in data.get("runners", {}).get("base", {})
 
 
 def test_check_already_initialized_raises(tmp_path):
@@ -52,6 +56,10 @@ def test_scaffold_returns_path(tmp_path):
     with open(out, "r") as f:
         data = yaml.safe_load(f)
     assert data.get("name") == "myproj"
+    # scaffold should ensure .gitignore exists
+    gitignore = cfg_path.parent / ".gitignore"
+    assert gitignore.exists()
+    assert "internal/" in gitignore.read_text()
 
 
 def test_config_roundtrip_preserves_name(tmp_path):
@@ -65,7 +73,9 @@ def test_config_roundtrip_preserves_name(tmp_path):
     assert loaded.name == "roundtrip-test"
     # Defaults are filled in on load
     assert loaded.version == 1
-    assert loaded.workspaces == ["."]
+    # New config schema uses defaults and runners
+    assert loaded.defaults.get("runner") == "base"
+    assert "base" in loaded.runners
 
 
 def test_config_exclude_unset_only_writes_explicit_fields(tmp_path):
@@ -78,7 +88,9 @@ def test_config_exclude_unset_only_writes_explicit_fields(tmp_path):
     with open(cfg_path, "r") as f:
         data = yaml.safe_load(f)
 
-    # Only 'name' should be in the YAML (version and workspaces are defaults)
+    # 'name', 'defaults', and 'runners' were provided explicitly by scaffold
     assert "name" in data
+    assert "defaults" in data
+    assert "runners" in data
+    # 'version' is a default and not explicitly written
     assert "version" not in data
-    assert "workspaces" not in data

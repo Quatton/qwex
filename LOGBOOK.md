@@ -901,3 +901,12 @@ This reflection log synthesizes the design rationale for Qwex (Queued Workspace-
 
 ### Lessons and Thesis Implications
 This design reflects pragmatism over perfection: build what works for users, avoid standards wars. But critical gaps (data, robustness, stability) must be addressed. For the thesis, emphasize iterative design, user-centered insights, and the "standard-gatherer" metaphor. Future work: complete evaluation, stabilize architecture, gather metrics. If Qwex succeeds, it validates the approach; if not, it highlights infrastructure standardization's challenges.
+
+
+## Week 10: Dec 7, 2025
+
+- Added a minimal plugin scaffold and project scaffolding improvements for the CLI package `apps/qwexcli`:
+  - `apps/qwexcli/qwexcli/plugins/base.py`: simple plugin exposing `run(argv)` which executes a command.
+  - `apps/qwexcli/qwexcli/lib/project.py`: scaffold now writes explicit `defaults` and `runners` into `.qwex/config.yaml` and creates `.qwex/.gitignore` to ignore internal artifacts.
+  - `apps/qwexcli/qwexcli/lib/config.py`: removed `workspaces` from the schema; added `defaults` and `runners` fields (defaults.runner -> "base", runners.base.plugins -> ["base"]).
+  - Tests updated to assert the new defaults and the presence of `.qwex/.gitignore`.
