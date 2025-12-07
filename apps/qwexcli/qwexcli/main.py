@@ -7,7 +7,8 @@ from typing import Optional
 import typer
 
 from ._version import __version__
-from .lib.service import CLIContext, ProjectService
+from .lib.context import CLIContext
+from .services.project import ProjectService
 
 
 def version_callback(value: bool) -> None:

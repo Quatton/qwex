@@ -10,57 +10,17 @@ pip install qwexcli
 
 ## Usage
 
-### Run a command
+Currently the CLI provides a small set of project commands. The primary
+supported command at the moment is:
 
-```bash
-# Run and follow logs
-qwex run python train.py
+- `qwex init` — initialize a project in the current repository (creates `.qwex/config.yaml`).
 
-# Run with arguments
-qwex run python train.py --epochs 10 --lr 0.001
+More commands will be added over time. If you need a feature that's not
+documented here, please open an issue or a PR.
 
-# Run with a name
-qwex run --name "experiment-1" python train.py
+## How it works (current)
 
-# Run detached (don't follow logs)
-qwex run --detach python long_running.py
-
-# Run with environment variables
-qwex run --env CUDA_VISIBLE_DEVICES=0 python train.py
-```
-
-### Manage runs
-
-```bash
-# List active runs
-qwex list
-
-# List all runs (including finished)
-qwex list --all
-
-# Check status of a run
-qwex status <run-id>
-
-# Attach to a running job
-qwex attach <run-id>
-
-# Cancel a run
-qwex cancel <run-id>
-
-# View logs
-qwex logs <run-id>
-qwex logs --follow <run-id>
-
-# Clean up finished runs
-qwex clean
-```
-
-## How it works
-
-- Jobs run as detached subprocesses
-- Logs are streamed to `.qwex/runs/<run-id>/stdout.log`
-- Run state is persisted in `.qwex/runs/<run-id>/run.json`
-- Ctrl+C during `run` or `attach` detaches without killing the job
+- `qwex init` creates a `.qwex` directory and a `config.yaml` file containing the project name.
 
 ## License
 
