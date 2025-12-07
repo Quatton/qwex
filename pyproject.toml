@@ -8,3 +8,6 @@ dependencies = []
 
 [tool.uv.workspace]
 members = ["apps/qwexcli"]
+
+[tool.ruff.format]
+exclude = ["**/_version.py"]
