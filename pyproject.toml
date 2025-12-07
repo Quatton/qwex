@@ -8,6 +8,3 @@ dependencies = []
 
 [tool.uv.workspace]
 members = ["apps/qwexcli"]
-
-[tool.uv]
-dev-dependencies = ["ruff>=0.14.0"]

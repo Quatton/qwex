@@ -18,15 +18,11 @@ def check_already_initialized() -> None:
         raise AlreadyInitializedError()
 
 
-def get_default_config() -> QwexConfig:
-    """Get the default qwex configuration."""
-    # The QwexConfig model already provides defaults, including project name from folder
-    return QwexConfig()
-
-
 def create_config_file() -> None:
     """Create the .qwex/config.yaml file with default configuration."""
-    config = get_default_config()
+    from pathlib import Path
+
+    config = QwexConfig(name=Path.cwd().name)
     config_path = get_config_path()
     save_config(config, config_path)
 
