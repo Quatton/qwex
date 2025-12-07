@@ -7,6 +7,7 @@ from typing import Optional
 import typer
 
 from ._version import __version__
+from .commands.init import init_command
 
 
 def version_callback(value: bool) -> None:
@@ -35,3 +36,9 @@ def main(
 ) -> None:
     """Queued Workspace-aware Execution - Run orchestration for ML workflows."""
     pass
+
+
+@app.command()
+def init() -> None:
+    """Initialize qwex in the current directory."""
+    init_command()
