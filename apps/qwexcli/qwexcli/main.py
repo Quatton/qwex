@@ -39,6 +39,13 @@ def main(
 
 
 @app.command()
-def init(force: bool = typer.Option(False, "--force", "-f", help="Force reinitialization by removing existing .qwex directory")) -> None:
+def init(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Force reinitialization by removing existing .qwex directory",
+    ),
+) -> None:
     """Initialize qwex in the current directory."""
     init_command(force)

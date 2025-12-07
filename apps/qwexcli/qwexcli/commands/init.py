@@ -19,12 +19,12 @@ def init_command(force: bool = False) -> None:
         else:
             # 1. Check if already initialized (only if not force)
             check_already_initialized()
-        
+
         # 2. Scaffold the project (for now just creates config)
         # TODO: Add prompting for required configs when needed
         scaffold_project()
-        
+
         typer.echo("Initialized qwex in current directory")
-        
+
     except Exception as e:
         handle_error(e)
