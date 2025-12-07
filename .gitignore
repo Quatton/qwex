@@ -57,7 +57,4 @@ tmp/
 *.test
 *.out
 
-# qwex
-.qwex
-
 _version.py
