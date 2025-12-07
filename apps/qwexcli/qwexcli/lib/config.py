@@ -3,11 +3,13 @@
 from pathlib import Path
 from typing import List
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class QwexConfig(BaseModel):
     """Main qwex configuration."""
+
+    model_config = ConfigDict(validate_assignment=True)
 
     version: int = Field(default=1, description="Config version")
     workspaces: List[str] = Field(
@@ -24,14 +26,12 @@ class QwexConfig(BaseModel):
             raise ValueError("version must be 1")
         return v
 
-    class Config:
-        """Pydantic config."""
-
-        validate_assignment = True
-
 
 def load_config(config_path: Path) -> QwexConfig:
-    """Load configuration from YAML file."""
+    """Load configuration from YAML file.
+
+    Note: Loaded config has Pydantic defaults filled in for missing fields.
+    """
     import yaml
 
     if not config_path.exists():
@@ -58,9 +58,10 @@ def save_config(config: QwexConfig, config_path: Path) -> None:
         )
 
 
-def get_config_path() -> Path:
-    """Get the path to the qwex config file."""
-    return Path(".qwex/config.yaml")
+def get_config_path(cwd: Path | None = None) -> Path:
+    """Get .qwex/config.yaml path relative to cwd (default: current dir)."""
+    base = cwd or Path.cwd()
+    return base / ".qwex" / "config.yaml"
 
 
 def load_project_config() -> QwexConfig:
