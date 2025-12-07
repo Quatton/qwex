@@ -7,4 +7,4 @@ requires-python = ">=3.12"
 dependencies = []
 
 [tool.uv.workspace]
-members = ["src/qwp", "src/qwml", "apps/qwexcli", "examples/ssh-slurm-singularity-gdrive"]
+members = ["apps/qwexcli"]
