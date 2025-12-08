@@ -30,12 +30,13 @@ def check_already_initialized(config_path: Path) -> None:
 def create_config_file(config_path: Path, name: Optional[str] = None) -> Path:
     """Create .qwex/config.yaml at the explicit `config_path` and return it."""
     config_path.parent.mkdir(parents=True, exist_ok=True)
-
-    cfg = QwexConfig(
-        name=name or config_path.parent.parent.name,
-        defaults={"runner": "base"},
-        runners={"base": {"plugins": ["base"]}},
-    )
+    # Build kwargs without including `defaults` or `runners` so they remain
+    # unset on the model. `model_dump(exclude_unset=True)` will then omit
+    # those keys from the written YAML entirely.
+    cfg_kwargs = {"name": name or config_path.parent.parent.name}
+    # Pass `name` explicitly to avoid positional/typing confusion in static
+    # analysis and ensure the field remains unset for others.
+    cfg = QwexConfig(name=cfg_kwargs["name"])
     save_config(cfg, config_path)
     return config_path
 

@@ -22,10 +22,9 @@ def test_create_config_file_writes_yaml(tmp_path):
 
     assert data is not None
     assert data.get("name") == cwd.name
-    # Defaults and runners should be present because create_config_file writes them
-    assert data.get("defaults", {}).get("runner") == "base"
-    assert "base" in data.get("runners", {})
-    assert "plugins" in data.get("runners", {}).get("base", {})
+    # Defaults and runners should not be written by the scaffold by default.
+    assert "defaults" not in data
+    assert "runners" not in data
 
 
 def test_check_already_initialized_raises(tmp_path):
@@ -73,9 +72,9 @@ def test_config_roundtrip_preserves_name(tmp_path):
     assert loaded.name == "roundtrip-test"
     # Defaults are filled in on load
     assert loaded.version == 1
-    # New config schema uses defaults and runners
-    assert loaded.defaults.get("runner") == "base"
-    assert "base" in loaded.runners
+    # New config schema uses defaults and runners but no default 'base' runner
+    assert loaded.defaults is None
+    assert loaded.runners is None
 
 
 def test_config_exclude_unset_only_writes_explicit_fields(tmp_path):
@@ -90,7 +89,9 @@ def test_config_exclude_unset_only_writes_explicit_fields(tmp_path):
 
     # 'name', 'defaults', and 'runners' were provided explicitly by scaffold
     assert "name" in data
-    assert "defaults" in data
-    assert "runners" in data
+    # 'name' was provided explicitly by scaffold; defaults/runners should be
+    # omitted.
+    assert "defaults" not in data
+    assert "runners" not in data
     # 'version' is a default and not explicitly written
     assert "version" not in data

@@ -905,8 +905,8 @@ This design reflects pragmatism over perfection: build what works for users, avo
 
 ## Week 10: Dec 7, 2025
 
-- Added a minimal plugin scaffold and project scaffolding improvements for the CLI package `apps/qwexcli`:
-  - `apps/qwexcli/qwexcli/plugins/base.py`: simple plugin exposing `run(argv)` which executes a command.
+ - Added a minimal template scaffold and project scaffolding improvements for the CLI package `apps/qwexcli`:
+  - `apps/qwexcli/qwexcli/templates/base.py`: simple template exposing `run(argv)` which executes a command.
   - `apps/qwexcli/qwexcli/lib/project.py`: scaffold now writes explicit `defaults` and `runners` into `.qwex/config.yaml` and creates `.qwex/.gitignore` to ignore internal artifacts.
-  - `apps/qwexcli/qwexcli/lib/config.py`: removed `workspaces` from the schema; added `defaults` and `runners` fields (defaults.runner -> "base", runners.base.plugins -> ["base"]).
+  - `apps/qwexcli/qwexcli/lib/config.py`: removed `workspaces` from the schema; added `defaults` and `runners` fields (defaults.runner -> "base", runners.base.templates -> ["base"]).
   - Tests updated to assert the new defaults and the presence of `.qwex/.gitignore`.

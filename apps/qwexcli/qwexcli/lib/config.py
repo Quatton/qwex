@@ -1,7 +1,7 @@
 """Configuration management for qwexcli."""
 
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -12,17 +12,15 @@ class QwexConfig(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     version: int = Field(default=1, description="Config version")
-    defaults: Dict[str, Any] = Field(
-        default_factory=lambda: {"runner": "base"},
-        description="Default runtime configuration (e.g., default runner)",
+    defaults: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Default runtime configuration (e.g., default runner). None by default",
     )
-    runners: Dict[str, Any] = Field(
-        default_factory=lambda: {"base": {"plugins": ["base"]}},
-        description="Named runner configurations and their plugins",
+    runners: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Named runner configurations and their templates (None by default)",
     )
-    name: str = Field(
-        default_factory=lambda: Path.cwd().name, description="Project name"
-    )
+    name: str = Field(description="Project name")
 
     @field_validator("version")
     @classmethod
