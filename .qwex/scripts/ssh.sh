@@ -15,7 +15,7 @@ set -euo pipefail
 CACHE_DIR=${CACHE_DIR:-"$HOME/Documents/GitHub/qwex"}
 PUSH_ON_RUN=${PUSH_ON_RUN:-"true"}   # "true" or "false"
 QWEX_RUNS_DIR=${QWEX_RUNS_DIR:-"$HOME/.qwex/runs"}
-QWEX_SSH_TARGET=${QWEX_SSH_TARGET:-"qtn@host"} # required: user@host
+QWEX_SSH_TARGET=${QWEX_SSH_TARGET:-"qtn@csc"} # required: user@host
 QWEX_SSH_PORT=${QWEX_SSH_PORT:-22}
 
 if [ -z "$QWEX_SSH_TARGET" ]; then
