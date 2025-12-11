@@ -24,7 +24,7 @@ REMOTE_REPO_CACHE=${REMOTE_REPO_CACHE:-'$HOME/repos/qwex'}
 REMOTE_RUN_DIR=${REMOTE_RUN_DIR:-'$HOME/.qwex/runs'}
 
 # Git remote config
-GIT_REMOTE_URL=${GIT_REMOTE_URL:-"ssh://$QWEX_SSH_TARGET/home/qtn/repos/qwex/.git"}
+GIT_REMOTE_URL=${GIT_REMOTE_URL:-"ssh://$QWEX_SSH_TARGET/home/qtn/repos/qwex.git"}
 GIT_REMOTE_NAME=${GIT_REMOTE_NAME:-"direct"}
 
 # --- Utilities ---
