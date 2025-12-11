@@ -12,7 +12,6 @@
 set -euo pipefail
 
 # --- configuration (can be overridden by env) ---
-CACHE_DIR=${CACHE_DIR:-"$HOME/Documents/GitHub/qwex"}
 PUSH_ON_RUN=${PUSH_ON_RUN:-"true"}   # "true" or "false"
 QWEX_RUNS_DIR=${QWEX_RUNS_DIR:-"$HOME/.qwex/runs"}
 QWEX_SSH_TARGET=${QWEX_SSH_TARGET:-"qtn@csc"} # required: user@host
@@ -25,6 +24,14 @@ fi
 
 GIT_REMOTE_URL=${GIT_REMOTE_URL:-"ssh://$QWEX_SSH_TARGET/home/qtn/repos/qwex.git"}
 GIT_REMOTE_NAME=${GIT_REMOTE_NAME:-"direct"}
+
+# Remote cache dir (on the remote host). Default is the remote user's home.
+# Use a literal '$HOME' so the remote shell expands it when the prep command runs.
+# REMOTE_CACHE_DIR may be set externally (e.g. "\$HOME/my-cache").
+REMOTE_CACHE_DIR=${REMOTE_CACHE_DIR:-'$HOME/qwex-cache'}
+
+# For logging locally, show the literal remote cache path (without expanding $HOME locally)
+REMOTE_CACHE_DISPLAY=${REMOTE_CACHE_DISPLAY:-"$REMOTE_CACHE_DIR"}
 
 now_iso(){ date --iso-8601=seconds 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 ensure_dir(){ mkdir -p "$@"; }
@@ -119,9 +126,9 @@ cleanup(){
 trap cleanup EXIT
 
 # prepare remote setup command which will ensure cache exists and create a worktree
-# Note: we expand local variables like $GIT_HEAD into the remote command string.
+# Use the literal $HOME-based path on the remote so the remote user expands it.
 REMOTE_PREP_CMD=
-"if [ ! -d \"$CACHE_DIR/.git\" ]; then mkdir -p \"$CACHE_DIR\" && git clone \"$GIT_REMOTE_URL\" \"$CACHE_DIR\"; else git -C \"$CACHE_DIR\" fetch --all --prune; fi; rm -rf '$REMOTE_BASE'; git -C \"$CACHE_DIR\" worktree add --detach '$REMOTE_BASE' $GIT_HEAD; cd '$REMOTE_BASE'"
+"if [ ! -d \"$REMOTE_CACHE_DIR/.git\" ]; then mkdir -p \"$REMOTE_CACHE_DIR\" && git clone \"$GIT_REMOTE_URL\" \"$REMOTE_CACHE_DIR\"; else git -C \"$REMOTE_CACHE_DIR\" fetch --all --prune; fi; rm -rf '$REMOTE_BASE'; git -C \"$REMOTE_CACHE_DIR\" worktree add --detach '$REMOTE_BASE' $GIT_HEAD; cd '$REMOTE_BASE'"
 
 # prepare remote execution body
 if [ "$#" -gt 0 ]; then
