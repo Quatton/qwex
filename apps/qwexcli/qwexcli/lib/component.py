@@ -10,7 +10,7 @@ Each component has:
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 import yaml
 
 
@@ -25,6 +25,8 @@ class VarSpec(BaseModel):
 
 class Step(BaseModel):
     """A single step in a workflow."""
+
+    model_config = ConfigDict(populate_by_name=True)
 
     name: str | None = Field(default=None, description="Step name")
     uses: str | None = Field(default=None, description="Component to use (e.g., 'storages/git_direct:push')")

@@ -22,9 +22,9 @@ def test_create_config_file_writes_yaml(tmp_path):
 
     assert data is not None
     assert data.get("name") == cwd.name
-    # Defaults and runners should not be written by the scaffold by default.
-    assert "defaults" not in data
-    assert "runners" not in data
+    # Current schema uses executor and storage
+    assert "executor" in data
+    assert "storage" in data
 
 
 def test_check_already_initialized_raises(tmp_path):
@@ -72,9 +72,9 @@ def test_config_roundtrip_preserves_name(tmp_path):
     assert loaded.name == "roundtrip-test"
     # Defaults are filled in on load
     assert loaded.version == 1
-    # New config schema uses defaults and runners but no default 'base' runner
-    assert loaded.defaults is None
-    assert loaded.runners is None
+    # Current config schema uses executor and storage
+    assert loaded.executor is not None
+    assert loaded.storage is not None
 
 
 def test_config_exclude_unset_only_writes_explicit_fields(tmp_path):
@@ -87,11 +87,10 @@ def test_config_exclude_unset_only_writes_explicit_fields(tmp_path):
     with open(cfg_path, "r") as f:
         data = yaml.safe_load(f)
 
-    # 'name', 'defaults', and 'runners' were provided explicitly by scaffold
+    # 'name' was provided explicitly by scaffold
     assert "name" in data
-    # 'name' was provided explicitly by scaffold; defaults/runners should be
-    # omitted.
-    assert "defaults" not in data
-    assert "runners" not in data
+    # 'executor' and 'storage' are explicitly set by create_config_file
+    assert "executor" in data
+    assert "storage" in data
     # 'version' is a default and not explicitly written
     assert "version" not in data
