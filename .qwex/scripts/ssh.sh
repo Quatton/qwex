@@ -122,10 +122,8 @@ cleanup(){
 }
 trap cleanup EXIT
 
-# prepare remote setup command which will ensure cache exists and create a worktree
-# Use the literal $HOME-based path on the remote so the remote user expands it.
-REMOTE_PREP_CMD=
-"set -euo pipefail; set -x; echo '[remote] using cache: $REMOTE_CACHE_DIR'; if [ ! -d \"$REMOTE_CACHE_DIR/.git\" ]; then mkdir -p \"$REMOTE_CACHE_DIR\" && git clone \"$GIT_REMOTE_URL\" \"$REMOTE_CACHE_DIR\"; else git -C \"$REMOTE_CACHE_DIR\" fetch --all --prune; fi; echo '[remote] cache list:'; ls -la \"$REMOTE_CACHE_DIR\" || true; rm -rf '$REMOTE_BASE'; git -C \"$REMOTE_CACHE_DIR\" worktree add --detach '$REMOTE_BASE' $GIT_HEAD; echo '[remote] worktree created:'; ls -la '$REMOTE_BASE' || true; cd '$REMOTE_BASE'"
+# make sure remote cache exists and create a worktree
+REMOTE_PREP_CMD="set -euo pipefail; set -x; echo '[remote] using cache: $REMOTE_CACHE_DIR'; if [ ! -d \"$REMOTE_CACHE_DIR/.git\" ]; then mkdir -p \"$REMOTE_CACHE_DIR\" && git clone \"$GIT_REMOTE_URL\" \"$REMOTE_CACHE_DIR\"; else git -C \"$REMOTE_CACHE_DIR\" fetch --all --prune; fi; echo '[remote] cache list:'; ls -la \"$REMOTE_CACHE_DIR\" || true; rm -rf '$REMOTE_BASE'; git -C \"$REMOTE_CACHE_DIR\" worktree add --detach '$REMOTE_BASE' $GIT_HEAD; echo '[remote] worktree created:'; ls -la '$REMOTE_BASE' || true; cd '$REMOTE_BASE'"
 
 # prepare remote execution body
 if [ "$#" -gt 0 ]; then
