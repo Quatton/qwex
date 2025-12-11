@@ -14,3 +14,11 @@ clie:
 
 clii:
     uv tool install apps/qwexcli --force-reinstall
+
+qwx backend="noop" *args="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    FILE=".qwex/_internal/compiled/{{ backend }}.sh"
+    chmod +x $FILE
+    $FILE {{args}}

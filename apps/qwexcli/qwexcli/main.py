@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, List
+
+import json
+import subprocess
+import sys
+from pathlib import Path
 
 import typer
 
@@ -52,3 +57,50 @@ def init(
     ctx = CLIContext(force=force)
     svc = ProjectService(ctx)
     svc.init()
+
+
+@app.command()
+def run(
+    runner: str = typer.Option(
+        ..., "--runner", "-r", help="Runner name to invoke (file under .qwex/runners)"
+    ),
+    cmd_and_args: List[str] = typer.Argument(
+        ..., help="Command and args to pass to the runner (first arg is the command)"
+    ),
+) -> None:
+    """Locate a runner under `.qwex/runners/<runner>.py` and execute it.
+
+    The runner is executed with the same Python interpreter. The CLI will
+    translate the provided command and args into `--command` and `--args`
+    parameters passed to the runner script. `--args` is JSON-encoded list.
+    """
+    # Ensure we have at least a command
+    if len(cmd_and_args) == 0:
+        typer.echo("No command provided to run", err=True)
+        raise typer.Exit(code=2)
+
+    cwd = Path.cwd()
+    script = cwd / ".qwex" / "runners" / f"{runner}.py"
+    if not script.exists():
+        typer.echo(f"Runner not found: {script}", err=True)
+        raise typer.Exit(code=3)
+
+    command = cmd_and_args[0]
+    args = cmd_and_args[1:]
+
+    proc_cmd = [
+        sys.executable,
+        str(script),
+        "--command",
+        command,
+        "--args",
+        json.dumps(args),
+    ]
+
+    # Run and stream output
+    try:
+        rc = subprocess.run(proc_cmd)
+        raise typer.Exit(code=rc.returncode)
+    except FileNotFoundError:
+        typer.echo("Failed to execute Python interpreter", err=True)
+        raise typer.Exit(code=4)

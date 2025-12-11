@@ -1,0 +1,12 @@
+resources:
+  infra: slurm
+
+workdir: .
+
+setup: |
+  echo "Running setup."
+
+run: |
+  echo "Hello, SkyPilot!"
+
+
