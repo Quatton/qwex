@@ -1,205 +1,413 @@
 #!/usr/bin/env bash
-# ssh.sh - qwex SSH runner
-# Behavior:
-# - enforce clean git working tree
-# - ensure origin remote is set to https://github.com/Quatton/qwex.git (configurable)
-# - optionally push on run (PUSH_ON_RUN=true/false)
-# - create a temporary git worktree in /tmp, rsync it to remote, execute command there via ssh
-# - record metadata under ~/.qwex/runs/<run-id>/meta: created_at, started_at, finished_at, status, exit_code, commit (as github/<sha>)
-# - stream raw stdout/stderr and tee to logs
-# - remove scratch (worktree and remote dir) on completion
+# ssh.sh - qwex SSH runner CLI
+# Usage:
+#   ./ssh.sh run <command>       - Run command on remote
+#   ./ssh.sh run < script.sh     - Run script from stdin on remote
+#   ./ssh.sh log [run-id]        - Show logs for a run
+#   ./ssh.sh cancel [run-id]     - Cancel a running job
+#   ./ssh.sh pull [run-id]       - Pull run logs from remote
+#   ./ssh.sh list                - List all runs
 
 set -euo pipefail
 
-# --- configuration (can be overridden by env) ---
-PUSH_ON_RUN=${PUSH_ON_RUN:-"true"}   # "true" or "false"
-QWEX_RUNS_DIR=${QWEX_RUNS_DIR:-"$HOME/.qwex/runs"}
-QWEX_SSH_TARGET=${QWEX_SSH_TARGET:-"qtn@csc"} # required: user@host
+# --- Configuration (override via env) ---
+PUSH_ON_RUN=${PUSH_ON_RUN:-"true"}
+FAIL_ON_DIRTY=${FAIL_ON_DIRTY:-"true"}
+QWEX_SSH_TARGET=${QWEX_SSH_TARGET:-"qtn@csc"}
 QWEX_SSH_PORT=${QWEX_SSH_PORT:-22}
 
-if [ -z "$QWEX_SSH_TARGET" ]; then
-  echo "QWEX_SSH_TARGET not set (e.g. user@host). Aborting." >&2
-  exit 2
-fi
+# Local paths
+LOCAL_RUN_DIR=${LOCAL_RUN_DIR:-"$(pwd)/.qwex/_internal/runs"}
 
-GIT_REMOTE_URL=${GIT_REMOTE_URL:-"ssh://$QWEX_SSH_TARGET/home/qtn/repos/qwex.git"}
+# Remote paths (these get expanded on remote side)
+REMOTE_REPO_CACHE=${REMOTE_REPO_CACHE:-'$HOME/repos/qwex'}
+REMOTE_RUN_DIR=${REMOTE_RUN_DIR:-'$HOME/.qwex/runs'}
+
+# Git remote config
+GIT_REMOTE_URL=${GIT_REMOTE_URL:-"ssh://$QWEX_SSH_TARGET/home/qtn/repos/qwex/.git"}
 GIT_REMOTE_NAME=${GIT_REMOTE_NAME:-"direct"}
 
-REPO_BASENAME_RAW=${GIT_REMOTE_URL##*/}
-REPO_BASENAME=${REPO_BASENAME_RAW%.git}
-REMOTE_CACHE_DIR=${REMOTE_CACHE_DIR:-'$HOME/.qwex/cache/'$REPO_BASENAME}
+# --- Utilities ---
+now_iso() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+sanitize_ns() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-|-$//g'; }
 
-# detect whether the configured git remote refers to the same host we're SSH-ing into
-# so the remote can use the local filesystem path instead of attempting an SSH clone
-QWEX_SSH_HOST=${QWEX_SSH_TARGET#*@}
-REMOTE_URL_HOST=""
-REMOTE_URL_PATH=""
-if [[ "$GIT_REMOTE_URL" =~ ^ssh://([^@]+)@([^/]+)(/.*)$ ]]; then
-  REMOTE_URL_HOST=${BASH_REMATCH[2]}
-  REMOTE_URL_PATH=${BASH_REMATCH[3]}
-elif [[ "$GIT_REMOTE_URL" =~ ^([^@]+)@([^:]+):(.*)$ ]]; then
-  REMOTE_URL_HOST=${BASH_REMATCH[2]}
-  REMOTE_URL_PATH="/${BASH_REMATCH[3]}"
-fi
+log_info() { echo "[qwex:ssh] $*"; }
+log_error() { echo "[qwex:ssh] ERROR: $*" >&2; }
+die() { log_error "$*"; exit 1; }
 
-if [ -n "$REMOTE_URL_HOST" ] && [ "$REMOTE_URL_HOST" = "$QWEX_SSH_HOST" ]; then
-  SAME_HOST=true
-  REMOTE_SRC=${REMOTE_URL_PATH}
-else
-  SAME_HOST=false
-  REMOTE_SRC="$GIT_REMOTE_URL"
-fi
+ssh_cmd() {
+  ssh -p "$QWEX_SSH_PORT" "$QWEX_SSH_TARGET" "$@"
+}
 
-# For logging locally, show the literal remote cache path (without expanding $HOME locally)
-REMOTE_CACHE_DISPLAY=${REMOTE_CACHE_DISPLAY:-"$REMOTE_CACHE_DIR"}
+generate_run_id() {
+  local namespace
+  namespace=$(sanitize_ns "${QWEX_NAMESPACE:-$(basename "$(pwd)")}")
+  local ts rand
+  ts=$(date +%Y%m%dT%H%M%S)
+  rand=$(printf '%04x%04x' $RANDOM $RANDOM)
+  echo "${namespace}-${ts}-${rand}"
+}
 
-now_iso(){ date --iso-8601=seconds 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ"; }
-ensure_dir(){ mkdir -p "$@"; }
-sanitize_ns(){ printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-|-$//g'; }
+# --- Git helpers ---
+ensure_git_repo() {
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "not inside a git repository"
+}
 
-
-for cmd in git ssh; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "required command not found: $cmd" >&2
-    exit 2
+check_clean_worktree() {
+  if [ "$FAIL_ON_DIRTY" = "true" ]; then
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+      die "repository has uncommitted changes; commit or stash first"
+    fi
   fi
-done
+}
 
-# --- run id ---
-NAMESPACE=${QWEX_NAMESPACE:-$(basename "$(pwd)")}
-NAMESPACE=$(sanitize_ns "$NAMESPACE")
-TS=$(date +%Y%m%dT%H%M%S%N)
-RAND=$(printf '%04x%04x' $RANDOM $RANDOM)
-RUN_ID="${NAMESPACE}-${TS}-${RAND}"
-
-RUN_DIR="$QWEX_RUNS_DIR/$RUN_ID"
-META_DIR="$RUN_DIR/meta"
-LOG_DIR="$RUN_DIR/logs"
-ensure_dir "$META_DIR" "$LOG_DIR"
-
-printf '%s' "$(now_iso)" > "$META_DIR/created_at"
-
-# --- git checks ---
-echo "[qwex:ssh] verifying git repository..."
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  echo "not inside a git repository" >&2
-  exit 2
-fi
-
-GIT_HEAD=$(git rev-parse HEAD)
-
-# fail on dirty
-if [ -n "$(git status --porcelain)" ]; then
-  echo "repository has uncommitted changes; aborting" >&2
-  exit 2
-fi
-
-# ensure configured remote name matches desired remote URL
-REMOTE_URL=$(git remote get-url "$GIT_REMOTE_NAME" 2>/dev/null || true)
-if [ -z "$REMOTE_URL" ]; then
-  git remote add "$GIT_REMOTE_NAME" "$GIT_REMOTE_URL"
-  REMOTE_URL=$GIT_REMOTE_URL
-fi
-if [ "$REMOTE_URL" != "$GIT_REMOTE_URL" ]; then
-  echo "remote '$GIT_REMOTE_NAME' URL ($REMOTE_URL) does not match desired URL ($GIT_REMOTE_URL); aborting" >&2
-  echo "To fix, run: git remote set-url $GIT_REMOTE_NAME $GIT_REMOTE_URL" >&2
-  exit 2
-fi
-
-if [ "$PUSH_ON_RUN" = "true" ]; then
-  echo "[qwex:ssh] pushing current branch to $GIT_REMOTE_NAME..."
-  if ! git push "$GIT_REMOTE_NAME" --set-upstream --quiet HEAD; then
-    echo "git push failed; ensure credentials are available" >&2
-    exit 2
+ensure_remote() {
+  local current_url
+  current_url=$(git remote get-url "$GIT_REMOTE_NAME" 2>/dev/null || true)
+  if [ -z "$current_url" ]; then
+    log_info "adding remote '$GIT_REMOTE_NAME' -> $GIT_REMOTE_URL"
+    git remote add "$GIT_REMOTE_NAME" "$GIT_REMOTE_URL"
+  elif [ "$current_url" != "$GIT_REMOTE_URL" ]; then
+    die "remote '$GIT_REMOTE_NAME' URL mismatch. Run: git remote set-url $GIT_REMOTE_NAME $GIT_REMOTE_URL"
   fi
-else
-  # verify remote SHA matches
-  REMOTE_SHA=$(git ls-remote "$GIT_REMOTE_URL" HEAD 2>/dev/null | awk '{print $1}')
-  if [ -z "$REMOTE_SHA" ]; then
-    echo "could not determine remote HEAD for $GIT_REMOTE_URL" >&2
-    exit 2
+}
+
+push_if_needed() {
+  if [ "$PUSH_ON_RUN" = "true" ]; then
+    log_info "pushing to $GIT_REMOTE_NAME..."
+    git push "$GIT_REMOTE_NAME" --set-upstream HEAD -q || die "git push failed"
+  else
+    local local_sha remote_sha
+    local_sha=$(git rev-parse HEAD)
+    remote_sha=$(git ls-remote "$GIT_REMOTE_URL" HEAD 2>/dev/null | awk '{print $1}')
+    [ "$local_sha" = "$remote_sha" ] || die "local HEAD doesn't match remote (PUSH_ON_RUN=false)"
   fi
-  if [ "$REMOTE_SHA" != "$GIT_HEAD" ]; then
-    echo "local HEAD ($GIT_HEAD) does not match remote HEAD ($REMOTE_SHA) and PUSH_ON_RUN=false; aborting" >&2
-    exit 2
+}
+
+# --- Command: run ---
+cmd_run() {
+  ensure_git_repo
+  check_clean_worktree
+  ensure_remote
+  push_if_needed
+
+  local git_head run_id
+  git_head=$(git rev-parse HEAD)
+  run_id=$(generate_run_id)
+
+  log_info "run id: $run_id"
+  log_info "commit: $git_head"
+
+  # Build the command to run
+  local user_cmd
+  if [ "$#" -gt 0 ]; then
+    user_cmd="$*"
+  else
+    # Read from stdin into a temp file
+    local tmp_script
+    tmp_script=$(mktemp)
+    cat > "$tmp_script"
+    user_cmd="STDIN_SCRIPT"
   fi
-fi
 
-# write commit as github/sha
-printf '%s' "github/$GIT_HEAD" > "$META_DIR/commit"
+  # Build remote script that:
+  # 1. Init phase: ensure repo cache, fetch if needed
+  # 2. Run-wrapping: create worktree, setup meta dirs, trap cleanup
+  # 3. Run phase: execute command, log output
+  local remote_script
+  remote_script=$(cat <<'REMOTE_SCRIPT_TEMPLATE'
+#!/usr/bin/env bash
+set -euo pipefail
 
-## Use a predefined cache dir on the remote side instead of rsyncing a local worktree.
-## Remote steps (performed via ssh):
-##  - clone the repo into $CACHE_DIR if missing
-##  - fetch updates from origin
-##  - create a detached worktree under $REMOTE_BASE for the target commit
-##  - cd into the worktree and run the requested command
+# --- Config passed from local ---
+GIT_HEAD="__GIT_HEAD__"
+RUN_ID="__RUN_ID__"
+REMOTE_REPO_CACHE="__REMOTE_REPO_CACHE__"
+REMOTE_RUN_DIR="__REMOTE_RUN_DIR__"
+GIT_REMOTE_URL="__GIT_REMOTE_URL__"
+USER_CMD="__USER_CMD__"
 
-REMOTE_BASE="/tmp/qwex-run-$RUN_ID"
-cleanup(){
-  rc=$?
-  echo "[qwex:ssh] cleaning up (rc=$rc)"
-  # remove remote dir
-  ssh -p "$QWEX_SSH_PORT" "$QWEX_SSH_TARGET" "rm -rf '$REMOTE_BASE'" || true
+# Expand $HOME in paths
+REMOTE_REPO_CACHE=$(eval echo "$REMOTE_REPO_CACHE")
+REMOTE_RUN_DIR=$(eval echo "$REMOTE_RUN_DIR")
+
+# Paths
+WORKTREE_DIR="/tmp/qwex-run-$RUN_ID"
+META_DIR="$REMOTE_RUN_DIR/$RUN_ID/meta"
+LOG_DIR="$REMOTE_RUN_DIR/$RUN_ID/logs"
+
+now_iso() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+
+# Cleanup function for remote
+cleanup_remote() {
+  local rc=$?
+  echo "[remote] cleaning up worktree..."
+  if [ -d "$WORKTREE_DIR" ]; then
+    git -C "$REMOTE_REPO_CACHE" worktree remove --force "$WORKTREE_DIR" 2>/dev/null || rm -rf "$WORKTREE_DIR"
+  fi
   exit $rc
 }
-trap cleanup EXIT
 
-# make sure remote cache exists and create a worktree
-REMOTE_PREP_CMD="set -euo pipefail; set -x; CACHE_SRC=\"\"; echo '[remote] cache candidate: $REMOTE_CACHE_DIR'; \n  if [ '${SAME_HOST}' = 'true' ]; then \n    echo '[remote] detected git URL points to same host; remote src: $REMOTE_SRC'; \n    if [ -d \"$REMOTE_SRC/.git\" ] || [ -d \"$REMOTE_SRC\" ]; then \n      CACHE_SRC=\"$REMOTE_SRC\"; \n      echo '[remote] using existing repo at' \"$REMOTE_SRC\"; \n    else \n      CACHE_SRC=\"$REMOTE_CACHE_DIR\"; \n      mkdir -p \"$REMOTE_CACHE_DIR\"; \n      git clone \"$REMOTE_SRC\" \"$REMOTE_CACHE_DIR\"; \n    fi; \n  else \n    CACHE_SRC=\"$REMOTE_CACHE_DIR\"; \n    if [ ! -d \"$REMOTE_CACHE_DIR/.git\" ]; then \n      mkdir -p \"$REMOTE_CACHE_DIR\" && git clone \"$GIT_REMOTE_URL\" \"$REMOTE_CACHE_DIR\"; \n    else \n      git -C \"$REMOTE_CACHE_DIR\" fetch --all --prune; \n    fi; \n  fi; \n  echo '[remote] cache list:'; ls -la \"$CACHE_SRC\" || true; \n  rm -rf '$REMOTE_BASE'; \n  git -C \"$CACHE_SRC\" worktree add --detach '$REMOTE_BASE' $GIT_HEAD; \n  echo '[remote] worktree created:'; ls -la '$REMOTE_BASE' || true; \n  cd '$REMOTE_BASE'"
+# --- Init phase ---
+echo "[remote] init phase: ensuring repo cache at $REMOTE_REPO_CACHE"
 
-# prepare remote execution body
-if [ "$#" -gt 0 ]; then
-  # Use the provided args as the remote command (preserve spaces/quotes)
-  REMOTE_BODY="bash -lc -- \"$*\""
+if [ ! -d "$REMOTE_REPO_CACHE" ]; then
+  echo "[remote] cloning repo cache..."
+  mkdir -p "$(dirname "$REMOTE_REPO_CACHE")"
+  git clone --bare "$GIT_REMOTE_URL" "$REMOTE_REPO_CACHE"
+elif [ -d "$REMOTE_REPO_CACHE/.git" ]; then
+  # Non-bare repo
+  echo "[remote] fetching updates (non-bare)..."
+  git -C "$REMOTE_REPO_CACHE" fetch --all --prune 2>/dev/null || true
 else
-  # read script from stdin and upload as run.sh into a temp local file
-  TMP_SCRIPT_LOCAL=$(mktemp)
-  cat - > "$TMP_SCRIPT_LOCAL"
-  REMOTE_BODY="chmod +x run.sh && ./run.sh"
+  # Bare repo
+  echo "[remote] fetching updates (bare)..."
+  git -C "$REMOTE_REPO_CACHE" fetch --all --prune 2>/dev/null || true
 fi
 
-# full remote command: prep + (for stdin case, write upload then execute)
-if [ "$#" -gt 0 ]; then
-  REMOTE_EXEC_CMD="$REMOTE_PREP_CMD && $REMOTE_BODY"
-  echo "[qwex:ssh] executing remotely: $REMOTE_EXEC_CMD"
-  # run remote command and stream raw stdout/stderr into local logs while printing
-  ssh -p "$QWEX_SSH_PORT" "$QWEX_SSH_TARGET" "$REMOTE_EXEC_CMD" \
-    > >(tee "$LOG_DIR/stdout.log") 2> >(tee "$LOG_DIR/stderr.log" >&2)
-  exit_code=${PIPESTATUS[0]:-$?}
-else
-  # For stdin-uploaded script, create the worktree remotely, then stream the script, then execute it.
-  # Create the remote worktree first
-  echo "[qwex:ssh] preparing remote cache and worktree on $QWEX_SSH_TARGET:$REMOTE_CACHE_DISPLAY"
-  ssh -p "$QWEX_SSH_PORT" "$QWEX_SSH_TARGET" "$REMOTE_PREP_CMD" || {
-    echo "remote prep failed" >&2
-    exit 2
-  }
-  # upload script into the remote worktree's run.sh using ssh+cat to avoid scp/rsync dependency
-  cat "$TMP_SCRIPT_LOCAL" | ssh -p "$QWEX_SSH_PORT" "$QWEX_SSH_TARGET" "cat > '$REMOTE_BASE/run.sh'"
-  rm -f "$TMP_SCRIPT_LOCAL"
-  echo "[qwex:ssh] executing remote run.sh"
-  ssh -p "$QWEX_SSH_PORT" "$QWEX_SSH_TARGET" "cd '$REMOTE_BASE' && $REMOTE_BODY" \
-    > >(tee "$LOG_DIR/stdout.log") 2> >(tee "$LOG_DIR/stderr.log" >&2)
-  exit_code=${PIPESTATUS[0]:-$?}
+# --- Run-wrapping phase ---
+echo "[remote] creating worktree for $GIT_HEAD"
+mkdir -p "$META_DIR" "$LOG_DIR"
+
+# Check if commit exists
+if ! git -C "$REMOTE_REPO_CACHE" cat-file -e "$GIT_HEAD^{commit}" 2>/dev/null; then
+  echo "[remote] ERROR: commit $GIT_HEAD not found in cache" >&2
+  exit 1
 fi
 
-printf '%s' "$(now_iso)" > "$META_DIR/started_at"
-printf '%s' "running" > "$META_DIR/status"
+git -C "$REMOTE_REPO_CACHE" worktree add --detach "$WORKTREE_DIR" "$GIT_HEAD"
+trap cleanup_remote EXIT
 
-echo "[qwex:ssh] executing remotely: $REMOTE_EXEC_CMD"
-# run remote command and stream raw stdout/stderr into local logs while printing
-ssh -p "$QWEX_SSH_PORT" "$QWEX_SSH_TARGET" "$REMOTE_EXEC_CMD" \
-  > >(tee "$LOG_DIR/stdout.log") 2> >(tee "$LOG_DIR/stderr.log" >&2)
-exit_code=${PIPESTATUS[0]:-$?}
+cd "$WORKTREE_DIR"
+echo "[remote] worktree ready at $WORKTREE_DIR"
 
-printf '%s' "$(now_iso)" > "$META_DIR/finished_at"
-printf '%s' "$exit_code" > "$META_DIR/exit_code"
+# Write initial metadata
+echo "$GIT_HEAD" > "$META_DIR/commit"
+now_iso > "$META_DIR/created_at"
+echo "$$" > "$META_DIR/pid"
+
+# --- Run phase ---
+echo "[remote] starting command..."
+now_iso > "$META_DIR/started_at"
+echo "running" > "$META_DIR/status"
+
+set +e
+if [ "$USER_CMD" = "STDIN_SCRIPT" ]; then
+  chmod +x ./run.sh
+  ./run.sh > >(tee "$LOG_DIR/stdout.log") 2> >(tee "$LOG_DIR/stderr.log" >&2)
+else
+  bash -c "$USER_CMD" > >(tee "$LOG_DIR/stdout.log") 2> >(tee "$LOG_DIR/stderr.log" >&2)
+fi
+exit_code=$?
+set -e
+
+now_iso > "$META_DIR/finished_at"
+echo "$exit_code" > "$META_DIR/exit_code"
 if [ "$exit_code" -eq 0 ]; then
-  printf '%s' "succeeded" > "$META_DIR/status"
+  echo "succeeded" > "$META_DIR/status"
 else
-  printf '%s' "failed" > "$META_DIR/status"
+  echo "failed" > "$META_DIR/status"
 fi
 
-echo "[qwex:ssh] run complete: exit=$exit_code; run id=$RUN_ID"
+echo "[remote] finished with exit code $exit_code"
 exit $exit_code
+REMOTE_SCRIPT_TEMPLATE
+)
+
+  # Substitute variables
+  remote_script=${remote_script//__GIT_HEAD__/$git_head}
+  remote_script=${remote_script//__RUN_ID__/$run_id}
+  remote_script=${remote_script//__REMOTE_REPO_CACHE__/$REMOTE_REPO_CACHE}
+  remote_script=${remote_script//__REMOTE_RUN_DIR__/$REMOTE_RUN_DIR}
+  remote_script=${remote_script//__GIT_REMOTE_URL__/$GIT_REMOTE_URL}
+  remote_script=${remote_script//__USER_CMD__/$user_cmd}
+
+  # Handle Ctrl+C gracefully
+  local ssh_pid
+  trap 'handle_interrupt' INT
+
+  handle_interrupt() {
+    echo ""
+    read -r -p "[qwex:ssh] Interrupt received. Cancel remote job? [y/N] " response
+    case "$response" in
+      [yY]|[yY][eE][sS])
+        log_info "cancelling job $run_id..."
+        cmd_cancel "$run_id"
+        exit 130
+        ;;
+      *)
+        log_info "continuing... (press Ctrl+C again to force quit)"
+        ;;
+    esac
+  }
+
+  log_info "executing on remote..."
+  
+  if [ "$user_cmd" = "STDIN_SCRIPT" ]; then
+    # First send the remote wrapper script, then the user script
+    {
+      echo "$remote_script"
+    } | ssh_cmd "cat > /tmp/qwex-wrapper-$run_id.sh && chmod +x /tmp/qwex-wrapper-$run_id.sh"
+    
+    # Upload the stdin script
+    cat "$tmp_script" | ssh_cmd "mkdir -p /tmp/qwex-run-$run_id && cat > /tmp/qwex-run-$run_id/run.sh"
+    rm -f "$tmp_script"
+    
+    # Run the wrapper
+    ssh_cmd "bash /tmp/qwex-wrapper-$run_id.sh; rm -f /tmp/qwex-wrapper-$run_id.sh"
+    exit_code=$?
+  else
+    echo "$remote_script" | ssh_cmd "bash -s"
+    exit_code=$?
+  fi
+
+  trap - INT
+  
+  log_info "run complete: $run_id (exit=$exit_code)"
+  return $exit_code
+}
+
+# --- Command: log ---
+cmd_log() {
+  local run_id="${1:-}"
+  
+  if [ -z "$run_id" ]; then
+    # Show latest run
+    run_id=$(cmd_list_latest)
+    [ -n "$run_id" ] || die "no runs found"
+  fi
+  
+  log_info "fetching logs for $run_id..."
+  
+  ssh_cmd "cat \$HOME/.qwex/runs/$run_id/logs/stdout.log 2>/dev/null" || true
+  ssh_cmd "cat \$HOME/.qwex/runs/$run_id/logs/stderr.log 2>/dev/null" >&2 || true
+}
+
+# --- Command: cancel ---
+cmd_cancel() {
+  local run_id="${1:-}"
+  
+  if [ -z "$run_id" ]; then
+    run_id=$(cmd_list_latest)
+    [ -n "$run_id" ] || die "no runs found"
+  fi
+  
+  log_info "cancelling $run_id..."
+  
+  # Get PID and kill it
+  local pid
+  pid=$(ssh_cmd "cat \$HOME/.qwex/runs/$run_id/meta/pid 2>/dev/null" || true)
+  
+  if [ -n "$pid" ]; then
+    ssh_cmd "kill -TERM $pid 2>/dev/null || kill -KILL $pid 2>/dev/null" || true
+    ssh_cmd "echo 'cancelled' > \$HOME/.qwex/runs/$run_id/meta/status"
+    log_info "sent kill signal to pid $pid"
+  else
+    log_info "no pid found for $run_id"
+  fi
+}
+
+# --- Command: pull ---
+cmd_pull() {
+  local run_id="${1:-}"
+  
+  mkdir -p "$LOCAL_RUN_DIR"
+  
+  if [ -z "$run_id" ]; then
+    log_info "pulling all runs to $LOCAL_RUN_DIR..."
+    rsync -avz --progress -e "ssh -p $QWEX_SSH_PORT" \
+      "$QWEX_SSH_TARGET:\$HOME/.qwex/runs/" "$LOCAL_RUN_DIR/"
+  else
+    log_info "pulling $run_id to $LOCAL_RUN_DIR..."
+    rsync -avz --progress -e "ssh -p $QWEX_SSH_PORT" \
+      "$QWEX_SSH_TARGET:\$HOME/.qwex/runs/$run_id/" "$LOCAL_RUN_DIR/$run_id/"
+  fi
+  
+  log_info "done"
+}
+
+# --- Command: list ---
+cmd_list() {
+  ssh_cmd "ls -1t \$HOME/.qwex/runs/ 2>/dev/null" || echo "(no runs)"
+}
+
+cmd_list_latest() {
+  ssh_cmd "ls -1t \$HOME/.qwex/runs/ 2>/dev/null | head -1"
+}
+
+# --- Command: status ---
+cmd_status() {
+  local run_id="${1:-}"
+  
+  if [ -z "$run_id" ]; then
+    run_id=$(cmd_list_latest)
+    [ -n "$run_id" ] || die "no runs found"
+  fi
+  
+  echo "Run: $run_id"
+  echo "Status: $(ssh_cmd "cat \$HOME/.qwex/runs/$run_id/meta/status 2>/dev/null" || echo "unknown")"
+  echo "Commit: $(ssh_cmd "cat \$HOME/.qwex/runs/$run_id/meta/commit 2>/dev/null" || echo "unknown")"
+  echo "Started: $(ssh_cmd "cat \$HOME/.qwex/runs/$run_id/meta/started_at 2>/dev/null" || echo "unknown")"
+  echo "Finished: $(ssh_cmd "cat \$HOME/.qwex/runs/$run_id/meta/finished_at 2>/dev/null" || echo "unknown")"
+  echo "Exit: $(ssh_cmd "cat \$HOME/.qwex/runs/$run_id/meta/exit_code 2>/dev/null" || echo "unknown")"
+}
+
+# --- Main ---
+usage() {
+  cat <<EOF
+qwex SSH runner
+
+Usage:
+  $0 run <command...>     Run command on remote
+  $0 run < script.sh      Run script from stdin
+  $0 log [run-id]         Show logs (default: latest)
+  $0 cancel [run-id]      Cancel a run
+  $0 pull [run-id]        Pull logs locally
+  $0 list                 List all runs
+  $0 status [run-id]      Show run status
+
+Environment:
+  QWEX_SSH_TARGET         SSH target (default: qtn@csc)
+  QWEX_SSH_PORT           SSH port (default: 22)
+  PUSH_ON_RUN             Push before run (default: true)
+  FAIL_ON_DIRTY           Fail on dirty worktree (default: true)
+  REMOTE_REPO_CACHE       Remote repo cache path
+  REMOTE_RUN_DIR          Remote run data path
+EOF
+}
+
+main() {
+  local cmd="${1:-}"
+  shift || true
+
+  case "$cmd" in
+    run)
+      cmd_run "$@"
+      ;;
+    log|logs)
+      cmd_log "$@"
+      ;;
+    cancel)
+      cmd_cancel "$@"
+      ;;
+    pull)
+      cmd_pull "$@"
+      ;;
+    list|ls)
+      cmd_list "$@"
+      ;;
+    status)
+      cmd_status "$@"
+      ;;
+    -h|--help|help|"")
+      usage
+      ;;
+    *)
+      log_error "unknown command: $cmd"
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
