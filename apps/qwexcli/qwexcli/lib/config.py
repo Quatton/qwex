@@ -6,18 +6,22 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class ExecutorConfig(BaseModel):
-    """Executor configuration."""
+class VarConfig(BaseModel):
+    """Variable configuration with optional CLI flag."""
 
-    type: str = Field(default="ssh", description="Executor type (ssh, slurm, etc.)")
-    vars: dict[str, Any] = Field(default_factory=dict, description="Executor variables")
+    default: str | int | bool | None = None
+    flag: str | None = Field(default=None, description="CLI flag name (without --)")
+    description: str | None = None
+    required: bool = False
 
 
-class StorageConfig(BaseModel):
-    """Storage configuration."""
+class ComponentRef(BaseModel):
+    """Reference to a component (executor or storage)."""
 
-    type: str = Field(default="git_direct", description="Storage type")
-    vars: dict[str, Any] = Field(default_factory=dict, description="Storage variables")
+    uses: str = Field(
+        description="Component path (e.g., 'executors/ssh' or 'storages/git_direct')"
+    )
+    vars: dict[str, Any] = Field(default_factory=dict, description="Variable overrides")
 
 
 class QwexConfig(BaseModel):
@@ -28,12 +32,12 @@ class QwexConfig(BaseModel):
     version: int = Field(default=1, description="Config version")
     name: str = Field(description="Project name")
 
-    executor: ExecutorConfig = Field(
-        default_factory=ExecutorConfig,
+    executor: ComponentRef = Field(
+        default_factory=lambda: ComponentRef(uses="executors/ssh"),
         description="Executor configuration",
     )
-    storage: StorageConfig = Field(
-        default_factory=StorageConfig,
+    storage: ComponentRef = Field(
+        default_factory=lambda: ComponentRef(uses="storages/git_direct"),
         description="Storage configuration",
     )
 

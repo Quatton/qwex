@@ -1,0 +1,120 @@
+# SSH Executor Component
+# Executes commands on a remote server via SSH
+
+name: ssh
+kind: executor
+description: Execute commands on a remote server via SSH
+
+vars:
+  HOST:
+    required: true
+    description: SSH hostname or alias (e.g., "myserver" or "user@host")
+  USER:
+    required: false
+    description: SSH username (optional if included in HOST or SSH config)
+  PORT:
+    default: 22
+    description: SSH port
+  REPO_CACHE:
+    default: "$HOME/repos/${{ vars.PROJECT_NAME }}-cache"
+    description: Path on remote to cache the git repo
+  RUN_DIR:
+    default: "$HOME/.qwex/runs"
+    description: Path on remote to store run metadata/logs
+  REPO_ORIGIN:
+    required: true
+    description: Path on remote to the bare git repo (where we push to)
+
+scripts:
+  # The main execution script - this gets sent to the remote
+  exec:
+    description: Execute a command in a git worktree on the remote
+    run: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      # --- Config from qwex ---
+      GIT_HEAD="${{ inputs.git_head }}"
+      RUN_ID="${{ inputs.run_id }}"
+      REPO_CACHE="${{ vars.REPO_CACHE }}"
+      RUN_DIR="${{ vars.RUN_DIR }}"
+      REPO_ORIGIN="${{ vars.REPO_ORIGIN }}"
+      USER_CMD_B64="${{ inputs.command_b64 }}"
+
+      # Decode user command
+      USER_CMD=$(echo "$USER_CMD_B64" | base64 -d)
+
+      # Expand $HOME in paths
+      REPO_CACHE=$(eval echo "$REPO_CACHE")
+      RUN_DIR=$(eval echo "$RUN_DIR")
+
+      # Paths
+      WORKTREE_DIR="/tmp/qwex-run-$RUN_ID"
+      META_DIR="$RUN_DIR/$RUN_ID/meta"
+      LOG_DIR="$RUN_DIR/$RUN_ID/logs"
+
+      now_iso() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
+
+      cleanup_remote() {
+        local rc=$?
+        echo "[remote] cleaning up worktree..."
+        if [ -d "$WORKTREE_DIR" ]; then
+          git -C "$REPO_CACHE" worktree remove --force "$WORKTREE_DIR" 2>/dev/null || rm -rf "$WORKTREE_DIR"
+        fi
+        exit $rc
+      }
+
+      # --- Init phase ---
+      echo "[remote] init: ensuring repo cache at $REPO_CACHE"
+
+      if [ ! -d "$REPO_CACHE" ]; then
+        echo "[remote] cloning from $REPO_ORIGIN..."
+        mkdir -p "$(dirname "$REPO_CACHE")"
+        git clone "$REPO_ORIGIN" "$REPO_CACHE"
+      elif [ -d "$REPO_CACHE/.git" ]; then
+        echo "[remote] fetching updates..."
+        git -C "$REPO_CACHE" fetch origin --prune 2>/dev/null || true
+      else
+        git -C "$REPO_CACHE" fetch origin --prune 2>/dev/null || true
+      fi
+
+      # --- Setup phase ---
+      echo "[remote] creating worktree for $GIT_HEAD"
+      mkdir -p "$META_DIR" "$LOG_DIR"
+
+      if ! git -C "$REPO_CACHE" cat-file -e "$GIT_HEAD^{commit}" 2>/dev/null; then
+        echo "[remote] ERROR: commit $GIT_HEAD not found" >&2
+        exit 1
+      fi
+
+      git -C "$REPO_CACHE" worktree add --detach "$WORKTREE_DIR" "$GIT_HEAD"
+      trap cleanup_remote EXIT
+
+      cd "$WORKTREE_DIR"
+      echo "[remote] worktree ready at $WORKTREE_DIR"
+
+      # Write metadata
+      echo "$GIT_HEAD" > "$META_DIR/commit"
+      now_iso > "$META_DIR/created_at"
+      echo "$$" > "$META_DIR/pid"
+
+      # --- Run phase ---
+      echo "[remote] starting command..."
+      now_iso > "$META_DIR/started_at"
+      echo "running" > "$META_DIR/status"
+
+      set +e
+      bash -c "$USER_CMD" > >(tee "$LOG_DIR/stdout.log") 2> >(tee "$LOG_DIR/stderr.log" >&2)
+      exit_code=$?
+      set -e
+
+      now_iso > "$META_DIR/finished_at"
+      echo "$exit_code" > "$META_DIR/exit_code"
+      if [ "$exit_code" -eq 0 ]; then
+        echo "succeeded" > "$META_DIR/status"
+      else
+        echo "failed" > "$META_DIR/status"
+      fi
+
+      echo "[remote] finished (exit=$exit_code)"
+      exit $exit_code

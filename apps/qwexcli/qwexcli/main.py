@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from typing import Optional, List
 
 import typer
@@ -10,6 +11,7 @@ from ._version import __version__
 from .lib.context import CLIContext
 from .lib.config import load_config
 from .lib.project import find_project_root, ProjectRootNotFoundError
+from .lib.component import get_bundled_templates_dir
 from .services.project import ProjectService
 from .services.run import RunService, RunConfig
 
@@ -43,9 +45,9 @@ def _get_run_service() -> RunService:
         raise typer.Exit(1)
 
     run_config = RunConfig(
-        executor=config.executor.type,
+        executor=config.executor.uses,
         executor_vars=config.executor.vars,
-        storage=config.storage.type,
+        storage=config.storage.uses,
         storage_vars=config.storage.vars,
         project_name=config.name,
         project_root=project_root,
@@ -166,3 +168,40 @@ def pull(
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1)
+
+
+@app.command()
+def add(
+    component: str = typer.Argument(..., help="Component path (e.g., executors/ssh)"),
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing"),
+) -> None:
+    """Copy a bundled component to project for customization.
+
+    Example:
+        qwex add executors/ssh
+        qwex add storages/git_direct
+    """
+    try:
+        project_root = find_project_root()
+    except ProjectRootNotFoundError:
+        typer.echo("Error: not in a qwex project (no .qwex directory found)", err=True)
+        raise typer.Exit(1)
+
+    # Normalize path
+    ref = component.removesuffix(".yaml")
+    bundled = get_bundled_templates_dir() / f"{ref}.yaml"
+
+    if not bundled.exists():
+        typer.echo(f"Error: bundled component '{component}' not found", err=True)
+        typer.echo(f"Searched: {bundled}", err=True)
+        raise typer.Exit(1)
+
+    dest = project_root / ".qwex" / "components" / f"{ref}.yaml"
+
+    if dest.exists() and not force:
+        typer.echo(f"Error: {dest} already exists (use --force to overwrite)", err=True)
+        raise typer.Exit(1)
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy(bundled, dest)
+    typer.echo(f"Copied to: {dest}")

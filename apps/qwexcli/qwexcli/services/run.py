@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from qwexcli.lib.component import Component, load_component
+from qwexcli.lib.component import Component, load_component_by_ref
 from qwexcli.lib.template import interpolate, TemplateError
 
 
@@ -18,12 +18,12 @@ from qwexcli.lib.template import interpolate, TemplateError
 class RunConfig:
     """Configuration for a run."""
 
-    # Executor config
-    executor: str = "ssh"
+    # Executor config (uses: executors/ssh)
+    executor: str = "executors/ssh"
     executor_vars: dict[str, Any] = field(default_factory=dict)
 
-    # Storage config
-    storage: str = "git_direct"
+    # Storage config (uses: storages/git_direct)
+    storage: str = "storages/git_direct"
     storage_vars: dict[str, Any] = field(default_factory=dict)
 
     # Runtime
@@ -55,24 +55,20 @@ def generate_run_id(namespace: str) -> str:
 class RunService:
     """Orchestrates remote execution."""
 
-    def __init__(self, config: RunConfig, components_dir: Path | None = None):
+    def __init__(self, config: RunConfig):
         self.config = config
-        # Default to bundled templates if not specified
-        self.components_dir = components_dir or (
-            Path(__file__).parent.parent / "templates"
-        )
 
     def _load_executor(self) -> Component:
         """Load the executor component."""
-        path = self.components_dir / "executors" / f"{self.config.executor}.yaml"
-        return load_component(str(path))
+        return load_component_by_ref(self.config.executor, self.config.project_root)
 
     def _load_storage(self) -> Component:
         """Load the storage component."""
-        path = self.components_dir / "storages" / f"{self.config.storage}.yaml"
-        return load_component(str(path))
+        return load_component_by_ref(self.config.storage, self.config.project_root)
 
-    def _build_context(self, component: Component, extra_vars: dict[str, Any]) -> dict[str, Any]:
+    def _build_context(
+        self, component: Component, extra_vars: dict[str, Any]
+    ) -> dict[str, Any]:
         """Build template context for a component."""
         # Start with component defaults
         vars_dict = component.get_var_defaults()
@@ -184,7 +180,13 @@ class RunService:
         # Get latest run if not specified
         if not run_id:
             result = subprocess.run(
-                ["ssh", "-p", str(ssh_port), ssh_target, f"ls -1t {run_dir} 2>/dev/null | head -1"],
+                [
+                    "ssh",
+                    "-p",
+                    str(ssh_port),
+                    ssh_target,
+                    f"ls -1t {run_dir} 2>/dev/null | head -1",
+                ],
                 capture_output=True,
                 text=True,
             )
@@ -300,13 +302,25 @@ class RunService:
             run_id = runs[0]
 
         stdout_result = subprocess.run(
-            ["ssh", "-p", str(ssh_port), ssh_target, f"cat {run_dir}/{run_id}/logs/stdout.log 2>/dev/null"],
+            [
+                "ssh",
+                "-p",
+                str(ssh_port),
+                ssh_target,
+                f"cat {run_dir}/{run_id}/logs/stdout.log 2>/dev/null",
+            ],
             capture_output=True,
             text=True,
         )
 
         stderr_result = subprocess.run(
-            ["ssh", "-p", str(ssh_port), ssh_target, f"cat {run_dir}/{run_id}/logs/stderr.log 2>/dev/null"],
+            [
+                "ssh",
+                "-p",
+                str(ssh_port),
+                ssh_target,
+                f"cat {run_dir}/{run_id}/logs/stderr.log 2>/dev/null",
+            ],
             capture_output=True,
             text=True,
         )
@@ -325,7 +339,9 @@ class RunService:
         ssh_port = vars_dict.get("PORT", 22)
         run_dir = vars_dict.get("RUN_DIR", "$HOME/.qwex/runs")
 
-        local_dir = local_dir or (self.config.project_root / ".qwex" / "_internal" / "runs")
+        local_dir = local_dir or (
+            self.config.project_root / ".qwex" / "_internal" / "runs"
+        )
         local_dir.mkdir(parents=True, exist_ok=True)
 
         # Get latest run if not specified
@@ -339,8 +355,11 @@ class RunService:
 
         subprocess.run(
             [
-                "rsync", "-avz", "--progress",
-                "-e", f"ssh -p {ssh_port}",
+                "rsync",
+                "-avz",
+                "--progress",
+                "-e",
+                f"ssh -p {ssh_port}",
                 f"{ssh_target}:{run_dir}/{run_id}/",
                 str(local_dir / run_id) + "/",
             ],

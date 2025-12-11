@@ -28,7 +28,12 @@ def check_already_initialized(config_path: Path) -> None:
 
 def create_config_file(config_path: Path, name: Optional[str] = None) -> Path:
     """Create .qwex/config.yaml at the explicit `config_path` and return it."""
-    from qwexcli.lib.config import QwexConfig, ExecutorConfig, StorageConfig, save_config
+    from qwexcli.lib.config import (
+        QwexConfig,
+        ExecutorConfig,
+        StorageConfig,
+        save_config,
+    )
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
