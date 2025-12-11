@@ -25,7 +25,9 @@ fi
 GIT_REMOTE_URL=${GIT_REMOTE_URL:-"ssh://$QWEX_SSH_TARGET/home/qtn/repos/qwex.git"}
 GIT_REMOTE_NAME=${GIT_REMOTE_NAME:-"direct"}
 
-REMOTE_CACHE_DIR=${REMOTE_CACHE_DIR:-'$HOME/repos'}
+REPO_BASENAME_RAW=${GIT_REMOTE_URL##*/}
+REPO_BASENAME=${REPO_BASENAME_RAW%.git}
+REMOTE_CACHE_DIR=${REMOTE_CACHE_DIR:-'$HOME/.qwex/cache/'$REPO_BASENAME}
 
 # For logging locally, show the literal remote cache path (without expanding $HOME locally)
 REMOTE_CACHE_DISPLAY=${REMOTE_CACHE_DISPLAY:-"$REMOTE_CACHE_DIR"}
