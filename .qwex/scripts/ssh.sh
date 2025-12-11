@@ -11,9 +11,6 @@
 
 set -euo pipefail
 
-# echo the command back
-set -x
-
 # --- configuration (can be overridden by env) ---
 CACHE_DIR=${CACHE_DIR:-"$HOME/Documents/GitHub/qwex"}
 PUSH_ON_RUN=${PUSH_ON_RUN:-"true"}   # "true" or "false"
@@ -28,17 +25,6 @@ fi
 
 GIT_REMOTE_URL=${GIT_REMOTE_URL:-"ssh://$QWEX_SSH_TARGET/home/qtn/repos/qwex.git"}
 GIT_REMOTE_NAME=${GIT_REMOTE_NAME:-"direct"}
-
-_DIRECT_URL=$(git remote get-url "$GIT_REMOTE_NAME" 2>/dev/null || true)
-if [ -z "$_DIRECT_URL" ]; then
-  echo "warning: git remote '$GIT_REMOTE_NAME' not found; consider running:"
-  echo "  git remote add $GIT_REMOTE_NAME '$GIT_REMOTE_URL'"
-elif [ "$_DIRECT_URL" != "$GIT_REMOTE_URL" ]; then
-  echo "warning: git remote '$GIT_REMOTE_NAME' does not match expected URL"
-  echo "  current: $_DIRECT_URL"
-  echo "  expected: $GIT_REMOTE_URL"
-  echo "  update with: git remote set-url $GIT_REMOTE_NAME '$GIT_REMOTE_URL'"
-fi
 
 now_iso(){ date --iso-8601=seconds 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 ensure_dir(){ mkdir -p "$@"; }
@@ -81,19 +67,20 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 2
 fi
 
-# ensure origin remote matches desired remote
-ORIGIN_URL=$(git remote get-url origin 2>/dev/null || true)
-if [ -z "$ORIGIN_URL" ]; then
-  git remote add origin "$GIT_REMOTE_URL"
-  ORIGIN_URL=$GIT_REMOTE_URL
+# ensure configured remote name matches desired remote URL
+REMOTE_URL=$(git remote get-url "$GIT_REMOTE_NAME" 2>/dev/null || true)
+if [ -z "$REMOTE_URL" ]; then
+  git remote add "$GIT_REMOTE_NAME" "$GIT_REMOTE_URL"
+  REMOTE_URL=$GIT_REMOTE_URL
 fi
-if [ "$ORIGIN_URL" != "$GIT_REMOTE_URL" ]; then
-  git remote set-url origin "$GIT_REMOTE_URL"
+if [ "$REMOTE_URL" != "$GIT_REMOTE_URL" ]; then
+  echo "remote '$GIT_REMOTE_NAME' URL ($REMOTE_URL) does not match desired URL ($GIT_REMOTE_URL); aborting" >&2
+  exit 2
 fi
 
 if [ "$PUSH_ON_RUN" = "true" ]; then
-  echo "[qwex:ssh] pushing current branch to origin..."
-  if ! git push origin --set-upstream --quiet HEAD; then
+  echo "[qwex:ssh] pushing current branch to $GIT_REMOTE_NAME..."
+  if ! git push "$GIT_REMOTE_NAME" --set-upstream --quiet HEAD; then
     echo "git push failed; ensure credentials are available" >&2
     exit 2
   fi
