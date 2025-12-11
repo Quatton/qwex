@@ -101,15 +101,16 @@ cmd_run() {
   log_info "commit: $git_head"
 
   # Build the command to run
-  local user_cmd
+  local user_cmd user_cmd_b64 tmp_script=""
   if [ "$#" -gt 0 ]; then
     user_cmd="$*"
+    user_cmd_b64=$(printf '%s' "$user_cmd" | base64)
   else
     # Read from stdin into a temp file
-    local tmp_script
     tmp_script=$(mktemp)
     cat > "$tmp_script"
     user_cmd="STDIN_SCRIPT"
+    user_cmd_b64=$(printf '%s' "$user_cmd" | base64)
   fi
 
   # Build remote script that:
@@ -127,7 +128,10 @@ RUN_ID="__RUN_ID__"
 REMOTE_REPO_CACHE="__REMOTE_REPO_CACHE__"
 REMOTE_RUN_DIR="__REMOTE_RUN_DIR__"
 REMOTE_REPO_ORIGIN="__REMOTE_REPO_ORIGIN__"
-USER_CMD="__USER_CMD__"
+USER_CMD_B64="__USER_CMD_B64__"
+
+# Decode user command from base64
+USER_CMD=$(echo "$USER_CMD_B64" | base64 -d)
 
 # Expand $HOME in paths
 REMOTE_REPO_CACHE=$(eval echo "$REMOTE_REPO_CACHE")
@@ -195,6 +199,8 @@ echo "running" > "$META_DIR/status"
 
 set +e
 if [ "$USER_CMD" = "STDIN_SCRIPT" ]; then
+  # Copy stdin script from temp location to worktree
+  cp "${STDIN_SCRIPT_PATH:-/dev/null}" ./run.sh
   chmod +x ./run.sh
   ./run.sh > >(tee "$LOG_DIR/stdout.log") 2> >(tee "$LOG_DIR/stderr.log" >&2)
 else
@@ -222,7 +228,7 @@ REMOTE_SCRIPT_TEMPLATE
   remote_script=${remote_script//__REMOTE_REPO_CACHE__/$REMOTE_REPO_CACHE}
   remote_script=${remote_script//__REMOTE_RUN_DIR__/$REMOTE_RUN_DIR}
   remote_script=${remote_script//__REMOTE_REPO_ORIGIN__/$REMOTE_REPO_ORIGIN}
-  remote_script=${remote_script//__USER_CMD__/$user_cmd}
+  remote_script=${remote_script//__USER_CMD_B64__/$user_cmd_b64}
 
   # Handle Ctrl+C gracefully
   local ssh_pid
@@ -246,17 +252,15 @@ REMOTE_SCRIPT_TEMPLATE
   log_info "executing on remote..."
   
   if [ "$user_cmd" = "STDIN_SCRIPT" ]; then
-    # First send the remote wrapper script, then the user script
-    {
-      echo "$remote_script"
-    } | ssh_cmd "cat > /tmp/qwex-wrapper-$run_id.sh && chmod +x /tmp/qwex-wrapper-$run_id.sh"
+    # First send the remote wrapper script
+    echo "$remote_script" | ssh_cmd "cat > /tmp/qwex-wrapper-$run_id.sh && chmod +x /tmp/qwex-wrapper-$run_id.sh"
     
-    # Upload the stdin script
-    cat "$tmp_script" | ssh_cmd "mkdir -p /tmp/qwex-run-$run_id && cat > /tmp/qwex-run-$run_id/run.sh"
+    # Upload the stdin script to a known location
+    cat "$tmp_script" | ssh_cmd "cat > /tmp/qwex-stdin-$run_id.sh"
     rm -f "$tmp_script"
     
-    # Run the wrapper
-    ssh_cmd "bash /tmp/qwex-wrapper-$run_id.sh; rm -f /tmp/qwex-wrapper-$run_id.sh"
+    # Run the wrapper (it will copy the stdin script to the worktree)
+    ssh_cmd "STDIN_SCRIPT_PATH=/tmp/qwex-stdin-$run_id.sh bash /tmp/qwex-wrapper-$run_id.sh; rm -f /tmp/qwex-wrapper-$run_id.sh /tmp/qwex-stdin-$run_id.sh"
     exit_code=$?
   else
     echo "$remote_script" | ssh_cmd "bash -s"
