@@ -1,0 +1,79 @@
+# Git Direct Storage Component
+# Pushes directly to a remote git repo via SSH
+
+name: git_direct
+kind: storage
+description: Push code directly to a bare git repo on remote server
+
+vars:
+  REMOTE_NAME:
+    default: "direct"
+    description: Git remote name to use
+  REMOTE_URL:
+    required: true
+    description: Git remote URL (e.g., ssh://user@host/path/to/repo.git)
+  PUSH_ON_RUN:
+    default: "true"
+    description: Whether to push before each run
+  FAIL_ON_DIRTY:
+    default: "true"
+    description: Whether to fail if working tree is dirty
+
+scripts:
+  push:
+    description: Ensure code is pushed to the remote
+    run: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      REMOTE_NAME="${{ vars.REMOTE_NAME }}"
+      REMOTE_URL="${{ vars.REMOTE_URL }}"
+      PUSH_ON_RUN="${{ vars.PUSH_ON_RUN }}"
+      FAIL_ON_DIRTY="${{ vars.FAIL_ON_DIRTY }}"
+
+      # Check we're in a git repo
+      git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+        echo "ERROR: not in a git repository" >&2
+        exit 2
+      }
+
+      # Check for dirty working tree
+      if [ "$FAIL_ON_DIRTY" = "true" ]; then
+        if ! git diff --quiet || ! git diff --cached --quiet; then
+          echo "ERROR: uncommitted changes; commit or stash first" >&2
+          exit 2
+        fi
+      fi
+
+      # Ensure remote exists
+      CURRENT_URL=$(git remote get-url "$REMOTE_NAME" 2>/dev/null || true)
+      if [ -z "$CURRENT_URL" ]; then
+        echo "Adding remote '$REMOTE_NAME' -> $REMOTE_URL"
+        git remote add "$REMOTE_NAME" "$REMOTE_URL"
+      elif [ "$CURRENT_URL" != "$REMOTE_URL" ]; then
+        echo "ERROR: remote '$REMOTE_NAME' URL mismatch" >&2
+        echo "Expected: $REMOTE_URL" >&2
+        echo "Got: $CURRENT_URL" >&2
+        echo "Run: git remote set-url $REMOTE_NAME $REMOTE_URL" >&2
+        exit 2
+      fi
+
+      # Push if configured
+      if [ "$PUSH_ON_RUN" = "true" ]; then
+        echo "Pushing to $REMOTE_NAME..."
+        git push "$REMOTE_NAME" --set-upstream HEAD -q || {
+          echo "ERROR: git push failed" >&2
+          exit 2
+        }
+      else
+        # Verify remote matches local
+        LOCAL_SHA=$(git rev-parse HEAD)
+        REMOTE_SHA=$(git ls-remote "$REMOTE_URL" HEAD 2>/dev/null | awk '{print $1}')
+        if [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
+          echo "ERROR: local HEAD doesn't match remote (PUSH_ON_RUN=false)" >&2
+          exit 2
+        fi
+      fi
+
+      # Output the commit SHA
+      git rev-parse HEAD

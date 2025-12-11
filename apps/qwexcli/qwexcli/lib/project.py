@@ -1,7 +1,6 @@
 from pathlib import Path
 from typing import Optional
 
-from qwexcli.lib.config import QwexConfig, save_config
 from qwexcli.lib.errors import QwexError
 
 
@@ -29,14 +28,27 @@ def check_already_initialized(config_path: Path) -> None:
 
 def create_config_file(config_path: Path, name: Optional[str] = None) -> Path:
     """Create .qwex/config.yaml at the explicit `config_path` and return it."""
+    from qwexcli.lib.config import QwexConfig, ExecutorConfig, StorageConfig, save_config
+
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    # Build kwargs without including `defaults` or `runners` so they remain
-    # unset on the model. `model_dump(exclude_unset=True)` will then omit
-    # those keys from the written YAML entirely.
-    cfg_kwargs = {"name": name or config_path.parent.parent.name}
-    # Pass `name` explicitly to avoid positional/typing confusion in static
-    # analysis and ensure the field remains unset for others.
-    cfg = QwexConfig(name=cfg_kwargs["name"])
+
+    # Create default config with SSH executor and git_direct storage
+    cfg = QwexConfig(
+        name=name or config_path.parent.parent.name,
+        executor=ExecutorConfig(
+            type="ssh",
+            vars={
+                "HOST": "your-server",  # User must configure this
+                "REPO_ORIGIN": "/path/to/your/repo.git",  # User must configure this
+            },
+        ),
+        storage=StorageConfig(
+            type="git_direct",
+            vars={
+                "REMOTE_URL": "ssh://user@host/path/to/repo.git",  # User must configure this
+            },
+        ),
+    )
     save_config(cfg, config_path)
     return config_path
 

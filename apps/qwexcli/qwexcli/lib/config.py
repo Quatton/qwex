@@ -1,9 +1,23 @@
 """Configuration management for qwexcli."""
 
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class ExecutorConfig(BaseModel):
+    """Executor configuration."""
+
+    type: str = Field(default="ssh", description="Executor type (ssh, slurm, etc.)")
+    vars: dict[str, Any] = Field(default_factory=dict, description="Executor variables")
+
+
+class StorageConfig(BaseModel):
+    """Storage configuration."""
+
+    type: str = Field(default="git_direct", description="Storage type")
+    vars: dict[str, Any] = Field(default_factory=dict, description="Storage variables")
 
 
 class QwexConfig(BaseModel):
@@ -12,15 +26,16 @@ class QwexConfig(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     version: int = Field(default=1, description="Config version")
-    defaults: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Default runtime configuration (e.g., default runner). None by default",
-    )
-    runners: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Named runner configurations and their templates (None by default)",
-    )
     name: str = Field(description="Project name")
+
+    executor: ExecutorConfig = Field(
+        default_factory=ExecutorConfig,
+        description="Executor configuration",
+    )
+    storage: StorageConfig = Field(
+        default_factory=StorageConfig,
+        description="Storage configuration",
+    )
 
     @field_validator("version")
     @classmethod

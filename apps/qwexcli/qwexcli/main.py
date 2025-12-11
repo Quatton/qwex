@@ -4,16 +4,14 @@ from __future__ import annotations
 
 from typing import Optional, List
 
-import json
-import subprocess
-import sys
-from pathlib import Path
-
 import typer
 
 from ._version import __version__
 from .lib.context import CLIContext
+from .lib.config import load_config
+from .lib.project import find_project_root, ProjectRootNotFoundError
 from .services.project import ProjectService
+from .services.run import RunService, RunConfig
 
 
 def version_callback(value: bool) -> None:
@@ -27,6 +25,33 @@ app = typer.Typer(
     help="Queued Workspace-aware Execution",
     no_args_is_help=True,
 )
+
+
+def _get_run_service() -> RunService:
+    """Load config and create RunService."""
+    try:
+        project_root = find_project_root()
+    except ProjectRootNotFoundError:
+        typer.echo("Error: not in a qwex project (no .qwex directory found)", err=True)
+        raise typer.Exit(1)
+
+    config_path = project_root / ".qwex" / "config.yaml"
+    try:
+        config = load_config(config_path)
+    except FileNotFoundError:
+        typer.echo(f"Error: config not found at {config_path}", err=True)
+        raise typer.Exit(1)
+
+    run_config = RunConfig(
+        executor=config.executor.type,
+        executor_vars=config.executor.vars,
+        storage=config.storage.type,
+        storage_vars=config.storage.vars,
+        project_name=config.name,
+        project_root=project_root,
+    )
+
+    return RunService(run_config)
 
 
 @app.callback()
@@ -61,46 +86,83 @@ def init(
 
 @app.command()
 def run(
-    runner: str = typer.Option(
-        ..., "--runner", "-r", help="Runner name to invoke (file under .qwex/runners)"
-    ),
-    cmd_and_args: List[str] = typer.Argument(
-        ..., help="Command and args to pass to the runner (first arg is the command)"
-    ),
+    command: List[str] = typer.Argument(..., help="Command to run on remote"),
 ) -> None:
-    """Locate a runner under `.qwex/runners/<runner>.py` and execute it.
+    """Run a command on the remote executor."""
+    svc = _get_run_service()
+    cmd = " ".join(command)
+    exit_code = svc.run(cmd)
+    raise typer.Exit(exit_code)
 
-    The runner is executed with the same Python interpreter. The CLI will
-    translate the provided command and args into `--command` and `--args`
-    parameters passed to the runner script. `--args` is JSON-encoded list.
-    """
-    # Ensure we have at least a command
-    if len(cmd_and_args) == 0:
-        typer.echo("No command provided to run", err=True)
-        raise typer.Exit(code=2)
 
-    cwd = Path.cwd()
-    script = cwd / ".qwex" / "runners" / f"{runner}.py"
-    if not script.exists():
-        typer.echo(f"Runner not found: {script}", err=True)
-        raise typer.Exit(code=3)
+@app.command()
+def status(
+    run_id: Optional[str] = typer.Argument(None, help="Run ID (default: latest)"),
+) -> None:
+    """Show status of a run."""
+    svc = _get_run_service()
+    info = svc.status(run_id)
 
-    command = cmd_and_args[0]
-    args = cmd_and_args[1:]
+    if "error" in info:
+        typer.echo(f"Error: {info['error']}")
+        raise typer.Exit(1)
 
-    proc_cmd = [
-        sys.executable,
-        str(script),
-        "--command",
-        command,
-        "--args",
-        json.dumps(args),
-    ]
+    typer.echo(f"Run: {info['run_id']}")
+    typer.echo(f"Status: {info['status']}")
+    typer.echo(f"Commit: {info['commit']}")
+    typer.echo(f"Started: {info['started']}")
+    typer.echo(f"Finished: {info['finished']}")
+    typer.echo(f"Exit: {info['exit_code']}")
 
-    # Run and stream output
+
+@app.command("list")
+def list_runs() -> None:
+    """List all runs."""
+    svc = _get_run_service()
+    runs = svc.list_runs()
+
+    if not runs:
+        typer.echo("(no runs)")
+        return
+
+    for run_id in runs:
+        typer.echo(run_id)
+
+
+@app.command()
+def cancel(
+    run_id: Optional[str] = typer.Argument(None, help="Run ID (default: latest)"),
+) -> None:
+    """Cancel a running job."""
+    svc = _get_run_service()
+    success = svc.cancel(run_id)
+    if not success:
+        raise typer.Exit(1)
+
+
+@app.command()
+def logs(
+    run_id: Optional[str] = typer.Argument(None, help="Run ID (default: latest)"),
+) -> None:
+    """Show logs for a run."""
+    svc = _get_run_service()
+    stdout, stderr = svc.logs(run_id)
+
+    if stdout:
+        typer.echo(stdout, nl=False)
+    if stderr:
+        typer.echo(stderr, err=True, nl=False)
+
+
+@app.command()
+def pull(
+    run_id: Optional[str] = typer.Argument(None, help="Run ID (default: latest)"),
+) -> None:
+    """Pull run logs to local directory."""
+    svc = _get_run_service()
     try:
-        rc = subprocess.run(proc_cmd)
-        raise typer.Exit(code=rc.returncode)
-    except FileNotFoundError:
-        typer.echo("Failed to execute Python interpreter", err=True)
-        raise typer.Exit(code=4)
+        path = svc.pull(run_id)
+        typer.echo(f"Pulled to: {path}")
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)

@@ -1,2 +1,19 @@
 name: qwex
 
+executor:
+  type: ssh
+  vars:
+    HOST: csc
+    USER: qtn
+    PORT: 22
+    REPO_ORIGIN: /home/qtn/repos/qwex.git
+    REPO_CACHE: $HOME/repos/qwex-cache
+    RUN_DIR: $HOME/.qwex/runs
+
+storage:
+  type: git_direct
+  vars:
+    REMOTE_NAME: direct
+    REMOTE_URL: ssh://qtn@csc/home/qtn/repos/qwex.git
+    PUSH_ON_RUN: "true"
+    FAIL_ON_DIRTY: "true"

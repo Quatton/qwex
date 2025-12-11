@@ -3,7 +3,7 @@
 import shutil
 from typing import Optional
 
-from .init import check_already_initialized, scaffold
+from .project import check_already_initialized, scaffold
 from .errors import QwexError, exit_with_error
 from .context import CLIContext
 
