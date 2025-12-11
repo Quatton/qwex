@@ -29,6 +29,27 @@ REPO_BASENAME_RAW=${GIT_REMOTE_URL##*/}
 REPO_BASENAME=${REPO_BASENAME_RAW%.git}
 REMOTE_CACHE_DIR=${REMOTE_CACHE_DIR:-'$HOME/.qwex/cache/'$REPO_BASENAME}
 
+# detect whether the configured git remote refers to the same host we're SSH-ing into
+# so the remote can use the local filesystem path instead of attempting an SSH clone
+QWEX_SSH_HOST=${QWEX_SSH_TARGET#*@}
+REMOTE_URL_HOST=""
+REMOTE_URL_PATH=""
+if [[ "$GIT_REMOTE_URL" =~ ^ssh://([^@]+)@([^/]+)(/.*)$ ]]; then
+  REMOTE_URL_HOST=${BASH_REMATCH[2]}
+  REMOTE_URL_PATH=${BASH_REMATCH[3]}
+elif [[ "$GIT_REMOTE_URL" =~ ^([^@]+)@([^:]+):(.*)$ ]]; then
+  REMOTE_URL_HOST=${BASH_REMATCH[2]}
+  REMOTE_URL_PATH="/${BASH_REMATCH[3]}"
+fi
+
+if [ -n "$REMOTE_URL_HOST" ] && [ "$REMOTE_URL_HOST" = "$QWEX_SSH_HOST" ]; then
+  SAME_HOST=true
+  REMOTE_SRC=${REMOTE_URL_PATH}
+else
+  SAME_HOST=false
+  REMOTE_SRC="$GIT_REMOTE_URL"
+fi
+
 # For logging locally, show the literal remote cache path (without expanding $HOME locally)
 REMOTE_CACHE_DISPLAY=${REMOTE_CACHE_DISPLAY:-"$REMOTE_CACHE_DIR"}
 
@@ -125,7 +146,7 @@ cleanup(){
 trap cleanup EXIT
 
 # make sure remote cache exists and create a worktree
-REMOTE_PREP_CMD="set -euo pipefail; set -x; echo '[remote] using cache: $REMOTE_CACHE_DIR'; if [ ! -d \"$REMOTE_CACHE_DIR/.git\" ]; then mkdir -p \"$REMOTE_CACHE_DIR\" && git clone \"$GIT_REMOTE_URL\" \"$REMOTE_CACHE_DIR\"; else git -C \"$REMOTE_CACHE_DIR\" fetch --all --prune; fi; echo '[remote] cache list:'; ls -la \"$REMOTE_CACHE_DIR\" || true; rm -rf '$REMOTE_BASE'; git -C \"$REMOTE_CACHE_DIR\" worktree add --detach '$REMOTE_BASE' $GIT_HEAD; echo '[remote] worktree created:'; ls -la '$REMOTE_BASE' || true; cd '$REMOTE_BASE'"
+REMOTE_PREP_CMD="set -euo pipefail; set -x; echo '[remote] cache candidate: $REMOTE_CACHE_DIR'; \n  if [ '${SAME_HOST}' = 'true' ]; then \n    echo '[remote] detected git URL points to same host; remote src: $REMOTE_SRC'; \n    if [ -d \"$REMOTE_SRC/.git\" ] || [ -d \"$REMOTE_SRC\" ]; then \n      CACHE_SRC=\"$REMOTE_SRC\"; \n      echo '[remote] using existing repo at' \"$REMOTE_SRC\"; \n    else \n      CACHE_SRC=\"$REMOTE_CACHE_DIR\"; \n      mkdir -p \"$REMOTE_CACHE_DIR\"; \n      git clone \"$REMOTE_SRC\" \"$REMOTE_CACHE_DIR\"; \n    fi; \n  else \n    CACHE_SRC=\"$REMOTE_CACHE_DIR\"; \n    if [ ! -d \"$REMOTE_CACHE_DIR/.git\" ]; then \n      mkdir -p \"$REMOTE_CACHE_DIR\" && git clone \"$GIT_REMOTE_URL\" \"$REMOTE_CACHE_DIR\"; \n    else \n      git -C \"$REMOTE_CACHE_DIR\" fetch --all --prune; \n    fi; \n  fi; \n  echo '[remote] cache list:'; ls -la \"$CACHE_SRC\" || true; \n  rm -rf '$REMOTE_BASE'; \n  git -C \"$CACHE_SRC\" worktree add --detach '$REMOTE_BASE' $GIT_HEAD; \n  echo '[remote] worktree created:'; ls -la '$REMOTE_BASE' || true; \n  cd '$REMOTE_BASE'"
 
 # prepare remote execution body
 if [ "$#" -gt 0 ]; then
