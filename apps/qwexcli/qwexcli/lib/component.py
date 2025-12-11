@@ -37,6 +37,8 @@ class Step(BaseModel):
         """Validate that either uses or run is provided."""
         if self.uses is None and self.run is None:
             raise ValueError("Step must have either 'uses' or 'run'")
+        if self.uses is not None and self.run is not None:
+            raise ValueError("Step cannot have both 'uses' and 'run'")
 
 
 class Script(BaseModel):

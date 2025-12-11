@@ -14,6 +14,11 @@ from qwexcli.lib.component import Component, load_component_by_ref, parse_compon
 from qwexcli.lib.template import interpolate, TemplateError
 
 
+# Default function names for backward compatibility
+DEFAULT_STORAGE_FUNCTION = "push"
+DEFAULT_EXECUTOR_FUNCTION = "exec"
+
+
 @dataclass
 class RunConfig:
     """Configuration for a run."""
@@ -84,7 +89,7 @@ class RunService:
         # Parse component reference to get function name
         _, function_name = parse_component_ref(self.config.storage)
         if function_name is None:
-            function_name = "push"  # Default to "push" for backward compatibility
+            function_name = DEFAULT_STORAGE_FUNCTION  # Default for backward compatibility
         
         storage = self._load_storage()
         vars_dict = storage.validate_vars(self.config.storage_vars)
@@ -134,7 +139,7 @@ class RunService:
         # Parse component reference to get function name
         _, function_name = parse_component_ref(self.config.executor)
         if function_name is None:
-            function_name = "exec"  # Default to "exec" for backward compatibility
+            function_name = DEFAULT_EXECUTOR_FUNCTION  # Default for backward compatibility
         
         executor = self._load_executor()
         vars_dict = executor.validate_vars(self.config.executor_vars)

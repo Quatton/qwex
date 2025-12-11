@@ -121,6 +121,12 @@ def test_step_must_have_run_or_uses():
         Step(name="Invalid")
 
 
+def test_step_cannot_have_both_run_and_uses():
+    """Test that step cannot have both run and uses."""
+    with pytest.raises(ValueError, match="cannot have both"):
+        Step(name="Invalid", run="echo hi", uses="component:func")
+
+
 def test_component_normalizes_vars():
     """Test that component normalizes var specifications."""
     yaml_str = """
