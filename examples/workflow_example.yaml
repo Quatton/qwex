@@ -1,0 +1,37 @@
+# Example qwex workflow component
+# Demonstrates the new steps: structure
+
+name: example_workflow
+tags: [workflow, example]
+description: Example workflow demonstrating steps structure
+
+vars:
+  MESSAGE:
+    default: "Hello from qwex!"
+    description: Message to display
+
+scripts:
+  # Simple script with direct run
+  greet:
+    description: Simple greeting
+    run: |
+      echo "${{ vars.MESSAGE }}"
+  
+  # Complex workflow with steps
+  deploy:
+    description: Multi-step deployment workflow
+    steps:
+      - name: Build
+        run: |
+          echo "Building application..."
+          echo "Build complete!"
+      
+      - name: Test
+        run: |
+          echo "Running tests..."
+          echo "All tests passed!"
+      
+      - name: Deploy
+        run: |
+          echo "Deploying to production..."
+          echo "Deployment successful!"
