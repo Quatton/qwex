@@ -23,7 +23,7 @@ if [ -z "$QWEX_SSH_TARGET" ]; then
   exit 2
 fi
 
-GIT_REMOTE_URL=${GIT_REMOTE_URL:-"ssh://$QWEX_SSH_TARGET/~/repos/qwex.git"}
+GIT_REMOTE_URL=${GIT_REMOTE_URL:-"ssh://$QWEX_SSH_TARGET/home/qtn/repos/qwex.git"}
 GIT_REMOTE_NAME=${GIT_REMOTE_NAME:-"direct"}
 
 _DIRECT_URL=$(git remote get-url "$GIT_REMOTE_NAME" 2>/dev/null || true)
