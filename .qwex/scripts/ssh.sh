@@ -75,6 +75,7 @@ if [ -z "$REMOTE_URL" ]; then
 fi
 if [ "$REMOTE_URL" != "$GIT_REMOTE_URL" ]; then
   echo "remote '$GIT_REMOTE_NAME' URL ($REMOTE_URL) does not match desired URL ($GIT_REMOTE_URL); aborting" >&2
+  echo "To fix, run: git remote set-url $GIT_REMOTE_NAME $GIT_REMOTE_URL" >&2
   exit 2
 fi
 
