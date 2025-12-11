@@ -11,6 +11,9 @@
 
 set -euo pipefail
 
+# echo the command back
+set -x
+
 # --- configuration (can be overridden by env) ---
 CACHE_DIR=${CACHE_DIR:-"$HOME/Documents/GitHub/qwex"}
 PUSH_ON_RUN=${PUSH_ON_RUN:-"true"}   # "true" or "false"
