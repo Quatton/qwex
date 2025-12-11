@@ -25,10 +25,7 @@ fi
 GIT_REMOTE_URL=${GIT_REMOTE_URL:-"ssh://$QWEX_SSH_TARGET/home/qtn/repos/qwex.git"}
 GIT_REMOTE_NAME=${GIT_REMOTE_NAME:-"direct"}
 
-# Remote cache dir (on the remote host). Default is the remote user's home.
-# Use a literal '$HOME' so the remote shell expands it when the prep command runs.
-# REMOTE_CACHE_DIR may be set externally (e.g. "\$HOME/my-cache").
-REMOTE_CACHE_DIR=${REMOTE_CACHE_DIR:-'$HOME/qwex-cache'}
+REMOTE_CACHE_DIR=${REMOTE_CACHE_DIR:-'$HOME/repos'}
 
 # For logging locally, show the literal remote cache path (without expanding $HOME locally)
 REMOTE_CACHE_DISPLAY=${REMOTE_CACHE_DISPLAY:-"$REMOTE_CACHE_DIR"}
@@ -128,7 +125,7 @@ trap cleanup EXIT
 # prepare remote setup command which will ensure cache exists and create a worktree
 # Use the literal $HOME-based path on the remote so the remote user expands it.
 REMOTE_PREP_CMD=
-"if [ ! -d \"$REMOTE_CACHE_DIR/.git\" ]; then mkdir -p \"$REMOTE_CACHE_DIR\" && git clone \"$GIT_REMOTE_URL\" \"$REMOTE_CACHE_DIR\"; else git -C \"$REMOTE_CACHE_DIR\" fetch --all --prune; fi; rm -rf '$REMOTE_BASE'; git -C \"$REMOTE_CACHE_DIR\" worktree add --detach '$REMOTE_BASE' $GIT_HEAD; cd '$REMOTE_BASE'"
+"set -euo pipefail; set -x; echo '[remote] using cache: $REMOTE_CACHE_DIR'; if [ ! -d \"$REMOTE_CACHE_DIR/.git\" ]; then mkdir -p \"$REMOTE_CACHE_DIR\" && git clone \"$GIT_REMOTE_URL\" \"$REMOTE_CACHE_DIR\"; else git -C \"$REMOTE_CACHE_DIR\" fetch --all --prune; fi; echo '[remote] cache list:'; ls -la \"$REMOTE_CACHE_DIR\" || true; rm -rf '$REMOTE_BASE'; git -C \"$REMOTE_CACHE_DIR\" worktree add --detach '$REMOTE_BASE' $GIT_HEAD; echo '[remote] worktree created:'; ls -la '$REMOTE_BASE' || true; cd '$REMOTE_BASE'"
 
 # prepare remote execution body
 if [ "$#" -gt 0 ]; then
@@ -152,7 +149,7 @@ if [ "$#" -gt 0 ]; then
 else
   # For stdin-uploaded script, create the worktree remotely, then stream the script, then execute it.
   # Create the remote worktree first
-  echo "[qwex:ssh] preparing remote cache and worktree on $QWEX_SSH_TARGET:$CACHE_DIR"
+  echo "[qwex:ssh] preparing remote cache and worktree on $QWEX_SSH_TARGET:$REMOTE_CACHE_DISPLAY"
   ssh -p "$QWEX_SSH_PORT" "$QWEX_SSH_TARGET" "$REMOTE_PREP_CMD" || {
     echo "remote prep failed" >&2
     exit 2
