@@ -2,7 +2,7 @@
 # Executes commands on a remote server via SSH
 
 name: ssh
-kind: executor
+tags: [executor, inline]
 description: Execute commands on a remote server via SSH
 
 vars:

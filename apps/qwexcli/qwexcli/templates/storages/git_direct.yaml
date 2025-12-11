@@ -2,7 +2,7 @@
 # Pushes directly to a remote git repo via SSH
 
 name: git_direct
-kind: storage
+tags: [storage, inline]
 description: Push code directly to a bare git repo on remote server
 
 vars:

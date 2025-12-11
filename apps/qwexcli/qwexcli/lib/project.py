@@ -30,8 +30,7 @@ def create_config_file(config_path: Path, name: Optional[str] = None) -> Path:
     """Create .qwex/config.yaml at the explicit `config_path` and return it."""
     from qwexcli.lib.config import (
         QwexConfig,
-        ExecutorConfig,
-        StorageConfig,
+        ComponentRef,
         save_config,
     )
 
@@ -40,15 +39,15 @@ def create_config_file(config_path: Path, name: Optional[str] = None) -> Path:
     # Create default config with SSH executor and git_direct storage
     cfg = QwexConfig(
         name=name or config_path.parent.parent.name,
-        executor=ExecutorConfig(
-            type="ssh",
+        executor=ComponentRef(
+            uses="executors/ssh",
             vars={
                 "HOST": "your-server",  # User must configure this
                 "REPO_ORIGIN": "/path/to/your/repo.git",  # User must configure this
             },
         ),
-        storage=StorageConfig(
-            type="git_direct",
+        storage=ComponentRef(
+            uses="storages/git_direct",
             vars={
                 "REMOTE_URL": "ssh://user@host/path/to/repo.git",  # User must configure this
             },

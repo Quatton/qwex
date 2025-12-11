@@ -1,7 +1,7 @@
 name: qwex
 
 executor:
-  uses: executors/ssh
+  uses: executors/ssh:exec
   vars:
     HOST: csc
     USER: qtn
@@ -11,7 +11,7 @@ executor:
     RUN_DIR: $HOME/.qwex/runs
 
 storage:
-  uses: storages/git_direct
+  uses: storages/git_direct:push
   vars:
     REMOTE_NAME: direct
     REMOTE_URL: ssh://qtn@csc/home/qtn/repos/qwex.git

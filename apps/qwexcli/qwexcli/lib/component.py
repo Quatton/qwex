@@ -23,18 +23,53 @@ class VarSpec(BaseModel):
     flag: str | None = Field(default=None, description="CLI flag name (without --)")
 
 
+class Step(BaseModel):
+    """A single step in a workflow."""
+
+    name: str | None = Field(default=None, description="Step name")
+    uses: str | None = Field(default=None, description="Component to use (e.g., 'storages/git_direct:push')")
+    with_: dict[str, Any] | None = Field(default=None, alias="with", description="Variables to pass to the component")
+    run: str | list[str] | None = Field(default=None, description="Command(s) to run")
+
+    def model_post_init(self, __context: Any) -> None:
+        """Validate that either uses or run is provided."""
+        if self.uses is None and self.run is None:
+            raise ValueError("Step must have either 'uses' or 'run'")
+
+
 class Script(BaseModel):
     """A script that can be executed."""
 
-    run: str | list[str] = Field(description="Command(s) to run")
+    run: str | list[str] | None = Field(default=None, description="Command(s) to run")
+    steps: list[Step | dict[str, Any]] | None = Field(default=None, description="Workflow steps")
     description: str | None = None
+
+    def model_post_init(self, __context: Any) -> None:
+        """Normalize and validate script structure."""
+        # Exactly one of run or steps must be provided
+        if self.run is None and self.steps is None:
+            raise ValueError("Script must have either 'run' or 'steps'")
+        if self.run is not None and self.steps is not None:
+            raise ValueError("Script cannot have both 'run' and 'steps'")
+        
+        # Normalize steps
+        if self.steps is not None:
+            normalized_steps: list[Step] = []
+            for step_val in self.steps:
+                if isinstance(step_val, Step):
+                    normalized_steps.append(step_val)
+                elif isinstance(step_val, dict):
+                    normalized_steps.append(Step(**step_val))
+                else:
+                    raise ValueError(f"Invalid step value: {step_val}")
+            object.__setattr__(self, "steps", normalized_steps)
 
 
 class Component(BaseModel):
     """A reusable component (executor, storage, hook)."""
 
     name: str
-    kind: Literal["executor", "storage", "hook"]
+    tags: list[str] = Field(default_factory=list, description="Component tags for categorization")
     description: str | None = None
     vars: dict[str, VarSpec | str | int | bool] = Field(default_factory=dict)
     scripts: dict[str, Script | str] = Field(default_factory=dict)
@@ -60,6 +95,8 @@ class Component(BaseModel):
                 normalized_scripts[key] = val
             elif isinstance(val, str):
                 normalized_scripts[key] = Script(run=val)
+            elif isinstance(val, dict):
+                normalized_scripts[key] = Script(**val)
             else:
                 raise ValueError(f"Invalid script value for {key}: {val}")
         object.__setattr__(self, "scripts", normalized_scripts)
@@ -98,6 +135,28 @@ class Component(BaseModel):
 # --- Component Resolution ---
 
 
+def parse_component_ref(uses: str) -> tuple[str, str | None]:
+    """Parse a component reference into component path and function name.
+    
+    Args:
+        uses: Component reference (e.g., "executors/ssh:exec" or "executors/ssh")
+    
+    Returns:
+        Tuple of (component_path, function_name)
+        If no function specified, function_name is None
+    
+    Examples:
+        >>> parse_component_ref("executors/ssh:exec")
+        ("executors/ssh", "exec")
+        >>> parse_component_ref("executors/ssh")
+        ("executors/ssh", None)
+    """
+    if ":" in uses:
+        component_path, function_name = uses.split(":", 1)
+        return component_path, function_name
+    return uses, None
+
+
 def get_bundled_templates_dir() -> Path:
     """Get the path to bundled templates."""
     return Path(__file__).parent.parent / "templates"
@@ -114,7 +173,7 @@ def resolve_component_path(
     2. Bundled templates: qwexcli/templates/<uses>.yaml
 
     Args:
-        uses: Component reference (e.g., "executors/ssh" or "executors/ssh.yaml")
+        uses: Component reference (e.g., "executors/ssh:exec", "executors/ssh" or "executors/ssh.yaml")
         project_root: Project root directory (containing .qwex/)
 
     Returns:
@@ -123,8 +182,11 @@ def resolve_component_path(
     Raises:
         FileNotFoundError: If component not found in any location
     """
+    # Strip function name if present (e.g., "executors/ssh:exec" -> "executors/ssh")
+    component_path, _ = parse_component_ref(uses)
+    
     # Normalize: strip .yaml if present, we'll add it back
-    ref = uses.removesuffix(".yaml")
+    ref = component_path.removesuffix(".yaml")
 
     candidates: list[Path] = []
 

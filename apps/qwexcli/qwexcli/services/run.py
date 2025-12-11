@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from qwexcli.lib.component import Component, load_component_by_ref
+from qwexcli.lib.component import Component, load_component_by_ref, parse_component_ref
 from qwexcli.lib.template import interpolate, TemplateError
 
 
@@ -81,11 +81,20 @@ class RunService:
 
     def push(self) -> str:
         """Push code using the storage component. Returns git HEAD."""
+        # Parse component reference to get function name
+        _, function_name = parse_component_ref(self.config.storage)
+        if function_name is None:
+            function_name = "push"  # Default to "push" for backward compatibility
+        
         storage = self._load_storage()
         vars_dict = storage.validate_vars(self.config.storage_vars)
 
         context = self._build_context(storage, vars_dict)
-        script = storage.scripts["push"]
+        
+        # Get the script by function name
+        if function_name not in storage.scripts:
+            raise ValueError(f"Storage component does not have script '{function_name}'")
+        script = storage.scripts[function_name]
 
         # Interpolate the script
         run_cmd = script.run if isinstance(script.run, str) else "\n".join(script.run)  # type: ignore[union-attr]
@@ -122,6 +131,11 @@ class RunService:
         print(f"[qwex] run id: {run_id}")
 
         # Step 3: Build executor script
+        # Parse component reference to get function name
+        _, function_name = parse_component_ref(self.config.executor)
+        if function_name is None:
+            function_name = "exec"  # Default to "exec" for backward compatibility
+        
         executor = self._load_executor()
         vars_dict = executor.validate_vars(self.config.executor_vars)
 
@@ -133,7 +147,10 @@ class RunService:
             "command_b64": base64.b64encode(command.encode()).decode(),
         }
 
-        script = executor.scripts["exec"]
+        # Get the script by function name
+        if function_name not in executor.scripts:
+            raise ValueError(f"Executor component does not have script '{function_name}'")
+        script = executor.scripts[function_name]
         run_cmd = script.run if isinstance(script.run, str) else "\n".join(script.run)  # type: ignore[union-attr]
 
         try:
