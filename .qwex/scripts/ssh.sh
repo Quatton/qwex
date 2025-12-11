@@ -20,10 +20,12 @@ QWEX_SSH_PORT=${QWEX_SSH_PORT:-22}
 LOCAL_RUN_DIR=${LOCAL_RUN_DIR:-"$(pwd)/.qwex/_internal/runs"}
 
 # Remote paths (these get expanded on remote side)
-REMOTE_REPO_CACHE=${REMOTE_REPO_CACHE:-'$HOME/repos/qwex'}
+REMOTE_REPO_CACHE=${REMOTE_REPO_CACHE:-'$HOME/repos/qwex-cache'}
 REMOTE_RUN_DIR=${REMOTE_RUN_DIR:-'$HOME/.qwex/runs'}
+# This is where the remote fetches from (local path to the bare repo we push to)
+REMOTE_REPO_ORIGIN=${REMOTE_REPO_ORIGIN:-'/home/qtn/repos/qwex.git'}
 
-# Git remote config
+# Git remote config (this is the URL we push to from local)
 GIT_REMOTE_URL=${GIT_REMOTE_URL:-"ssh://$QWEX_SSH_TARGET/home/qtn/repos/qwex.git"}
 GIT_REMOTE_NAME=${GIT_REMOTE_NAME:-"direct"}
 
@@ -124,7 +126,7 @@ GIT_HEAD="__GIT_HEAD__"
 RUN_ID="__RUN_ID__"
 REMOTE_REPO_CACHE="__REMOTE_REPO_CACHE__"
 REMOTE_RUN_DIR="__REMOTE_RUN_DIR__"
-GIT_REMOTE_URL="__GIT_REMOTE_URL__"
+REMOTE_REPO_ORIGIN="__REMOTE_REPO_ORIGIN__"
 USER_CMD="__USER_CMD__"
 
 # Expand $HOME in paths
@@ -152,17 +154,17 @@ cleanup_remote() {
 echo "[remote] init phase: ensuring repo cache at $REMOTE_REPO_CACHE"
 
 if [ ! -d "$REMOTE_REPO_CACHE" ]; then
-  echo "[remote] cloning repo cache..."
+  echo "[remote] cloning repo cache from $REMOTE_REPO_ORIGIN..."
   mkdir -p "$(dirname "$REMOTE_REPO_CACHE")"
-  git clone --bare "$GIT_REMOTE_URL" "$REMOTE_REPO_CACHE"
+  git clone "$REMOTE_REPO_ORIGIN" "$REMOTE_REPO_CACHE"
 elif [ -d "$REMOTE_REPO_CACHE/.git" ]; then
-  # Non-bare repo
+  # Non-bare repo - fetch from origin if configured
   echo "[remote] fetching updates (non-bare)..."
-  git -C "$REMOTE_REPO_CACHE" fetch --all --prune 2>/dev/null || true
+  git -C "$REMOTE_REPO_CACHE" fetch origin --prune 2>/dev/null || true
 else
-  # Bare repo
+  # Bare repo - fetch from origin
   echo "[remote] fetching updates (bare)..."
-  git -C "$REMOTE_REPO_CACHE" fetch --all --prune 2>/dev/null || true
+  git -C "$REMOTE_REPO_CACHE" fetch origin --prune 2>/dev/null || true
 fi
 
 # --- Run-wrapping phase ---
@@ -219,7 +221,7 @@ REMOTE_SCRIPT_TEMPLATE
   remote_script=${remote_script//__RUN_ID__/$run_id}
   remote_script=${remote_script//__REMOTE_REPO_CACHE__/$REMOTE_REPO_CACHE}
   remote_script=${remote_script//__REMOTE_RUN_DIR__/$REMOTE_RUN_DIR}
-  remote_script=${remote_script//__GIT_REMOTE_URL__/$GIT_REMOTE_URL}
+  remote_script=${remote_script//__REMOTE_REPO_ORIGIN__/$REMOTE_REPO_ORIGIN}
   remote_script=${remote_script//__USER_CMD__/$user_cmd}
 
   # Handle Ctrl+C gracefully
@@ -371,7 +373,8 @@ Environment:
   QWEX_SSH_PORT           SSH port (default: 22)
   PUSH_ON_RUN             Push before run (default: true)
   FAIL_ON_DIRTY           Fail on dirty worktree (default: true)
-  REMOTE_REPO_CACHE       Remote repo cache path
+  REMOTE_REPO_CACHE       Remote working repo cache
+  REMOTE_REPO_ORIGIN      Remote path to fetch from (the bare repo we push to)
   REMOTE_RUN_DIR          Remote run data path
 EOF
 }
