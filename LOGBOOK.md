@@ -1289,4 +1289,161 @@ i think skypilot is very heavy. it's a runtime. it's like traveling with a tour 
 
 tour guide can be very effective because it has runtime overhead but it saves cold start. tour guide is very professional so you'd not have jet lag on landing.
 
-is my analogy correct?w
+is my analogy correct?
+
+## Week 11: Dec 12, 2025
+
+Spec of qwex.
+
+`qwex init` > creates qwex.yaml at root.
+1. check if .gitignore exists. if not create one with: .qwex/
+2. if .gitignore exists, check if it contains `/\.qwex/?/` then append it.
+
+This is the default config:
+
+```yaml
+name: <generated from folder name>
+
+tasks:
+  run:
+    args:
+      command: ""
+    steps:
+      - name: Echo command
+        uses: std/echo
+        with:
+          message: "Running command: {{ args.command }}"
+      - name: Run command as is
+        uses: std/base
+        with:
+          command: "{{ args.command }}"
+      - name: Show that run_id has first_class support
+        uses: std/echo
+        with:
+          message: "Run ID: {{ run_id }}"
+```
+
+What `qwex run` does is:
+1. Load ./qwex.yaml
+2. Load .qwex/.env.yaml (if exists) and override the config.
+3. Generate a lexicographically sortable unique run_id (e.g., 20231212_153045_abcd1234)
+4. Find the task `run` in the config.
+5. For each step in task `run`: 
+   1. Load the step's `uses` plugin (e.g., std/echo)
+   2. Recursively resolve `with` parameters using Jinja2 templating with context:
+      - `args`: command-line args passed to `qwex run`
+      - `run_id`: generated run ID
+   3. Compile the step into a shell command using qwex's core
+   4. Append the compiled command to a master shell script along with qwex core. 
+6. Finally we should have a shell script that looks like:
+
+```bash
+#!/bin/bash
+
+# ... some inlined qwex core functions ...s
+
+# included library instance
+std__echo__message() {
+  local message="$1"
+  echo "$message"
+}
+
+__entrypoint__() {
+  local command="$1"
+  functionforrunningstep "inlined name from step 1, fallback to step 1" "exec std__echo__message 'Running command: $command'"
+  functionforrunningstep "inlined name from step 2, fallback to step 2" "exec $command"
+  functionforrunningstep "inlined name from step 3, fallback to step 3" "exec std__echo__message 'Run ID: $run_id'"
+}
+__entrypoint__ "$@"
+```
+
+or whatever it compiles to.
+
+## Week 11: Dec 13, 2025
+
+so this is a typical run file:
+
+```yaml
+# qwex.yaml
+vars:
+  # Dependency Injection (Polymorphism)
+  # The 'impl' keyword tells the compiler to look for a matching preset
+  code:  "{{ impl.code }}"
+  agent: "{{ impl.agent }}"
+
+presets:
+  simple:
+    vars:
+      code: modules.github
+      agent: modules.ssh_node
+
+modules:
+  trace:
+    source: std/trace
+  
+  github:
+    source: std/git
+    vars: { repo: "git@..." }
+  
+  ssh_node:
+    source: std/ssh
+    vars: { host: "cluster-01" }
+
+tasks:
+  run_experiment:
+    args:
+      - command
+    
+    steps:
+      # Phase 1: Local Prep
+      - uses: code.push
+      
+      # Phase 2: The Actor Boundary
+      - uses: agent.exec
+        with:
+          # The Compiler Magic:
+          # Qwex compiles this list of steps into a standalone script
+          # and passes it to the agent to run.
+          steps:
+            - uses: code.pull
+              with: { mode: "worktree" }
+            
+            - uses: trace.capture
+              with:
+                # The 'Inner Run' starts executing this command
+                command: "{{ args.command }}"
+                # Trace module handles the "Split Horizon" logging here
+```
+
+here agent is a concept in qwex where we use jit compilation to compile the qwex core and closure serialize the steps we need to run.
+
+BUTTT the agent itself should be defined in a serializable way itself....
+
+look how i made it:
+
+i wanna do things like elixir but in shell... is that difficult?
+
+how would someone define an agent?
+
+it'd be something like
+
+```
+name: ssh
+type: agent
+vars:
+  ...
+tasks:
+   exec:
+        args:
+             - task
+             - with
+        steps:
+             - run: |
+                     ssh --flags <<EOF
+                             {{ includes.core }} # or qwex.core idk
+                             # how would we serialize the all tasks here??
+                             {{ core.agent.exec }} {{ task }} {{ with }} ????
+                      EOF
+```
+ 
+this'd be so difficult to pull off LMAO. 

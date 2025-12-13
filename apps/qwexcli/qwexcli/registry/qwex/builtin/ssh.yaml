@@ -1,0 +1,17 @@
+vars:
+  user:
+    description: SSH user
+  host:
+    description: SSH host
+    required: true
+  port:
+    description: SSH port
+    default: 22
+
+tasks:
+  exec:
+    args:
+      command: str
+    run: |
+      {% set target = user + "@" + host if user else host %}
+      ssh -p {{ port }} {{ target }} "{{ command }}"

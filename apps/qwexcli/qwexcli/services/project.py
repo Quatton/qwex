@@ -5,13 +5,10 @@ the config path, and orchestrating lib helpers while remaining CLI-aware
 (force flag, non-interactive behavior, etc.).
 """
 
-import shutil
 from pathlib import Path
 from typing import Optional
 
 from qwexcli.lib.project import (
-    check_already_initialized,
-    find_project_root,
     scaffold,
 )
 from qwexcli.lib.context import CLIContext
@@ -31,16 +28,13 @@ class ProjectService:
         and calls lower-level scaffolding helpers.
         """
         try:
-            project_root = find_project_root(self.ctx.cwd)
-            config_path = Path(project_root) / ".qwex" / "config.yaml"
+            root = Path(self.ctx.cwd).resolve()
+            qwex_yaml = root / "qwex.yaml"
 
-            if self.ctx.force:
-                if config_path.parent.exists():
-                    shutil.rmtree(config_path.parent)
-            else:
-                check_already_initialized(config_path)
+            if qwex_yaml.exists() and not self.ctx.force:
+                exit_with_error("qwex is already initialized in this directory", 1)
 
-            return scaffold(config_path=config_path, name=name)
+            return scaffold(root=root, name=name)
 
         except QwexError as e:
             exit_with_error(e.message, e.exit_code)

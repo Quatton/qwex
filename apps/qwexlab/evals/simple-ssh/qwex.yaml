@@ -1,0 +1,124 @@
+version: "1"
+name: simple-ssh-eval
+
+# Eval: Create a child qwex project that uses an SSH agent (Lima VM)
+# This is "qwex running qwex" - demonstrates cross-boundary execution
+
+tasks:
+  clean:
+    description: "Remove the eval workspace"
+    steps:
+      - run: rm -rf $QWEX_HOME/examples
+
+  # VM lifecycle
+  vm-up:
+    description: "Start the Lima VM"
+    steps:
+      - name: "Create VM if not exists"
+        run: |
+          if ! limactl list -q | grep -q "^qwex-eval$"; then
+            echo "Creating qwex-eval VM..."
+            limactl create --name=qwex-eval template://default --tty=false
+          fi
+
+      - name: "Start VM"
+        run: |
+          # Escape Go template braces from Jinja
+          status=$(limactl list --format '{% raw %}{{.Status}}{% endraw %}' qwex-eval 2>/dev/null || echo "Unknown")
+          if [ "$status" != "Running" ]; then
+            limactl start qwex-eval
+          fi
+
+      - name: "Wait for SSH"
+        run: |
+          for i in $(seq 1 30); do
+            limactl shell qwex-eval -- echo "ready" 2>/dev/null && exit 0
+            sleep 1
+          done
+          exit 1
+
+  vm-down:
+    description: "Stop the Lima VM"
+    steps:
+      - run: limactl stop qwex-eval 2>/dev/null || true
+
+  vm-destroy:
+    description: "Destroy the Lima VM"
+    steps:
+      - run: limactl delete qwex-eval --force 2>/dev/null || true
+
+  # The actual eval
+  eval:
+    description: "Create child qwex project with Lima agent and run it"
+    steps:
+      - name: "Create eval directory"
+        run: mkdir -p $QWEX_HOME/examples/ssh-demo
+
+      - name: "Initialize git repo"
+        run: |
+          cd $QWEX_HOME/examples/ssh-demo
+          git init -q 2>/dev/null || true
+
+      - name: "Ensure VM is running"
+        run: qwex vm-up
+
+      - name: "Write child qwex.yaml"
+        run: |
+          cat > $QWEX_HOME/examples/ssh-demo/qwex.yaml << 'EOF'
+          version: "1"
+          name: ssh-demo
+
+          # Agent configuration
+          agents:
+            lima:
+              type: lima
+              vm: qwex-eval
+
+          tasks:
+            # Run a command on the remote agent
+            run:
+              args:
+                command: "echo hello"
+              steps:
+                - name: "Execute on remote"
+                  agent: lima
+                  run: |
+                    export QWEX_HOME="${QWEX_HOME:-$HOME/.qwex/ssh-demo}"
+                    mkdir -p "$QWEX_HOME"
+                    echo "=== REMOTE EXECUTION ==="
+                    echo "QWEX_HOME: $QWEX_HOME"
+                    echo "Hostname: $(hostname)"
+                    echo "Command: {{ args.command }}"
+                    {{ args.command }}
+          EOF
+
+      - name: "Show child qwex.yaml"
+        run: cat $QWEX_HOME/examples/ssh-demo/qwex.yaml
+
+      - name: "Test child project (manual agent invocation)"
+        run: |
+          echo "=== Testing child project ==="
+          # Since agent support isn't built yet, we manually invoke lima
+          # In the future: cd $QWEX_HOME/examples/ssh-demo && qwex run "echo hello"
+          limactl shell qwex-eval -- bash -c '
+            export QWEX_HOME="$HOME/.qwex/ssh-demo"
+            mkdir -p "$QWEX_HOME"
+            echo "=== REMOTE EXECUTION ==="
+            echo "QWEX_HOME: $QWEX_HOME"
+            echo "Hostname: $(hostname)"
+            echo "Command: echo hello"
+            echo hello
+          '
+
+      - name: "Verify remote workspace was created"
+        run: |
+          echo "=== Checking remote workspace ==="
+          limactl shell qwex-eval -- ls -la '$HOME/.qwex/' 2>/dev/null || echo "(no workspaces yet)"
+
+  full:
+    description: "Full eval: clean, vm-up, eval, vm-down"
+    steps:
+      - run: qwex clean
+      - run: qwex vm-up  
+      - run: qwex eval
+      - run: qwex vm-down

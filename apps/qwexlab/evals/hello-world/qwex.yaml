@@ -1,0 +1,34 @@
+version: "1"
+name: hello-world-eval
+
+tasks:
+  clean:
+    description: "Remove the eval workspace"
+    steps:
+      - run: rm -rf $QWEX_HOME/examples
+
+  eval:
+    description: "Test qwex-in-qwex functionality and QWEX_HOME injection"
+    steps:
+      - name: "Create eval directory"
+        run: mkdir -p $QWEX_HOME/examples/qwex-eval
+
+      - name: "Initialize qwex project inside eval"
+        run: cd $QWEX_HOME/examples/qwex-eval && qwex init
+
+      - name: "Run echo hello via qwex"
+        run: cd $QWEX_HOME/examples/qwex-eval && qwex run "echo hello from child qwex"
+
+      - name: "Print parent QWEX_HOME"
+        run: echo "Parent QWEX_HOME is $QWEX_HOME"
+
+      - name: "Verify child sees its own QWEX_HOME"
+        run: |
+          cd $QWEX_HOME/examples/qwex-eval
+          qwex run 'echo "Child QWEX_HOME is $QWEX_HOME"'
+
+  full:
+    description: "Run clean then eval"
+    steps:
+      - run: qwex clean
+      - run: qwex eval

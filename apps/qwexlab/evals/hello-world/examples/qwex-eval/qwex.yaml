@@ -1,0 +1,18 @@
+name: qwex-eval
+tasks:
+  run:
+    args:
+      command: ''
+    steps:
+    - name: Echo command
+      uses: std/echo
+      with:
+        message: 'Running command: {{ args.command }}'
+    - name: Run command as is
+      uses: std/bash
+      with:
+        command: '{{ args.command }}'
+    - name: Show that run_id has first_class support
+      uses: std/echo
+      with:
+        message: 'Run ID: {{ run_id }}'

@@ -1,5 +1,8 @@
+from __future__ import annotations
+
+import re
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from qwexcli.lib.errors import QwexError
 
@@ -26,65 +29,88 @@ def check_already_initialized(config_path: Path) -> None:
         raise AlreadyInitializedError()
 
 
-def create_config_file(config_path: Path, name: Optional[str] = None) -> Path:
-    """Create .qwex/config.yaml at the explicit `config_path` and return it."""
-    from qwexcli.lib.config import (
-        QwexConfig,
-        ExecutorConfig,
-        StorageConfig,
-        save_config,
-    )
-
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Create default config with SSH executor and git_direct storage
-    cfg = QwexConfig(
-        name=name or config_path.parent.parent.name,
-        executor=ExecutorConfig(
-            type="ssh",
-            vars={
-                "HOST": "your-server",  # User must configure this
-                "REPO_ORIGIN": "/path/to/your/repo.git",  # User must configure this
-            },
-        ),
-        storage=StorageConfig(
-            type="git_direct",
-            vars={
-                "REMOTE_URL": "ssh://user@host/path/to/repo.git",  # User must configure this
-            },
-        ),
-    )
-    save_config(cfg, config_path)
-    return config_path
+def _default_qwex_yaml(project_name: str) -> dict[str, Any]:
+    return {
+        "name": project_name,
+        "tasks": {
+            "run": {
+                "args": {"command": ""},
+                "steps": [
+                    {
+                        "name": "Echo command",
+                        "uses": "std/echo",
+                        "with": {"message": "Running command: {{ args.command }}"},
+                    },
+                    {
+                        "name": "Run command as is",
+                        "uses": "std/bash",
+                        "with": {"command": "{{ args.command }}"},
+                    },
+                    {
+                        "name": "Show that run_id has first_class support",
+                        "uses": "std/echo",
+                        "with": {"message": "Run ID: {{ run_id }}"},
+                    },
+                ],
+            }
+        },
+    }
 
 
-def create_gitignore_file(config_dir: Path) -> Path:
-    """Create `.gitignore` inside the given `.qwex` config directory and return the path."""
-    gitignore_path = config_dir / ".gitignore"
-    gitignore_path.write_text("# Ignore internal compiled artifacts\ninternal/\n")
+def create_qwex_yaml_file(qwex_yaml_path: Path, name: Optional[str] = None) -> Path:
+    """Create `qwex.yaml` at the explicit path and return it."""
+    import yaml
+
+    qwex_yaml_path.parent.mkdir(parents=True, exist_ok=True)
+
+    project_name = name or qwex_yaml_path.parent.name
+    data = _default_qwex_yaml(project_name)
+
+    with open(qwex_yaml_path, "w") as f:
+        yaml.safe_dump(data, f, sort_keys=False)
+    return qwex_yaml_path
+
+
+# Match .qwex/ or .qwex at start of line or after /
+_QWEX_GITIGNORE_RE = re.compile(r"(^|/)\.qwex/?$", re.MULTILINE)
+
+
+def ensure_root_gitignore_ignores_qwex(root: Path) -> Path:
+    """Ensure `<root>/.gitignore` ignores `.qwex/` and return the gitignore path."""
+    gitignore_path = root / ".gitignore"
+    if not gitignore_path.exists():
+        gitignore_path.write_text(".qwex/\n")
+        return gitignore_path
+
+    content = gitignore_path.read_text()
+    if _QWEX_GITIGNORE_RE.search(content) is None:
+        if not content.endswith("\n"):
+            content += "\n"
+        content += ".qwex/\n"
+        gitignore_path.write_text(content)
     return gitignore_path
 
 
-def scaffold(config_path: Path, name: Optional[str] = None) -> Path:
-    """Scaffold the qwex project structure. Returns created config path."""
-    out = create_config_file(config_path=config_path, name=name)
-    # Ensure .gitignore is present in the config dir
-    create_gitignore_file(config_path.parent)
+def scaffold(root: Path, name: Optional[str] = None) -> Path:
+    """Scaffold the qwex project structure. Returns created qwex.yaml path."""
+    qwex_yaml = root / "qwex.yaml"
+    out = create_qwex_yaml_file(qwex_yaml_path=qwex_yaml, name=name)
+    ensure_root_gitignore_ignores_qwex(root)
     return out
 
 
 def find_project_root(start: Optional[Path] = None) -> Path:
-    """Search upwards from `start` (or cwd) for a directory containing `.qwex`.
+    """Search upwards from `start` (or cwd) for a directory containing `qwex.yaml`.
 
-    If found, returns the directory that contains `.qwex`.
-    If no `.qwex` is found before reaching the filesystem root, raise
+    If found, returns the directory that contains `qwex.yaml`.
+    If no `qwex.yaml` is found before reaching the filesystem root, raise
     `ProjectRootNotFoundError` to avoid accidentally returning the FS root.
     """
     cur = start or Path.cwd()
     cur = cur.resolve()
 
     for p in [cur] + list(cur.parents):
-        if (p / ".qwex").exists():
+        if (p / "qwex.yaml").exists():
             return p
 
     # Reached FS root without finding project marker — treat as error
