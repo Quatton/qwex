@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 @dataclass
 class Module:
     name: str
-    vars: Dict[str, Any] = field(default_factory=dict)
+    vars: Any = field(default_factory=dict)
     tasks: Dict[str, "Task"] = field(default_factory=dict)
 
     @classmethod
@@ -36,6 +36,8 @@ class Module:
 class Task:
     name: str
     run: Optional[str] = None
+    vars: Dict[str, Any] = field(default_factory=dict)
+    env: Dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, name: str, d: Any) -> "Task":
@@ -46,10 +48,18 @@ class Task:
             raise TypeError(f"Task '{name}' must be a mapping or string")
 
         run = d.get("run")
+        vars_ = d.get("vars") or {}
+        env_ = d.get("env") or {}
 
         if run is None:
             run_val = None
         else:
             run_val = str(run)
 
-        return cls(name=name, run=run_val)
+        # accept either a mapping or a list (some task types use a list of steps)
+        if not isinstance(vars_, (dict, list)):
+            raise TypeError(f"Task '{name}' 'vars' must be a mapping or list")
+        if not isinstance(env_, dict):
+            raise TypeError(f"Task '{name}' 'env' must be a mapping")
+
+        return cls(name=name, run=run_val, vars=dict(vars_), env=dict(env_))

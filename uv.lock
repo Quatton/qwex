@@ -365,12 +365,14 @@ name = "qwl"
 version = "0.1.0"
 source = { editable = "lib/qwl" }
 dependencies = [
+    { name = "jinja2" },
     { name = "pytest" },
     { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "jinja2", specifier = ">=3.1.6" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pyyaml", specifier = ">=6.0.3" },
 ]
