@@ -1,0 +1,9 @@
+name: log
+
+tasks:
+  debug:
+    run: |
+      if [ "${DEBUG:-0}" -eq 0 ]; then
+        return
+      fi
+      echo -e "$*" >&2
