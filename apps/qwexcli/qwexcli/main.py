@@ -3,14 +3,6 @@
 Qwex - Queued Workspace-aware Execution
 A task runner inspired by Ansible's extensibility, Taskfile's simplicity,
 and GitHub Actions' step-based workflow.
-
-Usage:
-    qwex init                  # Initialize new project
-    qwex tasks                 # List available tasks
-    qwex presets               # List available presets
-    qwex <task>                # Run a task directly
-    qwex <task> --preset auto  # Run task with preset
-    qwex <task> --from step2   # Start from specific step
 """
 
 from __future__ import annotations

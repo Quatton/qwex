@@ -1447,3 +1447,20 @@ tasks:
 ```
  
 this'd be so difficult to pull off LMAO. 
+
+## Week 12: Dec 15, 2025
+
+I started from scratch.
+
+hehe.
+
+you would think i am crazy but i just want to make it simple.
+i just want a command wrapper that runs commands remotely.
+
+i think i started from the wrong abstraction. i made jsx before react. i made k8s operator before docker. i made task grammar before the logic of wrapping commands itself.
+but i need to get this done tonight or my professor will kill me.
+so here's the plan:
+
+i will make reactnode of bash before thinking about making it run "workflows" i will think about rendering it and composing it first.
+
+how would you submit a kubernetes job?
