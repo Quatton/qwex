@@ -1,0 +1,8 @@
+name: Test Module
+vars:
+  message: "This is a test module."
+
+tasks:
+  echo:
+    run: |
+      echo "{{ vars.message }}"

@@ -1,0 +1,10 @@
+modules:
+  log:debug:
+    deps: ""
+    code: |
+      log:debug() {
+        if [ "${DEBUG:-0}" -eq 0 ]; then
+          return
+        fi
+        echo -e "$*" >&2
+      }

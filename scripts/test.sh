@@ -2,8 +2,8 @@
 
 set -u
 
-declare -gA MODULE_DEPENDENCIES_HASHSET
 module:register_dependency () {
+  declare -gA MODULE_DEPENDENCIES_HASHSET
   local module_name="$1"
   local deps="$2"
   MODULE_DEPENDENCIES_HASHSET["$module_name"]="$deps"
@@ -21,7 +21,7 @@ module:collect_dependencies () {
   done
   # remove duplicates
   local unique_result=()
-  declare -A seen
+  local -A seen
   for item in "${result[@]}"; do
     if [[ -z "${seen[$item]+x}" ]]; then
       seen[$item]=1
@@ -34,14 +34,25 @@ module:register_dependency "module:collect_dependencies" "log:debug"
 
 module:include() {
   std:once "std:color"
-  echo -e "\n${Q_GRAY}==============================${Q_RESET}\n"
-  echo -e "${Q_BLUE}Redeclaring context for a new shell boundary...${Q_RESET}\n"
+  log:debug "Initializing module: $@"
 
-  local module_name="$1"
-  local dependencies=($(module:collect_dependencies "$module_name"))
-  echo $(declare -f ${dependencies[@]})
+  local unique_result=()
+  local -A seen
+
+  local dependencies=($(module:collect_dependencies "$@"))
+  dependencies+=("$@")
+  for item in "${dependencies[@]}"; do
+    if [[ -z "${seen[$item]+x}" ]]; then
+      seen[$item]=1
+      unique_result+=("$item")
+    fi
+  done
+
+  log:debug "${Q_BLUE}Redeclaring context for a new shell boundary...${Q_RESET}"
+
+  declare -f "${unique_result[@]}"
 }
-module:register_dependency "module:include" "std:color"
+module:register_dependency "module:include" "std:color log:debug"
 
 std:once () {
   declare -gA STD_ONCE_HASHSET
@@ -59,14 +70,13 @@ log:debug() {
   if [ "${DEBUG:-0}" -eq 0 ]; then
     return
   fi
-  echo -e "[DEBUG] $1" >&2
+  echo -e "$*" >&2
 }
 
 module:register_dependency "log:debug" ""
 
 
 std:color () {
-  log:debug "Initializing std:color module"
   if [ -t 1 ]; then
     Q_RED='\033[0;31m'
     Q_GREEN='\033[0;32m'
@@ -82,12 +92,14 @@ module:register_dependency "std:color" "std:once"
 std:step () {
   std:once "std:color"
 
-  echo -e "\n${Q_GRAY}┌── ${Q_BLUE}Step: ${1}${Q_RESET}"
-  echo -e "${Q_GRAY}│ Executing: ${2}${Q_RESET}"
+  log:debug "\n${Q_GRAY}┌── ${Q_BLUE}Step: ${1}${Q_RESET}"
+
+  local command_str="$2"
+  local truncated_command_str=$(echo "$command_str" | head -c 60)
+  log:debug "${Q_GRAY}│ Executing: ${truncated_command_str}${Q_RESET}"
 
   local start_time=$(date +%s)
 
-  local command_str="$2"
 
   # --- EXECUTION BARRIER ---
   eval "$command_str"
@@ -98,14 +110,14 @@ std:step () {
   local duration=$((end_time - start_time))
 
   if [ $exit_code -eq 0 ]; then
-      echo -e "${Q_GRAY}└─ ${Q_GREEN}✔ Success${Q_GRAY} (${duration}s)${Q_RESET}"
+      log:debug "${Q_GRAY}└─ ${Q_GREEN}✔ Success${Q_GRAY} (${duration}s)${Q_RESET}"
       return 0
   else
-      echo -e "${Q_GRAY}└─ ${Q_RED}✘ Failed${Q_GRAY} (Exit Code: ${exit_code})${Q_RESET}"
+      log:debug "${Q_GRAY}└─ ${Q_RED}✘ Failed${Q_GRAY} (Exit Code: ${exit_code})${Q_RESET}"
       exit $exit_code
   fi
 }
-module:register_dependency "std:step" "std:color"
+module:register_dependency "std:step" "std:color log:debug"
 
 ssh:exec() {
   ssh csc "$@"
@@ -116,7 +128,11 @@ module:register_dependency "ssh:exec" ""
 run() {
   std:step "Echo" "echo Hello, World!"
   std:step "Remote" "ssh:exec echo 'Remote command executed.'"
-  std:step "Steps inside Remote" "ssh:exec bash -c '$(module:include "std:step"); std:step \"Inner Step\" \"echo This is an inner step executed remotely.\"'"
+  std:step "Steps inside Remote" "ssh:exec bash -s << 'EOF'
+$(module:include "std:step")
+std:step 'Remote Step' 'echo This is a step executed on the remote server.'
+std:step 'I can show you by uname -a' 'uname -a'
+EOF"
 }
 module:register_dependency "run" "std:step ssh:exec"
 
@@ -128,5 +144,7 @@ help() {
   echo "  run       Execute the test run sequence."
   echo "  help      Show this help message."
 }
+module:register_dependency "help" "log:debug"
 
 "${@:-help}"
+
