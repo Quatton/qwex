@@ -103,21 +103,10 @@ project/
   .qwex/
     runs/
       abc123/
-        run.json          # execution metadata only
-        stdout.log        # combined console output
-        stderr.log        # or separate stderr
-        files/            # captured artifacts (copied from out/)
-          model.pth
           metrics.json
         artifacts.json    # auto-generated manifest
-```
-
-**Why nested?**
 - Single source of truth: everything for run X in one place
 - Easy cleanup: `rm -rf .qwex/runs/abc123/`
-- Easy archival: `tar -czf abc123.tar.gz .qwex/runs/abc123/`
-- Matches industry patterns (wandb, mlflow, tensorboard)
-
 #### Artifact Auto-Capture
 
 **Zero-init approach**: Users just write to `out/` (or configured dir), qwex auto-captures.
@@ -207,64 +196,28 @@ wandb.init(
 
 #### User Experience
 
-**Setup (optional):**
-```bash
-cat > .qwex/config.yaml
-artifacts:
-  watch_directories:
     - out
     - models
 ```
 
 **Code (language-agnostic):**
 ```python
-# Just use "out/" - simple convention
-torch.save(model.state_dict(), "out/model.pth")
-```
 
 **Run:**
-```bash
-$ qwex run python train.py --local
-⚙️  Run abc123 started
-⏳ Running python train.py...
-✅ Run abc123 succeeded in 2m 15s
 📦 Captured 1 artifact (50 MB)
 ```
 
 **View artifacts:**
-```bash
-$ qwex artifacts abc123
-Run abc123 artifacts:
   out/model.pth (50.0 MB)
 
-$ ls .qwex/runs/abc123/files/
-out/
-```
 
 #### Key Benefits
-
-✅ **Zero burden**: just write to `out/` (or configured dir)  
-✅ **Zero init**: no SDK calls, no `wandb.init()` equivalent  
-✅ **Language-agnostic**: works with Python, R, Julia, Rust, etc.  
 ✅ **Tool-agnostic**: coexists with wandb/mlflow/tensorboard  
 ✅ **Conventional**: `out/` is standard (like `node_modules/`, `build/`)  
-✅ **Simple implementation**: post-run directory copy (no fsnotify complexity)  
-✅ **Cloud-ready**: same approach works for local and cloud runs  
-
-#### Next Steps
 
 1. Update `pkg/qsdk/runner/interface.go` with Job/Run separation and lifecycle states
-2. Implement LocalRunner with artifact capture
-3. Implement QwexCloudRunner with API submission
-4. Add CLI commands: `qwex run`, `qwex artifacts`, `qwex status`
-5. Add tests for both runners
 
 ## Week 9: Nov 26, 2025
-
-### Qwex Protocol (QWP) v1.0
-
-After extensive design discussions, we're introducing the **Qwex Protocol (QWP)** — an open protocol for ML run orchestration. The goal is to make qwex a protocol, not just a tool.
-
 #### Design Philosophy
 
 - **Open protocol, flexible implementation**: Protocol is OSS, servers implement it however they want
