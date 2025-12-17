@@ -245,52 +245,34 @@ def test_canonical_alias_resolution():
     assert fqn == "t"
 
 
-def test_qx_boundary_generates_heredoc():
-    """Test that {% qx %}...{% xq %} generates heredoc for remote execution.
-
-    The compiler should:
-    1. Detect {% qx %} blocks
-    2. Generate unique heredoc delimiter
-    3. Escape $ as \\$ for remote evaluation
-    """
-    module = Module(
-        name="test",
-        vars={"host": "remote"},
-        tasks={
-            "remote_task": Task(
-                name="remote_task",
-                run='ssh {{ host }} bash -s {% qx %}echo "Hello from $USER"{% xq %}',
-            )
-        },
-    )
-
-    compiler = Compiler()
-    script = compiler.compile(module)
-
-    fn = next(fn for fn in script.functions if fn.name == "remote_task")
-
-    # Should contain heredoc delimiter
-    assert "<<" in fn.body
-    assert "QWEX_" in fn.body
-
-    # $ should be escaped
-    assert "\\$USER" in fn.body
-
-    # Host var should be rendered
-    assert "ssh remote" in fn.body
-
-
 def test_qx_boundary_includes_dependencies():
-    """Test that {% qx %} blocks include module:include for dependencies."""
+    """Test that {% qx %}...{% endqx %} includes module:include for dependencies.
+
+    The qx extension:
+    1. Marks a remote execution boundary
+    2. Detects canonical task dependencies (module:task) inside the block
+    3. Prepends $(module:include ...) for those dependencies
+    
+    Note: Root tasks (without module prefix) are not auto-detected as dependencies
+    since they don't have the module:task format. This is intentional - root tasks
+    are already available globally.
+    
+    Note: heredocs are NOT automatically generated - users write them explicitly.
+    """
     module = Module(
         name="test",
         vars={},
         tasks={
-            "local": Task(name="local", run="echo local"),
+            "helper": Task(name="helper", run="echo helper"),
             "remote": Task(
                 name="remote",
-                # Reference local task inside qx block
-                run="bash -s {% qx %}{{ local }}{% xq %}",
+                # Use canonical module:task format to test dependency detection
+                run="""bash -s <<'EOF'
+{% qx %}
+log:info "running on remote"
+utils:color
+{% endqx %}
+EOF""",
             ),
         },
     )
@@ -300,9 +282,62 @@ def test_qx_boundary_includes_dependencies():
 
     fn = next(fn for fn in script.functions if fn.name == "remote")
 
-    # Since local is a root task, it resolves to just "local"
-    # The qx block should include module:include for it
-    # Note: root tasks don't have module prefix, so dependency detection may not catch them
-    # This is expected behavior - root tasks are available globally
-    assert "<<" in fn.body  # Has heredoc
-    assert "QWEX_" in fn.body  # Has unique delimiter
+    # Should contain module:include for the module:task dependencies
+    assert "module:include" in fn.body
+    # Should detect log:info and utils:color as dependencies
+    assert "log:info" in fn.body
+    assert "utils:color" in fn.body
+    
+    # The heredoc should be exactly as written (not auto-generated)
+    assert "<<'EOF'" in fn.body
+    assert "EOF" in fn.body
+
+
+def test_qx_with_module_dependencies():
+    """Test that {% qx %} detects module:task dependencies."""
+    module = Module(
+        name="test",
+        vars={},
+        tasks={
+            "remote": Task(
+                name="remote",
+                run="""ssh host bash -s <<'HEREDOC'
+{% qx %}
+log:info "running on remote"
+utils:color
+{% endqx %}
+HEREDOC""",
+            ),
+        },
+    )
+
+    compiler = Compiler()
+    script = compiler.compile(module)
+
+    fn = next(fn for fn in script.functions if fn.name == "remote")
+
+    # Should include module:include with the detected dependencies
+    assert "module:include" in fn.body
+    assert "log:info" in fn.body or "utils:color" in fn.body
+
+
+def test_random_filter():
+    """Test that random() filter generates random strings."""
+    module = Module(
+        name="test",
+        vars={"delim": "{{ random(8) | upper }}"},
+        tasks={
+            "task": Task(name="task", run="echo {{ delim }}"),
+        },
+    )
+
+    compiler = Compiler()
+    script = compiler.compile(module)
+
+    fn = next(fn for fn in script.functions if fn.name == "task")
+
+    # Should contain a rendered random string (8 uppercase chars)
+    # The body should have "echo XXXXXXXX" where X is alphanumeric
+    import re
+    match = re.search(r'echo ([A-Z0-9]{8})', fn.body)
+    assert match is not None, f"Expected 8-char random string in: {fn.body}"

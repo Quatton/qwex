@@ -1,5 +1,12 @@
 name: ssh-boundary-test
 
+# This playground demonstrates the {% qx %}...{% endqx %} extension for remote execution.
+# The qx block marks code that runs on a remote shell (SSH, Docker, K8s).
+# It automatically includes dependencies referenced inside the block.
+#
+# The renderer automatically handles heredoc terminators - you can indent them
+# in your YAML and they will be output at column 0 for bash compatibility.
+
 modules:
   log:
     source: std/log
@@ -8,6 +15,9 @@ modules:
 
 vars:
   remote_host: "user@remote-server"
+  # Generate unique heredoc delimiter - uppercase for visibility
+  # Note: This is resolved once per module, all tasks share the same value
+  EOF: "{{ random(8) | upper }}"
 
 tasks:
   # Simple local task
@@ -16,31 +26,64 @@ tasks:
       echo "Hello from local!"
 
   # Remote execution using {% qx %} boundary
+  # Note: heredocs are now written explicitly. The renderer handles
+  # placing the terminator at column 0 automatically.
   remote_greet:
     run: |
-      ssh {{ remote_host }} bash -s {% qx %}
-        echo "Hello from remote!"
-        echo "This runs on the remote server"
-        # $HOME will be evaluated on remote, not local
-        echo "Remote home: $HOME"
-      {% xq %}
+      ssh {{ remote_host }} bash -s <<'{{ EOF }}'
+      {% qx %}
+      echo "Hello from remote!"
+      echo "This runs on the remote server"
+      # $HOME will be evaluated on remote, not local
+      echo "Remote home: $HOME"
+      {% endqx %}
+      {{ EOF }}
 
   # Remote execution with task dependencies
+  # The {% qx %} block detects log:debug and prepends $(module:include log:debug)
   remote_with_deps:
+    vars:
+      # Use task-level var to get unique delimiter for this task
+      delim: "{{ random(8) | upper }}"
     run: |
-      ssh {{ remote_host }} bash -s {% qx %}
-        # Include log:debug for remote debugging
-        {{ log.debug }} "Running on remote server"
-        echo "Done on remote"
-      {% xq %}
+      ssh {{ remote_host }} bash -s <<'{{ delim }}'
+      {% qx %}
+      # Include log:debug for remote debugging
+      {{ log.debug }} "Running on remote server"
+      echo "Done on remote"
+      {% endqx %}
+      {{ delim }}
 
   # Local + remote combo
   mixed:
+    vars:
+      delim: "{{ random(8) | upper }}"
     run: |
       echo "Starting local setup..."
-      ssh {{ remote_host }} bash -s {% qx %}
-        echo "Running remote part..."
-        # This $USER is remote
-        echo "Remote user: $USER"
-      {% xq %}
+      ssh {{ remote_host }} bash -s <<'{{ delim }}'
+      {% qx %}
+      echo "Running remote part..."
+      # This $USER is remote
+      echo "Remote user: $USER"
+      {% endqx %}
+      {{ delim }}
       echo "Back to local cleanup..."
+
+  # Docker exec example - no heredoc needed, using single quotes
+  docker_greet:
+    run: |
+      docker exec -i my-container bash -c '
+      {% qx %}
+      echo "Hello from container!"
+      {{ log.info }} "Container task running"
+      {% endqx %}
+      '
+
+  # Kubernetes example
+  k8s_greet:
+    run: |
+      kubectl exec -it my-pod -- bash -c '
+      {% qx %}
+      echo "Hello from pod!"
+      {% endqx %}
+      '

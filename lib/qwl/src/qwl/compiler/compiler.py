@@ -50,6 +50,9 @@ class Compiler:
         # Resolve all modules and build environment tree
         env_tree = self.resolver.resolve(module)
 
+        # Resolve module-level vars in env_tree (they may contain {{ }} expressions)
+        env_tree = self._resolve_env_tree_vars(env_tree, module)
+
         # Phase 2: BFS traversal from root tasks
         task_names = list(module.tasks.keys())
         functions = self._compile_with_bfs(module, env_tree, task_names)
@@ -149,6 +152,42 @@ class Compiler:
         included = parser.parse_file(str(resolved_path))
 
         return included
+
+    def _resolve_env_tree_vars(
+        self, env_tree: Dict[str, Any], module: Module
+    ) -> Dict[str, Any]:
+        """Resolve module-level vars in the env_tree.
+
+        The resolver returns raw vars (may contain {{ }} expressions).
+        This method resolves them through Jinja.
+
+        Args:
+            env_tree: Environment tree from resolver.
+            module: The root module.
+
+        Returns:
+            env_tree with vars resolved.
+        """
+        # Get module vars that need resolving
+        module_vars = module.vars
+
+        # Resolve them using the current env_tree as base
+        resolved = self._resolve_vars(module_vars, env_tree)
+
+        # Update env_tree with resolved values
+        updated = dict(env_tree)
+        updated.update(resolved)
+
+        # Also resolve vars in nested module environments
+        for key, value in env_tree.items():
+            if isinstance(value, dict) and key in self.resolver._module_cache:
+                # This is a module's environment - resolve its vars too
+                sub_module = self.resolver._module_cache[key]
+                sub_resolved = self._resolve_vars(sub_module.vars, updated)
+                updated[key] = dict(value)
+                updated[key].update(sub_resolved)
+
+        return updated
 
     def _compile_with_bfs(
         self, root_module: Module, env_tree: Dict[str, Any], root_task_names: List[str]
@@ -406,13 +445,13 @@ class Compiler:
         Returns:
             Dictionary of resolved variable values.
         """
-        from jinja2 import Environment
+        from qwl.compiler.extensions import get_qwl_jinja_env
 
         resolved: Dict[str, Any] = {}
         # Build up context incrementally so vars can reference earlier vars
         current_context = dict(base_context)
 
-        env = Environment()
+        env = get_qwl_jinja_env()
 
         for var_name, var_value in vars_dict.items():
             if isinstance(var_value, str) and "{{" in var_value:
@@ -432,8 +471,10 @@ class Compiler:
     def _render(self, template: str, context: Dict[str, Any]) -> str:
         """Render a Jinja template string with context.
 
-        Handles special {% qx %}...{% xq %} blocks for remote execution boundaries.
-        These blocks generate heredocs with escaped $ and included dependencies.
+        Uses QWL Jinja extensions for:
+        - {% qx %}...{% endqx %} blocks for remote execution boundaries
+        - random() function for generating heredoc delimiters
+        - env() function for environment variable access
 
         Args:
             template: Jinja template string.
@@ -442,130 +483,17 @@ class Compiler:
         Returns:
             Rendered string.
         """
-        from jinja2 import Environment
+        from qwl.compiler.extensions import get_qwl_jinja_env
 
-        # First, process {% qx %}...{% xq %} blocks
-        template = self._process_qx_blocks(template, context)
-
-        env = Environment()
+        env = get_qwl_jinja_env()
+        
+        # Set context for qx extension to use
+        # These are runtime attributes, not part of Environment's type definition
+        env.qx_context = context  # type: ignore[attr-defined]
+        env.qx_dependencies = set()  # type: ignore[attr-defined]
+        
         tmpl = env.from_string(template)
         return tmpl.render(**context)
-
-    def _process_qx_blocks(self, template: str, context: Dict[str, Any]) -> str:
-        """Process {% qx %}...{% xq %} remote execution boundary blocks.
-
-        These blocks define code that should be executed on a remote shell.
-        The compiler will:
-        1. Detect task references inside the block
-        2. Generate a unique heredoc delimiter
-        3. Include dependencies via module:include
-        4. Escape $ as \\$ for remote evaluation
-
-        Args:
-            template: Template string that may contain {% qx %} blocks.
-            context: Environment context for resolving task references.
-
-        Returns:
-            Template with {% qx %} blocks replaced by heredoc constructs.
-        """
-        # Pattern to match {% qx %}...{% xq %} blocks
-        pattern = r"\{%\s*qx\s*%\}(.*?)\{%\s*xq\s*%\}"
-
-        def replace_qx_block(match: re.Match) -> str:
-            block_content = match.group(1)
-            return self._generate_heredoc_block(block_content, context)
-
-        return re.sub(pattern, replace_qx_block, template, flags=re.DOTALL)
-
-    def _generate_heredoc_block(
-        self, block_content: str, context: Dict[str, Any]
-    ) -> str:
-        """Generate a heredoc block for remote execution.
-
-        Args:
-            block_content: The content inside {% qx %}...{% xq %}.
-            context: Environment context.
-
-        Returns:
-            Heredoc construct with dependencies included.
-        """
-        import uuid
-
-        # Generate unique heredoc delimiter
-        heredoc_id = f"QWEX_{uuid.uuid4().hex[:8].upper()}"
-
-        # Detect task references in the block ({{ module.task }} patterns)
-        # These will be rendered to canonical names like module:task
-        task_refs = self._detect_task_refs_in_block(block_content, context)
-
-        # Escape $ in the block content for remote evaluation
-        # But preserve {{ }} which will be rendered by Jinja later
-        escaped_content = self._escape_for_heredoc(block_content)
-
-        # Build the heredoc
-        if task_refs:
-            deps_list = " ".join(sorted(task_refs))
-            heredoc = f"""<< '{heredoc_id}'
-$(module:include {deps_list})
-{escaped_content}
-{heredoc_id}"""
-        else:
-            heredoc = f"""<< '{heredoc_id}'
-{escaped_content}
-{heredoc_id}"""
-
-        return heredoc
-
-    def _detect_task_refs_in_block(
-        self, block: str, context: Dict[str, Any]
-    ) -> Set[str]:
-        """Detect task references in a {% qx %} block.
-
-        Looks for {{ module.task }} patterns and resolves them to canonical names.
-
-        Args:
-            block: Content of the qx block.
-            context: Environment context.
-
-        Returns:
-            Set of canonical task names (e.g., {'log:debug', 'utils:color'}).
-        """
-        refs: Set[str] = set()
-
-        # Pattern: {{ module.task }} - module reference
-        pattern = r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)"
-        matches = re.findall(pattern, block)
-
-        for module_ref, task_ref in matches:
-            if module_ref in context and isinstance(context[module_ref], dict):
-                module_env = context[module_ref]
-                if task_ref in module_env and isinstance(module_env[task_ref], str):
-                    canonical = module_env[task_ref]
-                    refs.add(canonical)
-
-        # Also detect already-canonical references (module:task patterns)
-        canonical_pattern = r"\b([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\b"
-        canonical_matches = re.findall(canonical_pattern, block)
-        refs.update(canonical_matches)
-
-        return refs
-
-    def _escape_for_heredoc(self, content: str) -> str:
-        """Escape content for use in a heredoc.
-
-        Escapes $ as \\$ so variables are evaluated on the remote shell,
-        not the local shell.
-
-        Args:
-            content: Content to escape.
-
-        Returns:
-            Escaped content.
-        """
-        # Escape $ but not {{ }} (Jinja will process those)
-        # Also don't escape $( ) for command substitution - those get escaped too
-        # The heredoc is quoted (<<'EOF') so we need to escape $ for later evaluation
-        return content.replace("$", "\\$")
 
     def _detect_dependencies(self, body: str) -> Set[str]:
         """Detect bash function dependencies from rendered body.

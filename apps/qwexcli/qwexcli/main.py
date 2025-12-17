@@ -82,6 +82,11 @@ def is_yaml_file(arg: str) -> bool:
     type=click.Path(exists=True, path_type=Path),
     help="Path to qwex.yaml file.",
 )
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Print compiled bash without executing.",
+)
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def cli(
@@ -91,6 +96,7 @@ def cli(
     presets: Optional[str],
     output: Optional[Path],
     file_path: Optional[Path],
+    dry_run: bool,
     args: tuple,
 ) -> None:
     """Queued Workspace-aware Execution - task runner that compiles to bash.
@@ -155,6 +161,9 @@ def cli(
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(bash, encoding="utf-8")
             click.echo(f"Wrote compiled bash to {output}")
+        elif dry_run:
+            # Print compiled bash
+            click.echo(bash)
         else:
             # Execute via bash
             cmd = ["bash", "-s", "--", task_name] + task_args
