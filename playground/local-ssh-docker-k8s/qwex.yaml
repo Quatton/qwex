@@ -54,7 +54,6 @@ tasks:
       # just for testing presets and includes
       echo "{{ cmd }}"
   
-  # Clean tasks
   clean-local:
     run: |
       echo "Cleaning local backend..."
@@ -70,3 +69,7 @@ tasks:
   clean-k8s:
     run: |
       echo "Cleaning K8s backend..."
+
+  clean-all:
+    run: |
+      echo "Cleaning all backends..."
