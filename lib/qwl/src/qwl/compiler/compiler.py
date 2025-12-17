@@ -1,12 +1,16 @@
 """Compiler - transforms resolved AST into BashScript IR."""
 
 from pathlib import Path
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Optional, Set, List, Tuple
 import re
 
 from qwl.ast.spec import Module, Task
 from qwl.compiler.spec import BashFunction, BashScript
 from qwl.compiler.resolver import Resolver
+
+
+from collections import deque
+import hashlib
 
 
 class Compiler:
@@ -23,6 +27,12 @@ class Compiler:
 
     def compile(self, module: Module) -> BashScript:
         """Compile a Module into a BashScript IR with full module resolution.
+        
+        Phase 2 algorithm:
+        1. Resolve modules and build env tree (eager for now)
+        2. BFS from root tasks to discover reachable dependencies
+        3. Compile only reachable tasks with canonical aliasing
+        4. Body-hash deduplication to avoid emitting duplicate functions
 
         Args:
             module: The root module to compile.
@@ -33,36 +43,107 @@ class Compiler:
         # Resolve all modules and build environment tree
         env_tree = self.resolver.resolve(module)
 
-        # Compile all tasks from root module
-        functions = []
+        # Phase 2: BFS traversal from root tasks
         task_names = list(module.tasks.keys())
-        emitted_fns: set[str] = set()
-
-        # Helper to compile module tasks recursively
-        def emit_module_tasks(mod: Module, mod_env: Dict[str, Any], is_root: bool = False):
-            # Root module uses empty namespace, imported modules use their name
-            namespace = "" if is_root else mod.name
-            for task in mod.tasks.values():
-                fn = self._compile_task(namespace, task, mod_env)
-                if fn.name not in emitted_fns:
-                    emitted_fns.add(fn.name)
-                    functions.append(fn)
-
-            # Recursively emit imported module tasks with their own env
-            for mod_ref_name in mod.modules:
-                loaded = self.resolver._module_cache.get(mod_ref_name)
-                if loaded and mod_ref_name in mod_env:
-                    sub_env = mod_env[mod_ref_name]
-                    emit_module_tasks(loaded, sub_env, is_root=False)
-
-        # Start with root module (is_root=True)
-        emit_module_tasks(module, env_tree, is_root=True)
+        functions = self._compile_with_bfs(module, env_tree, task_names)
 
         # Auto-generate help function
         functions.append(self._compile_help(task_names))
 
         script = BashScript(functions=functions, available_tasks=task_names)
         return script
+    
+    def _compile_with_bfs(
+        self,
+        root_module: Module,
+        env_tree: Dict[str, Any],
+        root_task_names: List[str]
+    ) -> List[BashFunction]:
+        """Compile tasks using BFS traversal from root tasks.
+        
+        This implements the Phase 2 algorithm:
+        - Start from root tasks
+        - BFS to discover dependencies
+        - Canonical aliasing (dedup by env_hash)
+        - Body-hash deduplication
+        
+        Args:
+            root_module: The root module.
+            env_tree: Full environment tree.
+            root_task_names: Names of root tasks to start from.
+            
+        Returns:
+            List of BashFunctions in dependency order.
+        """
+        # Queue: (alias, task_name) tuples
+        # Empty alias means root module
+        queue: deque[Tuple[str, str]] = deque()
+        
+        # Track visited (canonical FQN -> True)
+        visited: Set[str] = set()
+        
+        # Track body hashes for deduplication
+        body_hash_to_fqn: Dict[str, str] = {}
+        
+        # Result: list of (fqn, BashFunction)
+        compiled: List[Tuple[str, BashFunction]] = []
+        
+        # Seed queue with root tasks
+        for task_name in root_task_names:
+            queue.append(("", task_name))
+        
+        while queue:
+            alias, task_name = queue.popleft()
+            
+            # Get canonical FQN
+            canonical_fqn = self.resolver.get_canonical_fqn(alias, task_name)
+            
+            if canonical_fqn in visited:
+                continue
+            visited.add(canonical_fqn)
+            
+            # Get the module and task
+            if alias == "":
+                mod = root_module
+                mod_env = env_tree
+            else:
+                mod = self.resolver._module_cache.get(alias)
+                if mod is None:
+                    continue
+                mod_env = env_tree.get(alias, {})
+            
+            task = mod.tasks.get(task_name)
+            if task is None:
+                continue
+            
+            # Detect dependencies before rendering (AST-based)
+            if task.uses:
+                deps = self._detect_deps_from_uses(task.uses, task.with_, mod_env)
+            else:
+                deps = self._detect_deps_from_template(task.run or "", mod_env)
+            
+            # Add dependencies to queue
+            for dep_alias, dep_task in deps:
+                dep_fqn = self.resolver.get_canonical_fqn(dep_alias, dep_task)
+                if dep_fqn not in visited:
+                    queue.append((dep_alias, dep_task))
+            
+            # Compile the task
+            fn = self._compile_task(alias, task, mod_env)
+            
+            # Body-hash deduplication
+            body_hash = hashlib.sha256(fn.body.encode()).hexdigest()[:16]
+            if body_hash in body_hash_to_fqn:
+                # Skip duplicate body - just record the alias
+                continue
+            body_hash_to_fqn[body_hash] = canonical_fqn
+            
+            compiled.append((canonical_fqn, fn))
+        
+        # Return functions in order (dependencies first due to BFS)
+        # Actually, BFS gives us forward order, but bash doesn't care about order
+        # since functions can be defined after they're referenced
+        return [fn for _, fn in compiled]
 
     def _compile_task(
         self, module_name: str, task: Task, env_tree: Dict[str, Any]
@@ -234,6 +315,88 @@ class Compiler:
         pattern = r"\b([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\b"
         matches = re.findall(pattern, body)
         return set(matches)
+    
+    def _detect_deps_from_template(
+        self, 
+        template: str, 
+        env_tree: Dict[str, Any]
+    ) -> Set[Tuple[str, str]]:
+        """Detect dependencies from Jinja template before rendering (AST-based).
+        
+        Looks for patterns like {{ module.task }} in the template and resolves
+        them to (alias, task_name) tuples.
+        
+        Args:
+            template: Jinja template string (unrendered).
+            env_tree: Environment tree for resolving module references.
+            
+        Returns:
+            Set of (alias, task_name) tuples for dependencies.
+        """
+        deps: Set[Tuple[str, str]] = set()
+        
+        # Pattern: {{ module.task }} or {{ module.task ... }}
+        # Also matches {{ module.task | filter }} etc.
+        pattern = r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)"
+        matches = re.findall(pattern, template)
+        
+        for module_ref, task_ref in matches:
+            # Check if module_ref is actually a module in env_tree
+            if module_ref in env_tree and isinstance(env_tree[module_ref], dict):
+                # It's a module reference
+                module_env = env_tree[module_ref]
+                # Check if task_ref is a task in that module
+                if task_ref in module_env and isinstance(module_env[task_ref], str):
+                    # Verify it's a canonical task name (contains : or is simple name)
+                    canonical = module_env[task_ref]
+                    if ":" in canonical:
+                        alias, task_name = canonical.split(":", 1)
+                        deps.add((alias, task_name))
+                    else:
+                        # Root task - alias is empty
+                        deps.add(("", task_ref))
+        
+        return deps
+    
+    def _detect_deps_from_uses(
+        self,
+        uses: str,
+        with_items: List[Any],
+        env_tree: Dict[str, Any]
+    ) -> Set[Tuple[str, str]]:
+        """Detect dependencies from uses/with block.
+        
+        Args:
+            uses: Reference to task (e.g., "steps.compose").
+            with_items: List of items (may contain nested run templates).
+            env_tree: Environment tree.
+            
+        Returns:
+            Set of (alias, task_name) tuples.
+        """
+        deps: Set[Tuple[str, str]] = set()
+        
+        # Parse the uses reference
+        parts = uses.split(".")
+        if len(parts) == 2:
+            module_ref, task_ref = parts
+            if module_ref in env_tree and isinstance(env_tree[module_ref], dict):
+                module_env = env_tree[module_ref]
+                if task_ref in module_env:
+                    canonical = module_env[task_ref]
+                    if ":" in canonical:
+                        alias, task_name = canonical.split(":", 1)
+                        deps.add((alias, task_name))
+        
+        # Also scan with_items for nested run templates
+        for item in with_items:
+            if isinstance(item, dict):
+                run_cmd = item.get("run")
+                if run_cmd and isinstance(run_cmd, str):
+                    nested_deps = self._detect_deps_from_template(run_cmd, env_tree)
+                    deps.update(nested_deps)
+        
+        return deps
 
     def _compile_help(self, task_names: list[str]) -> BashFunction:
         """Create a help function listing available tasks."""

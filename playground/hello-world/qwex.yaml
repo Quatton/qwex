@@ -2,11 +2,9 @@ name: hello-world
 
 modules:
   "log": 
-    source: qstd/log
+    source: ../../lib/qstd/log.yaml
   "steps":
-    source: qstd/steps
-  "@module": 
-    source: qstd/module
+    source: ../../lib/qstd/steps.yaml
 
 tasks:
   greet:
@@ -16,37 +14,31 @@ tasks:
     run: |
       {{ log.debug }} "Debugging Hello World Module"
   say:
-    args:
-      - name: message
-        default: "Hello from Hello World Module!"
-      - name: times
-        default: 1
     vars:
+      message: "Hello from Hello World Module!"
+      times: 1
       compile_time_var: "This get inlined at compile time. and can be overridden. It's also scoped"
     run: |
       # using $ in command is raw by default. You don't need to escape it.
-      echo "Compile Time Var: {{ vars.compile_time_var }}"
-      for i in $(seq 1 {{ args.times }}); do
-        echo "{{ args.message }}"
+      echo "Compile Time Var: {{ compile_time_var }}"
+      for i in $(seq 1 {{ times }}); do
+        echo "{{ message }}"
       done
   debug-vars:
     uses: log.debug
     with:
       - "Debugging Hello World Module with Variables"
-      - "Module Name: {{ name }}"
-      - "Available Tasks: {{ tasks | keys | join(', ') }}"
+      - "Module Name: {{ module_name }}"
   runstep:
     run: |
-      {{ steps.step }} "Greet Step" "{{ greet }}"
-      {{ steps.step }} "Debug Step" "{{ debug }}"
+      {{ steps.compose }} "Greet Step" "{{ greet }}"
+      {{ steps.compose }} "Debug Step" "{{ debug }}"
   runsteps-vars:
-    uses: steps.steps
+    uses: steps.compose
     with:
-      - name: "Great Step"
+      - name: "Greet Step"
         run: "{{ greet }}"
       - name: "Debug Step"
         run: "{{ debug }}"
-      - name: "Step can also use lol"
-        uses: log.debug
         with:
           - "This is a step using log.debug directly."

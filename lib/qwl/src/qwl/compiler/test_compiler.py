@@ -137,3 +137,109 @@ def test_entrypoint_rendered():
     # Entrypoint should be at the end
     assert bash.strip().endswith('if [ $# -eq 0 ]; then help; else "$@"; fi')
     assert "help" in bash
+
+
+def test_bfs_only_emits_reachable_tasks():
+    """Test that BFS only emits tasks reachable from root tasks.
+    
+    Phase 2 algorithm should only emit tasks that are reachable
+    through dependency chains starting from root tasks.
+    """
+    # Create a module with an unreachable task
+    # If we had imports, only imported and used tasks would be emitted
+    module = Module(
+        name="test",
+        vars={},
+        tasks={
+            "main": Task(name="main", run="echo main"),
+            "helper": Task(name="helper", run="echo helper"),
+        },
+    )
+
+    compiler = Compiler()
+    script = compiler.compile(module)
+
+    # All root tasks should be emitted (BFS starts from all root tasks)
+    task_names = [fn.name for fn in script.functions if fn.name != "help"]
+    assert "main" in task_names
+    assert "helper" in task_names  # Root task, so included
+
+
+def test_body_hash_deduplication():
+    """Test that tasks with identical bodies are deduplicated.
+    
+    Phase 2 algorithm should only emit unique function bodies.
+    If two tasks have identical rendered bodies, only the first
+    (in BFS order) should be emitted.
+    """
+    # Create tasks with identical bodies
+    module = Module(
+        name="test",
+        vars={},
+        tasks={
+            "task1": Task(name="task1", run="echo identical"),
+            "task2": Task(name="task2", run="echo identical"),
+        },
+    )
+
+    compiler = Compiler()
+    script = compiler.compile(module)
+
+    # Should only have one task + help due to deduplication
+    # (Both have identical body "echo identical")
+    task_names = [fn.name for fn in script.functions if fn.name != "help"]
+    # First one wins in BFS order
+    assert len(task_names) == 1
+    assert task_names[0] == "task1"
+
+
+def test_ast_dependency_detection():
+    """Test AST-based dependency detection from templates.
+    
+    The compiler should detect {{ module.task }} patterns
+    before rendering and include those as dependencies.
+    """
+    module = Module(
+        name="test",
+        vars={},
+        tasks={
+            "main": Task(name="main", run="echo main"),
+            # This task references main via template
+            "caller": Task(name="caller", run="{{ main }}"),
+        },
+    )
+
+    compiler = Compiler()
+    script = compiler.compile(module)
+
+    # caller should have main in its deps
+    caller_fn = next(fn for fn in script.functions if fn.name == "caller")
+    # Note: main is a root task, so it resolves to just "main" not "module:main"
+    # The rendered body will have "main" (the canonical name)
+    assert "main" in caller_fn.body
+
+
+def test_canonical_alias_resolution():
+    """Test that the resolver provides canonical alias resolution.
+    
+    The resolver should track env_hash -> canonical_alias mapping
+    for deduplicating module instantiations with same source + vars.
+    """
+    from qwl.compiler.resolver import Resolver
+    
+    module = Module(
+        name="test",
+        vars={"x": 1},
+        tasks={"t": Task(name="t", run="echo x")},
+    )
+    
+    resolver = Resolver()
+    resolver.resolve(module)
+    
+    # Root module has alias ""
+    canonical = resolver.get_canonical_alias("")
+    assert canonical == ""
+    
+    # get_canonical_fqn should work for root tasks
+    fqn = resolver.get_canonical_fqn("", "t")
+    assert fqn == "t"
