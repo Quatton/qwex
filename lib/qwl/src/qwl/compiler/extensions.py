@@ -3,7 +3,9 @@
 import random
 import string
 import os
-from typing import Set, Dict, Any
+import subprocess
+from pathlib import Path
+from typing import Set, Dict, Any, Optional
 
 from jinja2 import nodes
 from jinja2.ext import Extension
@@ -134,6 +136,61 @@ def env_var(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
 
 
+def shell(cmd: str, cwd: Optional[str] = None) -> str:
+    """Execute a shell command at compile time and return its output.
+    
+    This runs during template rendering (compile-time), not at runtime.
+    Use for including file contents, getting git info, etc.
+    
+    Args:
+        cmd: Shell command to execute.
+        cwd: Working directory for the command. If None, uses current directory.
+             Typically you'd use __source_dir__ for module-relative paths.
+        
+    Returns:
+        Command stdout (stripped).
+        
+    Raises:
+        subprocess.CalledProcessError: If command fails.
+        
+    Example:
+        # In a module's vars or task:
+        version: "{{ shell('cat VERSION') }}"
+        
+        # With explicit cwd (module-relative):
+        config: "{{ shell('cat config.yaml', cwd=__source_dir__) }}"
+    """
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def include_file(path: str, source_dir: Optional[str] = None) -> str:
+    """Include file contents at compile time.
+    
+    Args:
+        path: Path to the file (relative to source_dir or absolute).
+        source_dir: Base directory for relative paths. Typically __source_dir__.
+        
+    Returns:
+        File contents as string.
+        
+    Example:
+        # Include a file relative to the module:
+        script: "{{ include_file('scripts/setup.sh', __source_dir__) }}"
+    """
+    p = Path(path)
+    if not p.is_absolute() and source_dir:
+        p = Path(source_dir) / p
+    return p.read_text()
+
+
 def get_qwl_jinja_env():
     """Create a Jinja2 Environment with QWL extensions and filters.
     
@@ -144,9 +201,11 @@ def get_qwl_jinja_env():
     
     env = Environment(extensions=[QxExtension])
     
-    # Add custom filters
+    # Add custom filters and globals
     env.filters['random'] = lambda length=8: random_string(length)
     env.globals['random'] = random_string
     env.globals['env'] = env_var
+    env.globals['shell'] = shell
+    env.globals['include_file'] = include_file
     
     return env

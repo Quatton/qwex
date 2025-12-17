@@ -184,6 +184,14 @@ class Resolver:
         env: Dict[str, Any] = dict(resolved_vars)
         env["module_name"] = module.name
 
+        # Add __source_dir__ for compile-time file access
+        source_hash = self.alias_to_source_hash.get(alias)
+        if source_hash and source_hash in self.source_hash_to_path:
+            env["__source_dir__"] = str(self.source_hash_to_path[source_hash].parent)
+        else:
+            # Root module uses base_dir
+            env["__source_dir__"] = str(self.base_dir)
+
         # Add task name mappings
         is_root = alias == ""
         for task_name in module.tasks:
@@ -358,6 +366,17 @@ class Resolver:
 
         # Add metadata
         env["module_name"] = root_module.name
+
+        # Add __source_dir__ for compile-time file access
+        if is_root:
+            env["__source_dir__"] = str(self.base_dir)
+        else:
+            # For imported modules, find the source path
+            source_path = self._source_map.get(root_module.name)
+            if source_path:
+                env["__source_dir__"] = str(source_path.parent)
+            else:
+                env["__source_dir__"] = str(self.base_dir)
 
         # Add tasks (name -> canonical name)
         # Root tasks have no prefix, imported tasks have module:task format
