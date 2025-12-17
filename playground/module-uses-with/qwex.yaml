@@ -2,7 +2,7 @@ name: module-uses-with
 
 modules:
   steps:
-    source: ../../lib/qstd/steps.yaml
+    source: std/steps
 
 tasks:
   composite:

@@ -1,0 +1,29 @@
+name: log
+
+modules:
+  utils:
+    source: std/utils
+
+tasks:
+  debug:
+    run: |
+      if [ "${DEBUG:-0}" -eq 0 ]; then
+        return
+      fi
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      echo -e "$1" >&2
+
+  info:
+    run: |
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      echo -e "${Q_BLUE}ℹ${Q_RESET} $1" >&2
+
+  warn:
+    run: |
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      echo -e "${Q_YELLOW}⚠${Q_RESET} $1" >&2
+
+  error:
+    run: |
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      echo -e "${Q_RED}✘${Q_RESET} $1" >&2

@@ -1,9 +1,0 @@
-name: ssh
-
-vars:
-  host: ""
-
-tasks:
-  exec:
-    run: |
-      ssh {{ vars.host }} "$@"

@@ -2,7 +2,7 @@ name: playground
 
 modules:
   steps:
-    source: ../lib/qstd/steps.yaml
+    source: std/steps
 
 tasks:
   test-task-with-args:

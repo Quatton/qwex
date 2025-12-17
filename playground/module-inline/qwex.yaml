@@ -2,7 +2,7 @@ name: module_inline
 
 modules:
   utils:
-    source: ../../lib/qstd/utils.yaml
+    source: std/utils
 
 tasks:
   with_color:

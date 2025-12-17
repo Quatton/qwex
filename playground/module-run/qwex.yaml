@@ -2,7 +2,7 @@ name: module_run_usage
 
 modules:
   log:
-    source: ../../lib/qstd/log.yaml
+    source: std/log
 
 tasks:
   greet:

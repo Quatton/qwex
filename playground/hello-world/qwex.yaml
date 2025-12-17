@@ -1,10 +1,10 @@
 name: hello-world
 
 modules:
-  "log": 
-    source: ../../lib/qstd/log.yaml
-  "steps":
-    source: ../../lib/qstd/steps.yaml
+  log: 
+    source: std/log
+  steps:
+    source: std/steps
 
 tasks:
   greet:

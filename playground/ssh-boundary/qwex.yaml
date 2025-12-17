@@ -1,0 +1,46 @@
+name: ssh-boundary-test
+
+modules:
+  log:
+    source: std/log
+  ssh:
+    source: shell/ssh
+
+vars:
+  remote_host: "user@remote-server"
+
+tasks:
+  # Simple local task
+  local_greet:
+    run: |
+      echo "Hello from local!"
+
+  # Remote execution using {% qx %} boundary
+  remote_greet:
+    run: |
+      ssh {{ remote_host }} bash -s {% qx %}
+        echo "Hello from remote!"
+        echo "This runs on the remote server"
+        # $HOME will be evaluated on remote, not local
+        echo "Remote home: $HOME"
+      {% xq %}
+
+  # Remote execution with task dependencies
+  remote_with_deps:
+    run: |
+      ssh {{ remote_host }} bash -s {% qx %}
+        # Include log:debug for remote debugging
+        {{ log.debug }} "Running on remote server"
+        echo "Done on remote"
+      {% xq %}
+
+  # Local + remote combo
+  mixed:
+    run: |
+      echo "Starting local setup..."
+      ssh {{ remote_host }} bash -s {% qx %}
+        echo "Running remote part..."
+        # This $USER is remote
+        echo "Remote user: $USER"
+      {% xq %}
+      echo "Back to local cleanup..."
