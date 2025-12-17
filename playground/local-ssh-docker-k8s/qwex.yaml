@@ -1,0 +1,72 @@
+name: local-ssh-docker-k8s
+
+defaults: [manual]
+
+presets:
+  qwex:
+    vars:
+      cmd: "with qwex"
+  manual:
+    includes:
+      - ./manual.vars.yaml
+
+tasks:
+  # Setup tasks
+  setup-workspace:
+    run: |
+      echo "Setting up workspace..."
+  
+  setup-local:
+    run: |
+      echo "Setting up local backend..."
+  
+  setup-ssh:
+    run: |
+      echo "Setting up SSH backend..."
+  
+  setup-docker:
+    run: |
+      echo "Setting up Docker backend..."
+  
+  setup-k8s:
+    run: |
+      echo "Setting up K8s backend..."
+  
+  # Eval tasks
+  eval-local:
+    run: |
+      echo "Evaluating on local backend..."
+  
+  eval-ssh:
+    run: |
+      echo "Evaluating on SSH backend..."
+  
+  eval-docker:
+    run: |
+      echo "Evaluating on Docker backend..."
+  
+  eval-k8s:
+    run: |
+      echo "Evaluating on K8s backend..."
+  
+  eval-all:
+    run: |
+      # just for testing presets and includes
+      echo "{{ cmd }}"
+  
+  # Clean tasks
+  clean-local:
+    run: |
+      echo "Cleaning local backend..."
+  
+  clean-ssh:
+    run: |
+      echo "Cleaning SSH backend..."
+  
+  clean-docker:
+    run: |
+      echo "Cleaning Docker backend..."
+  
+  clean-k8s:
+    run: |
+      echo "Cleaning K8s backend..."

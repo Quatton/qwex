@@ -2218,3 +2218,614 @@ Based on the feedback from Dec 17, we have refactored the compiler and standard 
 | `{{ vars.color }}` | `{{ color }}` |
 | `{{ log.tasks.debug }}` | `{{ log.debug }}` |
 | `tasks.step` | `tasks.compose` |
+
+---
+
+## Dec 18, 2025: QWL Compilation Pipeline - Detailed Specification
+
+### Executive Summary
+
+The QWL (Qwex Workflow Language) compiler transforms YAML task definitions into executable Bash scripts using a **3-phase pipeline**: Resolution → Compilation → Rendering. This document details the complete compilation algorithm, data structures, and implementation choices.
+
+### Why Not Use Jinja2 Extensions for `{% qx %}`?
+
+**Question:** Why process `{% qx %}...{% xq %}` blocks manually instead of using Jinja2's extension system?
+
+**Answer:** We **do** use Jinja2, just not for the qx block itself. Here's why:
+
+1. **qx blocks are bash constructs, not Jinja syntax**
+   - `{% qx %}` generates a **heredoc** (`<< 'EOF'`), which is valid bash, not a Jinja control structure
+   - The content inside needs `$` escaped as `\$` so variables evaluate **on the remote shell**, not locally
+   - Jinja2 would try to render `{{ module.task }}` references during template processing, but we need to detect them first to include dependencies
+
+2. **Pre-processing is simpler and more explicit**
+   - We extract qx blocks, analyze them for dependencies, and generate the heredoc structure
+   - Then Jinja2 renders the rest of the template (including the heredoc content variables)
+   - This gives us full control over when and how task references are resolved
+
+3. **Separation of concerns**
+   - **qx preprocessing**: Bash-level concern (heredocs, remote execution boundaries)
+   - **Jinja rendering**: Template-level concern (variable substitution, task references)
+   - Mixing these would require complex custom Jinja2 extensions that understand bash escaping rules
+
+**What Jinja2 IS used for:**
+- Rendering `{{ variable }}` references
+- Rendering `{{ module.task }}` task references (which become canonical names like `log:debug`)
+- Processing `uses/with` blocks for task composition
+- Template inheritance (future feature)
+
+**The pipeline is:**
+```
+YAML → AST → qx preprocessing → Jinja rendering → Bash IR → Bash script
+                ↑                    ↑
+                bash-aware           template-aware
+```
+
+### Phase 1: Resolution (Resolver)
+
+**Purpose:** Load modules, resolve imports, build environment maps.
+
+#### Data Structures
+
+The resolver maintains two parallel index systems for backward compatibility:
+
+**Legacy Cache (Phase 1):**
+```python
+_module_cache: Dict[str, Module]      # alias -> Module AST
+_source_map: Dict[str, Path]          # alias -> source file path
+```
+
+**Hash-Indexed Maps (Phase 2):**
+```python
+alias_to_source_hash: Dict[str, str]           # "log" -> "a3f2..."
+source_hash_to_ast: Dict[str, Module]          # "a3f2..." -> Module AST
+source_hash_to_path: Dict[str, Path]           # "a3f2..." -> Path
+alias_to_env_hash: Dict[str, str]              # "log" -> "b8d1..."
+env_hash_to_canonical_alias: Dict[str, str]    # "b8d1..." -> "log" (first seen)
+env_hash_to_env: Dict[str, Dict[str, Any]]     # "b8d1..." -> {vars, tasks}
+```
+
+**Hash Functions:**
+```python
+source_hash = sha256(file_bytes)[:16]
+env_hash = sha256(f"{source_hash}:{json(vars_dict)}")[:16]
+```
+
+**Why Two Systems?**
+- Source hash: identifies unique file content
+- Env hash: identifies unique instantiation (source + vars binding)
+- Two modules with same source but different vars → different env_hash
+- Two modules with same source + vars → same env_hash → deduplication
+
+#### Resolution Algorithm
+
+```python
+def resolve(root_module: Module) -> Dict[str, Any]:
+    """
+    1. Clear previous state
+    2. Register root module with alias "" and synthetic hash
+    3. Load all imports recursively (eager, will be lazy in future)
+    4. Build flat hash-indexed maps
+    5. Return nested env tree (backward compatibility)
+    """
+```
+
+**Step 1: Module Loading (Recursive)**
+```python
+def _load_modules_recursive(module, visited=None, module_dir=None):
+    for mod_ref in module.modules.values():
+        # Resolve source with builtin fallback
+        source_path = _resolve_module_source(mod_ref.source, module_dir)
+        
+        # Parse and cache
+        loaded = parser.parse_file(source_path)
+        _module_cache[mod_ref.name] = loaded
+        
+        # Index by hash
+        source_hash = sha256(source_path.read_bytes())[:16]
+        alias_to_source_hash[mod_ref.name] = source_hash
+        source_hash_to_ast[source_hash] = loaded
+        
+        # Recurse with module's directory as new base
+        self._load_modules_recursive(loaded, visited, source_path.parent)
+```
+
+**Builtin Resolution:**
+```python
+def _resolve_module_source(source: str, module_dir: Path) -> Path:
+    """
+    Resolution order:
+    1. Relative to current module's dir: ./local.yaml
+    2. Relative with .yaml added: ./local → ./local.yaml
+    3. Builtin modules: std/log → lib/qwl/builtins/std/log.yaml
+    4. Builtin with .yaml: std/log → lib/qwl/builtins/std/log.yaml
+    """
+    # Try local paths first
+    if (module_dir / f"{source}.yaml").exists():
+        return module_dir / f"{source}.yaml"
+    
+    # Try builtins
+    if (_BUILTINS_DIR / f"{source}.yaml").exists():
+        return _BUILTINS_DIR / f"{source}.yaml"
+    
+    raise FileNotFoundError(...)
+```
+
+**Step 2: Build Flat Maps**
+```python
+def _build_flat_maps(module, alias, parent_vars, visited=None):
+    # Compute resolved vars (parent + module vars)
+    resolved_vars = {**parent_vars, **module.vars}
+    
+    # Compute env hash
+    source_hash = alias_to_source_hash[alias]
+    env_hash = _hash_env(source_hash, resolved_vars)
+    
+    # Register canonical alias (first wins in BFS)
+    if env_hash not in env_hash_to_canonical_alias:
+        env_hash_to_canonical_alias[env_hash] = alias
+    
+    # Build and store environment
+    env = _build_module_env(module, alias, resolved_vars)
+    env_hash_to_env[env_hash] = env
+    
+    # Recurse to imports
+    for mod_name in module.modules:
+        self._build_flat_maps(_module_cache[mod_name], mod_name, resolved_vars)
+```
+
+**Step 3: Build Environment Dict**
+```python
+def _build_module_env(module, alias, resolved_vars) -> Dict[str, Any]:
+    """
+    Returns flattened dict:
+    {
+        "color": "blue",           # vars at root
+        "module_name": "utils",
+        "once": "utils:once",      # task mappings
+        "color": "utils:color"     # (if imported; root tasks just use name)
+    }
+    """
+    env = dict(resolved_vars)
+    env["module_name"] = module.name
+    
+    for task_name in module.tasks:
+        if alias == "":
+            env[task_name] = task_name  # Root: "greet"
+        else:
+            env[task_name] = f"{alias}:{task_name}"  # "log:debug"
+    
+    return env
+```
+
+**Step 4: Build Nested Tree (Backward Compatibility)**
+```python
+def _build_env_tree(module, is_root=True) -> Dict[str, Any]:
+    """
+    Returns nested structure for Jinja:
+    {
+        "color": "blue",
+        "greet": "greet",
+        "log": {
+            "debug": "log:debug",
+            "info": "log:info",
+            ...
+        }
+    }
+    """
+```
+
+### Phase 2: Compilation (Compiler)
+
+**Purpose:** Transform AST into Bash IR using BFS traversal and dependency detection.
+
+#### Algorithm Overview
+
+```
+1. Resolve modules (call Resolver)
+2. BFS from root tasks to discover reachable dependencies
+3. Compile only reachable tasks with canonical aliasing
+4. Body-hash deduplication to avoid emitting duplicate functions
+5. Generate help function
+```
+
+#### BFS Traversal Implementation
+
+```python
+def _compile_with_bfs(root_module, env_tree, root_task_names):
+    queue = deque()  # [(alias, task_name), ...]
+    visited = set()  # {canonical_fqn, ...}
+    body_hash_to_fqn = {}  # {body_hash: first_fqn}
+    compiled = []  # [(fqn, BashFunction), ...]
+    
+    # Seed with root tasks
+    for task_name in root_task_names:
+        queue.append(("", task_name))
+    
+    while queue:
+        alias, task_name = queue.popleft()
+        
+        # Get canonical FQN
+        canonical_fqn = resolver.get_canonical_fqn(alias, task_name)
+        if canonical_fqn in visited:
+            continue
+        visited.add(canonical_fqn)
+        
+        # Get module and task
+        if alias == "":
+            mod = root_module
+            mod_env = env_tree
+        else:
+            mod = resolver._module_cache[alias]
+            mod_env = env_tree[alias]
+        
+        task = mod.tasks[task_name]
+        
+        # Detect dependencies (AST-based, before rendering)
+        if task.uses:
+            deps = _detect_deps_from_uses(task.uses, task.with_, mod_env)
+        else:
+            deps = _detect_deps_from_template(task.run, mod_env)
+        
+        # Enqueue dependencies
+        for dep_alias, dep_task in deps:
+            queue.append((dep_alias, dep_task))
+        
+        # Compile task
+        fn = _compile_task(alias, task, mod_env)
+        
+        # Body-hash deduplication
+        body_hash = sha256(fn.body.encode())[:16]
+        if body_hash not in body_hash_to_fqn:
+            body_hash_to_fqn[body_hash] = canonical_fqn
+            compiled.append((canonical_fqn, fn))
+    
+    return [fn for _, fn in compiled]
+```
+
+**Key Points:**
+- **AST-based dependency detection**: Scan template for `{{ module.task }}` patterns BEFORE rendering
+- **Canonical FQN**: `get_canonical_fqn(alias, task)` uses env_hash to deduplicate equivalent modules
+- **Body-hash dedup**: If two tasks compile to identical bash code, emit only once
+
+#### Dependency Detection
+
+**From Template (AST-based):**
+```python
+def _detect_deps_from_template(template: str, env_tree) -> Set[Tuple[str, str]]:
+    """
+    Regex: {{ module.task }}
+    Returns: {(alias, task_name), ...}
+    
+    Example:
+    "{{ log.debug }}" → [("log", "debug")]
+    
+    Verification:
+    - Check env_tree["log"]["debug"] exists
+    - Check it's a canonical name (contains ":")
+    - Extract (alias, task) from "log:debug"
+    """
+    pattern = r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)"
+    deps = set()
+    
+    for module_ref, task_ref in re.findall(pattern, template):
+        if module_ref in env_tree and isinstance(env_tree[module_ref], dict):
+            module_env = env_tree[module_ref]
+            if task_ref in module_env:
+                canonical = module_env[task_ref]
+                if ":" in canonical:
+                    alias, task_name = canonical.split(":", 1)
+                    deps.add((alias, task_name))
+    
+    return deps
+```
+
+**From uses/with:**
+```python
+def _detect_deps_from_uses(uses, with_items, env_tree) -> Set[Tuple[str, str]]:
+    """
+    uses: "steps.compose"
+    
+    1. Parse uses reference: module.task → (module, task)
+    2. Look up canonical name in env_tree
+    3. Scan with_items for nested run: templates
+    4. Return all dependencies
+    """
+```
+
+#### Task Compilation
+
+```python
+def _compile_task(module_name, task, env_tree) -> BashFunction:
+    # Generate function name
+    fn_name = task.name if module_name == "" else f"{module_name}:{task.name}"
+    
+    # Build task-local context
+    task_context = dict(env_tree)
+    if task.vars:
+        task_context.update(task.vars)
+    
+    # Render body
+    if task.uses:
+        body = _compile_uses_with(task.uses, task.with_, env_tree, task_context)
+    else:
+        body = _render(task.run, task_context)
+    
+    # Detect deps from rendered body (for rendered check)
+    deps = _detect_dependencies(body)  # Regex: \b(module:task)\b
+    
+    return BashFunction(name=fn_name, body=body, dependencies=list(deps))
+```
+
+### Phase 3: Rendering (Template Processing)
+
+**Purpose:** Convert template strings to executable bash using Jinja2.
+
+#### The Two-Stage Rendering Process
+
+```python
+def _render(template: str, context: Dict[str, Any]) -> str:
+    """
+    1. Process {% qx %}...{% xq %} blocks (bash-level)
+    2. Render with Jinja2 (template-level)
+    """
+    # Stage 1: qx preprocessing
+    template = _process_qx_blocks(template, context)
+    
+    # Stage 2: Jinja rendering
+    from jinja2 import Environment
+    env = Environment()
+    tmpl = env.from_string(template)
+    return tmpl.render(**context)
+```
+
+#### Stage 1: qx Block Preprocessing
+
+**Purpose:** Generate heredoc constructs for remote execution boundaries.
+
+```python
+def _process_qx_blocks(template: str, context) -> str:
+    """
+    Pattern: {% qx %}...{% xq %}
+    
+    Replacement:
+    << 'QWEX_A3F2B8D1'
+    $(module:include log:debug utils:color)
+    \$escaped content here
+    QWEX_A3F2B8D1
+    """
+    pattern = r"\{%\s*qx\s*%\}(.*?)\{%\s*xq\s*%\}"
+    
+    def replace_qx_block(match):
+        block_content = match.group(1)
+        return _generate_heredoc_block(block_content, context)
+    
+    return re.sub(pattern, replace_qx_block, template, flags=re.DOTALL)
+```
+
+**Heredoc Generation:**
+```python
+def _generate_heredoc_block(block_content, context) -> str:
+    import uuid
+    
+    # Unique delimiter
+    heredoc_id = f"QWEX_{uuid.uuid4().hex[:8].upper()}"
+    
+    # Detect task refs: {{ module.task }}
+    task_refs = _detect_task_refs_in_block(block_content, context)
+    
+    # Escape $ as \$ for remote evaluation
+    escaped_content = block_content.replace("$", "\\$")
+    
+    # Build heredoc
+    if task_refs:
+        deps_list = " ".join(sorted(task_refs))
+        return f"""<< '{heredoc_id}'
+$(module:include {deps_list})
+{escaped_content}
+{heredoc_id}"""
+    else:
+        return f"""<< '{heredoc_id}'
+{escaped_content}
+{heredoc_id}"""
+```
+
+**Task Reference Detection in qx Blocks:**
+```python
+def _detect_task_refs_in_block(block, context) -> Set[str]:
+    """
+    Find {{ module.task }} patterns and resolve to canonical names.
+    Also detect already-canonical module:task patterns.
+    
+    Returns: {'log:debug', 'utils:color'}
+    """
+    refs = set()
+    
+    # Pattern 1: {{ module.task }}
+    pattern = r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)"
+    for module_ref, task_ref in re.findall(pattern, block):
+        if module_ref in context:
+            module_env = context[module_ref]
+            if task_ref in module_env:
+                canonical = module_env[task_ref]
+                refs.add(canonical)
+    
+    # Pattern 2: module:task (already canonical)
+    canonical_pattern = r"\b([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\b"
+    refs.update(re.findall(canonical_pattern, block))
+    
+    return refs
+```
+
+**Why Escape $?**
+```bash
+# Without escaping (WRONG):
+ssh remote << 'EOF'
+echo $USER  # Evaluates locally! Sends empty string if $USER not set
+EOF
+
+# With escaping (CORRECT):
+ssh remote << 'EOF'
+echo \$USER  # Evaluates on remote shell
+EOF
+```
+
+#### Stage 2: Jinja2 Rendering
+
+**What Jinja2 Renders:**
+1. Variable substitution: `{{ color }}` → `"blue"`
+2. Task references: `{{ log.debug }}` → `log:debug`
+3. Conditional logic: `{% if condition %}`
+4. Loops: `{% for item in items %}`
+
+**Example:**
+```jinja
+# Template
+{{ log.debug }} "Starting task"
+echo "Color is {{ color }}"
+
+# Context
+{
+  "log": {"debug": "log:debug"},
+  "color": "blue"
+}
+
+# Rendered
+log:debug "Starting task"
+echo "Color is blue"
+```
+
+### Complete Example Walkthrough
+
+**Input YAML:**
+```yaml
+name: example
+vars:
+  color: blue
+modules:
+  log:
+    source: std/log
+tasks:
+  greet:
+    run: |
+      {{ log.debug }} "Hello"
+      echo "Color: {{ color }}"
+```
+
+**Resolution Phase:**
+1. Load root module
+2. Load `std/log` from `lib/qwl/builtins/std/log.yaml`
+3. Build env_tree:
+```python
+{
+  "color": "blue",
+  "greet": "greet",
+  "log": {
+    "debug": "log:debug",
+    "info": "log:info",
+    ...
+  }
+}
+```
+
+**Compilation Phase:**
+1. BFS: Start from `greet`
+2. Detect deps: `{{ log.debug }}` → `("log", "debug")`
+3. Enqueue `("log", "debug")`
+4. Compile `log:debug` first (dependency)
+5. Compile `greet` (root task)
+6. Body-hash check: no duplicates
+7. Generate help function
+
+**Rendering Phase:**
+1. No qx blocks, skip preprocessing
+2. Jinja render:
+   - `{{ log.debug }}` → `log:debug`
+   - `{{ color }}` → `blue`
+3. Final bash:
+```bash
+log:debug "Hello"
+echo "Color: blue"
+```
+
+**Output BashScript IR:**
+```python
+BashScript(
+  functions=[
+    BashFunction(name="log:debug", body="...", dependencies=[]),
+    BashFunction(name="greet", body='log:debug "Hello"\necho "Color: blue"', dependencies=["log:debug"]),
+    BashFunction(name="help", body="...", dependencies=[])
+  ],
+  available_tasks=["greet"]
+)
+```
+
+### Key Design Decisions
+
+1. **Why hash-indexed maps?**
+   - Enables deduplication of equivalent module instantiations
+   - O(1) lookup for canonical aliases
+   - Future: enables lazy loading (only load reachable modules)
+
+2. **Why AST-based dependency detection?**
+   - More reliable than regex on rendered output
+   - Can detect deps before rendering (important for BFS)
+   - Handles nested templates correctly
+
+3. **Why BFS instead of DFS?**
+   - Natural ordering: dependencies before dependents
+   - First-seen canonical alias makes sense in BFS order
+   - Easy to add cycle detection
+
+4. **Why body-hash deduplication?**
+   - Two tasks with identical code should only emit one function
+   - Reduces bash script size
+   - Common with parameterized tasks that resolve to same code
+
+5. **Why two-stage rendering (qx + Jinja)?**
+   - qx blocks need bash-aware escaping (`$` → `\$`)
+   - Dependency detection needs to happen before Jinja renders
+   - Clean separation of concerns: bash-level vs template-level
+
+### Differences from Original Plan
+
+**Original Plan (from earlier discussions):**
+- Single-pass compilation
+- Nested environment tree only
+- No hash-indexed maps
+- No builtin module resolution
+
+**Current Implementation:**
+- ✅ Two-pass: resolution + compilation
+- ✅ Dual indexing: nested tree (compatibility) + flat maps (performance)
+- ✅ Hash-based deduplication (source + env)
+- ✅ Builtin module auto-resolution
+- ✅ qx boundary preprocessing
+- ✅ AST-based dependency detection
+
+**Why These Changes?**
+- Hash maps enable future lazy loading
+- Builtin resolution makes stdlib "just work"
+- qx preprocessing enables remote execution patterns
+- AST-based deps are more robust than rendered regex
+
+### Future Enhancements
+
+1. **Lazy Module Loading**
+   - Currently: load all modules eagerly
+   - Future: load only during BFS traversal
+   - Benefit: faster startup for large projects
+
+2. **Incremental Compilation**
+   - Track source_hash changes
+   - Only recompile affected tasks
+   - Cache compiled functions
+
+3. **Parallel Compilation**
+   - BFS levels can be compiled in parallel
+   - Tasks with no interdependencies are independent
+
+4. **Advanced qx Features**
+   - Named boundaries: `{% qx "boundary_name" %}`
+   - Context passing: `{% qx with vars %}`
+   - Nested boundaries (boundary within boundary)

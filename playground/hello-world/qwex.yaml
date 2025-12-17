@@ -6,6 +6,9 @@ modules:
   steps:
     source: std/steps
 
+vars:
+  first_var: "This is a variable defined at the module level."
+
 tasks:
   greet:
     run: |
@@ -42,3 +45,8 @@ tasks:
         run: "{{ debug }}"
         with:
           - "This is a step using log.debug directly."
+  vars-after-vars:
+    vars:
+      second_var: "{{ first_var }} And this is another variable defined after."
+    run: |
+      echo "{{ second_var }}"

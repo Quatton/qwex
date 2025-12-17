@@ -228,18 +228,18 @@ class Resolver:
 
     def _resolve_module_source(self, source: str, module_dir: Path) -> Path:
         """Resolve a module source path with builtin fallback.
-        
+
         Resolution order:
         1. Relative to current module's directory (with .yaml extension if needed)
         2. Builtin modules (std/, shell/) in qwl/builtins/
-        
+
         Args:
             source: Source path from module definition (e.g., "std/log", "./local")
             module_dir: Directory of the module containing the import
-            
+
         Returns:
             Resolved absolute path to the module file.
-            
+
         Raises:
             FileNotFoundError: If module cannot be found in any location.
         """
@@ -248,27 +248,27 @@ class Resolver:
             source_with_ext = f"{source}.yaml"
         else:
             source_with_ext = source
-        
+
         # 1. Try relative to current module's directory
         local_path = module_dir / source_with_ext
         if local_path.exists():
             return local_path
-        
+
         # Also try without extension (exact path)
         local_exact = module_dir / source
         if local_exact.exists():
             return local_exact
-        
+
         # 2. Try builtin modules
         builtin_path = _BUILTINS_DIR / source_with_ext
         if builtin_path.exists():
             return builtin_path
-        
+
         # Builtin without extension
         builtin_exact = _BUILTINS_DIR / source
         if builtin_exact.exists():
             return builtin_exact
-        
+
         raise FileNotFoundError(
             f"Module source not found: {source}\n"
             f"  Tried: {local_path}\n"

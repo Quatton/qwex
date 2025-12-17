@@ -1,0 +1,4 @@
+name: manual-vars
+
+vars:
+  cmd: "with manual"

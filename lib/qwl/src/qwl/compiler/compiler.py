@@ -25,21 +25,28 @@ class Compiler:
         self.base_dir = base_dir or Path.cwd()
         self.resolver = Resolver(self.base_dir)
 
-    def compile(self, module: Module) -> BashScript:
+    def compile(
+        self, module: Module, presets: Optional[List[str]] = None
+    ) -> BashScript:
         """Compile a Module into a BashScript IR with full module resolution.
 
         Phase 2 algorithm:
-        1. Resolve modules and build env tree (eager for now)
-        2. BFS from root tasks to discover reachable dependencies
-        3. Compile only reachable tasks with canonical aliasing
-        4. Body-hash deduplication to avoid emitting duplicate functions
+        1. Apply presets (or defaults if no presets specified)
+        2. Resolve modules and build env tree (eager for now)
+        3. BFS from root tasks to discover reachable dependencies
+        4. Compile only reachable tasks with canonical aliasing
+        5. Body-hash deduplication to avoid emitting duplicate functions
 
         Args:
             module: The root module to compile.
+            presets: List of preset names to apply. If None, uses module.defaults.
 
         Returns:
             BashScript IR ready for rendering to text.
         """
+        # Phase 4: Apply presets and includes
+        module = self._apply_presets_and_includes(module, presets)
+
         # Resolve all modules and build environment tree
         env_tree = self.resolver.resolve(module)
 
@@ -52,6 +59,96 @@ class Compiler:
 
         script = BashScript(functions=functions, available_tasks=task_names)
         return script
+
+    def _apply_presets_and_includes(
+        self, module: Module, presets: Optional[List[str]] = None
+    ) -> Module:
+        """Apply presets and includes to a module.
+
+        Order of application:
+        1. Load and merge base includes (module.includes)
+        2. Determine active presets (presets arg or module.defaults)
+        3. For each preset, load its includes then apply its vars/tasks/modules
+        4. Module's own vars/tasks/modules override everything
+
+        Args:
+            module: The original module.
+            presets: List of preset names to apply. If None, uses module.defaults.
+
+        Returns:
+            A new Module with presets and includes applied.
+        """
+        # Start with empty base
+        merged_vars: Dict[str, Any] = {}
+        merged_tasks: Dict[str, Task] = {}
+        merged_modules: Dict[str, Any] = {}
+
+        # 1. Load and merge base includes (these are the lowest priority)
+        for include_path in module.includes:
+            included = self._load_include(include_path)
+            merged_vars.update(included.vars)
+            merged_tasks.update(included.tasks)
+            merged_modules.update(included.modules)
+
+        # 2. Determine active presets
+        active_presets = presets if presets is not None else module.defaults
+
+        # 3. Apply each preset in order
+        for preset_name in active_presets:
+            if preset_name not in module.presets:
+                raise ValueError(f"Preset '{preset_name}' not found in module")
+
+            preset = module.presets[preset_name]
+
+            # First, load preset's includes
+            for include_path in preset.includes:
+                included = self._load_include(include_path)
+                merged_vars.update(included.vars)
+                merged_tasks.update(included.tasks)
+                merged_modules.update(included.modules)
+
+            # Then apply preset's own content (override includes)
+            merged_vars.update(preset.vars)
+            merged_tasks.update(preset.tasks)
+            merged_modules.update(preset.modules)
+
+        # 4. Module's own vars/tasks/modules have highest priority
+        merged_vars.update(module.vars)
+        merged_tasks.update(module.tasks)
+        merged_modules.update(module.modules)
+
+        # Create new module with merged content
+        return Module(
+            name=module.name,
+            vars=merged_vars,
+            tasks=merged_tasks,
+            modules=merged_modules,
+            includes=[],  # Already processed
+            presets={},  # Already processed
+            defaults=[],  # Already processed
+        )
+
+    def _load_include(self, include_path: str) -> Module:
+        """Load an include file and return its parsed module.
+
+        Args:
+            include_path: Path to the include file (relative to base_dir).
+
+        Returns:
+            Parsed Module from the include file.
+        """
+        from qwl.ast.parser import Parser
+
+        # Resolve the path
+        resolved_path = self.resolver._resolve_module_source(
+            include_path, self.base_dir
+        )
+
+        # Parse the file
+        parser = Parser()
+        included = parser.parse_file(str(resolved_path))
+
+        return included
 
     def _compile_with_bfs(
         self, root_module: Module, env_tree: Dict[str, Any], root_task_names: List[str]
@@ -158,10 +255,12 @@ class Compiler:
         # Root tasks have no prefix, imported tasks have module:task format
         fn_name = task.name if module_name == "" else f"{module_name}:{task.name}"
 
-        # Build task-local context: flattened env + task vars
+        # Build task-local context: flattened env + resolved task vars
         task_context = dict(env_tree)
         if task.vars:
-            task_context.update(task.vars)
+            # Resolve vars - vars can reference other vars or env values
+            resolved_vars = self._resolve_vars(task.vars, task_context)
+            task_context.update(resolved_vars)
 
         # Handle `uses/with` inlining
         if task.uses:
@@ -283,9 +382,48 @@ class Compiler:
 
         return "\n".join(lines)
 
+    def _resolve_vars(
+        self, vars_dict: Dict[str, Any], base_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Resolve vars by rendering any {{ }} references in their values.
+
+        Vars can reference other vars or values from the base context.
+        We process vars in order, adding each resolved var to the context
+        so later vars can reference earlier ones.
+
+        Args:
+            vars_dict: Dictionary of variable names to values (may contain {{ }}).
+            base_context: The base context (env_tree) to start with.
+
+        Returns:
+            Dictionary of resolved variable values.
+        """
+        from jinja2 import Environment
+
+        resolved: Dict[str, Any] = {}
+        # Build up context incrementally so vars can reference earlier vars
+        current_context = dict(base_context)
+
+        env = Environment()
+
+        for var_name, var_value in vars_dict.items():
+            if isinstance(var_value, str) and "{{" in var_value:
+                # Render the var value through Jinja
+                tmpl = env.from_string(var_value)
+                resolved_value = tmpl.render(**current_context)
+                resolved[var_name] = resolved_value
+            else:
+                # Non-string or no template syntax, use as-is
+                resolved[var_name] = var_value
+
+            # Add to current context for subsequent vars
+            current_context[var_name] = resolved[var_name]
+
+        return resolved
+
     def _render(self, template: str, context: Dict[str, Any]) -> str:
         """Render a Jinja template string with context.
-        
+
         Handles special {% qx %}...{% xq %} blocks for remote execution boundaries.
         These blocks generate heredocs with escaped $ and included dependencies.
 
@@ -297,118 +435,122 @@ class Compiler:
             Rendered string.
         """
         from jinja2 import Environment
-        
+
         # First, process {% qx %}...{% xq %} blocks
         template = self._process_qx_blocks(template, context)
 
         env = Environment()
         tmpl = env.from_string(template)
         return tmpl.render(**context)
-    
+
     def _process_qx_blocks(self, template: str, context: Dict[str, Any]) -> str:
         """Process {% qx %}...{% xq %} remote execution boundary blocks.
-        
+
         These blocks define code that should be executed on a remote shell.
         The compiler will:
         1. Detect task references inside the block
         2. Generate a unique heredoc delimiter
         3. Include dependencies via module:include
         4. Escape $ as \\$ for remote evaluation
-        
+
         Args:
             template: Template string that may contain {% qx %} blocks.
             context: Environment context for resolving task references.
-            
+
         Returns:
             Template with {% qx %} blocks replaced by heredoc constructs.
         """
         # Pattern to match {% qx %}...{% xq %} blocks
         pattern = r"\{%\s*qx\s*%\}(.*?)\{%\s*xq\s*%\}"
-        
+
         def replace_qx_block(match: re.Match) -> str:
             block_content = match.group(1)
             return self._generate_heredoc_block(block_content, context)
-        
+
         return re.sub(pattern, replace_qx_block, template, flags=re.DOTALL)
-    
-    def _generate_heredoc_block(self, block_content: str, context: Dict[str, Any]) -> str:
+
+    def _generate_heredoc_block(
+        self, block_content: str, context: Dict[str, Any]
+    ) -> str:
         """Generate a heredoc block for remote execution.
-        
+
         Args:
             block_content: The content inside {% qx %}...{% xq %}.
             context: Environment context.
-            
+
         Returns:
             Heredoc construct with dependencies included.
         """
         import uuid
-        
+
         # Generate unique heredoc delimiter
         heredoc_id = f"QWEX_{uuid.uuid4().hex[:8].upper()}"
-        
+
         # Detect task references in the block ({{ module.task }} patterns)
         # These will be rendered to canonical names like module:task
         task_refs = self._detect_task_refs_in_block(block_content, context)
-        
+
         # Escape $ in the block content for remote evaluation
         # But preserve {{ }} which will be rendered by Jinja later
         escaped_content = self._escape_for_heredoc(block_content)
-        
+
         # Build the heredoc
         if task_refs:
             deps_list = " ".join(sorted(task_refs))
-            heredoc = f'''<< '{heredoc_id}'
+            heredoc = f"""<< '{heredoc_id}'
 $(module:include {deps_list})
 {escaped_content}
-{heredoc_id}'''
+{heredoc_id}"""
         else:
-            heredoc = f'''<< '{heredoc_id}'
+            heredoc = f"""<< '{heredoc_id}'
 {escaped_content}
-{heredoc_id}'''
-        
+{heredoc_id}"""
+
         return heredoc
-    
-    def _detect_task_refs_in_block(self, block: str, context: Dict[str, Any]) -> Set[str]:
+
+    def _detect_task_refs_in_block(
+        self, block: str, context: Dict[str, Any]
+    ) -> Set[str]:
         """Detect task references in a {% qx %} block.
-        
+
         Looks for {{ module.task }} patterns and resolves them to canonical names.
-        
+
         Args:
             block: Content of the qx block.
             context: Environment context.
-            
+
         Returns:
             Set of canonical task names (e.g., {'log:debug', 'utils:color'}).
         """
         refs: Set[str] = set()
-        
+
         # Pattern: {{ module.task }} - module reference
         pattern = r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)"
         matches = re.findall(pattern, block)
-        
+
         for module_ref, task_ref in matches:
             if module_ref in context and isinstance(context[module_ref], dict):
                 module_env = context[module_ref]
                 if task_ref in module_env and isinstance(module_env[task_ref], str):
                     canonical = module_env[task_ref]
                     refs.add(canonical)
-        
+
         # Also detect already-canonical references (module:task patterns)
         canonical_pattern = r"\b([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\b"
         canonical_matches = re.findall(canonical_pattern, block)
         refs.update(canonical_matches)
-        
+
         return refs
-    
+
     def _escape_for_heredoc(self, content: str) -> str:
         """Escape content for use in a heredoc.
-        
+
         Escapes $ as \\$ so variables are evaluated on the remote shell,
         not the local shell.
-        
+
         Args:
             content: Content to escape.
-            
+
         Returns:
             Escaped content.
         """

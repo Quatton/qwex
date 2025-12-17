@@ -247,7 +247,7 @@ def test_canonical_alias_resolution():
 
 def test_qx_boundary_generates_heredoc():
     """Test that {% qx %}...{% xq %} generates heredoc for remote execution.
-    
+
     The compiler should:
     1. Detect {% qx %} blocks
     2. Generate unique heredoc delimiter
@@ -268,14 +268,14 @@ def test_qx_boundary_generates_heredoc():
     script = compiler.compile(module)
 
     fn = next(fn for fn in script.functions if fn.name == "remote_task")
-    
+
     # Should contain heredoc delimiter
     assert "<<" in fn.body
     assert "QWEX_" in fn.body
-    
+
     # $ should be escaped
     assert "\\$USER" in fn.body
-    
+
     # Host var should be rendered
     assert "ssh remote" in fn.body
 
@@ -290,8 +290,8 @@ def test_qx_boundary_includes_dependencies():
             "remote": Task(
                 name="remote",
                 # Reference local task inside qx block
-                run='bash -s {% qx %}{{ local }}{% xq %}',
-            )
+                run="bash -s {% qx %}{{ local }}{% xq %}",
+            ),
         },
     )
 
@@ -299,7 +299,7 @@ def test_qx_boundary_includes_dependencies():
     script = compiler.compile(module)
 
     fn = next(fn for fn in script.functions if fn.name == "remote")
-    
+
     # Since local is a root task, it resolves to just "local"
     # The qx block should include module:include for it
     # Note: root tasks don't have module prefix, so dependency detection may not catch them
