@@ -1464,3 +1464,332 @@ so here's the plan:
 i will make reactnode of bash before thinking about making it run "workflows" i will think about rendering it and composing it first.
 
 how would you submit a kubernetes job?
+
+## Week 13: Dec 17, 2025
+
+### Qwex Compilation Pipeline & Module System (Final Design)
+
+**Context:** We've settled on a clean YAML → Bash compilation pipeline with a module system for code reuse.
+
+#### 1. Syntax & Grammar
+
+**Root module (user-written YAML):**
+```yaml
+name: hello-world
+
+modules:
+  log:
+    source: qstd/log.yaml
+  steps:
+    source: qstd/steps.yaml
+  module:  # @module is auto-loaded for dependency registration
+    source: qstd/module.yaml
+
+vars:
+  compile_time_var: "This is inlined at compile time"
+
+tasks:
+  greet:
+    run: echo "Hello, World!"
+  
+  say:
+    args:
+      - name: message
+        default: "Hello!"
+      - name: times
+        default: 1
+    vars:
+      scoped_var: "Function-scoped variable"
+    run: |
+      echo "{{ vars.scoped_var }}"
+      for i in $(seq 1 {{ args.times }}); do
+        echo "{{ args.message }}"
+      done
+  
+  debug:
+    run: {{ log.tasks.debug }} "Debugging message"
+  
+  composite:
+    uses: steps.tasks.step  # Inline expansion (macro)
+    with:
+      - name: "Step 1"
+        run: "{{ tasks.greet }}"
+      - name: "Step 2"
+        run: "{{ tasks.debug }}"
+```
+
+**Reference formats (full paths, syntactic sugar deferred):**
+- `{{ vars.X }}` - module-level var
+- `{{ tasks.greet }}` - task in this module → renders to `hello-world:greet`
+- `{{ args.message }}` - task-level arg → renders to `${1:-default}` or `${MESSAGE:-default}`
+- `{{ log.tasks.debug }}` - imported module task → renders to `log:debug`
+- `{{ log.vars.LEVEL }}` - imported module var
+- Shorthand (future): `{{ debug }}`, `{{ log.debug }}` (with precedence lookup)
+
+**Reserved keywords (cannot be module names):**
+- `vars`, `tasks`, `args`, `name`, `modules`
+
+#### 2. Compilation Pipeline Overview
+
+**Stage 1: Parse** 
+- Load YAML → AST (Module, Task, Args)
+- Validate structure
+
+**Stage 2: Resolve**
+- Load all modules recursively (e.g., `qstd/log.yaml`, `qstd/steps.yaml`)
+- Build flat module registry: `{"__main__": Module, "log": Module, "steps": Module, ...}`
+- Construct environment tree (Jinja context)
+
+**Stage 3: Compile to IR**
+- For each task, flatten and merge vars/args/tasks into accessible scope
+- Render Jinja templates with task-specific context
+- Detect function references (`{{ log.tasks.debug }}` → `log:debug`) → dependencies
+- Inline `uses/with` blocks (macro expansion)
+- Output: `BashScript` IR with functions, dependencies, metadata
+
+**Stage 4: Render to Bash**
+- Emit preamble (`#!/bin/bash`, `set -u`)
+- Emit `@module` functions (dependency registration, includes)
+- Emit all compiled functions with dependency registration lines
+- Emit entrypoint (`help` or task dispatch)
+
+#### 3. Environment Tree & Variable Scoping
+
+**Global environment tree (built after module resolution):**
+```python
+{
+  "name": "hello-world",
+  "vars": {
+    "compile_time_var": "value"
+  },
+  "tasks": {
+    "greet": {
+      "run": "echo 'Hello, World!'",
+      "vars": {},
+      "args": []
+    },
+    "say": {
+      "run": "...",
+      "vars": { "scoped_var": "Function-scoped variable" },
+      "args": [
+        { "name": "message", "default": "Hello!", "positional": 1 },
+        { "name": "times", "default": 1, "positional": 2 }
+      ]
+    }
+  },
+  "log": {
+    "name": "log",
+    "vars": { "LEVEL": "DEBUG" },
+    "tasks": {
+      "debug": { "run": "...", "vars": {}, "args": [...] }
+    }
+  },
+  "steps": {
+    "name": "steps",
+    "vars": {},
+    "tasks": {
+      "step": { "run": "...", "vars": {}, "args": [...] },
+      "steps": { "run": "...", "vars": {}, "args": [...] }  # Multi-step composite
+    }
+  },
+  "module": {
+    "name": "module",
+    "tasks": {
+      "register_dependency": {...},
+      "collect_dependencies": {...},
+      "include": {...}
+    }
+  }
+}
+```
+
+**Task-scoped Jinja context (when rendering a single task):**
+```python
+{
+  "name": "hello-world",  # root module name
+  "vars": { "compile_time_var": "..." },  # root module vars
+  "tasks": { "greet": "hello-world:greet", ... },  # task refs (canonical names)
+  "args": { "message": "${1:-Hello!}", "times": "${2:-1}" },  # this task's args
+  
+  # Imported modules (same structure)
+  "log": { "name": "log", "vars": {...}, "tasks": {...} },
+  "steps": { "name": "steps", "vars": {...}, "tasks": {...} },
+  "module": { ... }
+}
+```
+
+**Scoping rules:**
+- Args only visible within task scope
+- Task-level vars override root vars (shadow)
+- Module context is flat and accessible at any depth
+- Jinja sees **flattened** tree; no nesting deeper than `module.vars|tasks|args`
+
+#### 4. Function Visibility & Dependencies
+
+**What each compiled function sees:**
+- Access to all root-level and imported module tasks/vars via Jinja context
+- Bash cannot access Jinja vars; they're rendered at compile time
+- Function dependencies tracked via reference scanning (e.g., `log:debug` in function body)
+
+**Dependency detection:**
+- Walk Jinja AST (or simple string scan) for `{{ module.tasks.X }}`
+- Map to canonical name: `log:debug`
+- Store in `BashFunction.dependencies`
+- Render `module:register_dependency "func_name" "dep1 dep2 ..."`
+
+**Execution model (at runtime in bash):**
+```bash
+module:register_dependency "hello-world:say" "log:debug steps:step"
+module:include "hello-world:say"  # Declares all transitive deps first
+```
+
+#### 5. Jinja Macros & Inlining (`uses/with`)
+
+**Inlining via Jinja macro (not yet implemented but planned):**
+```yaml
+debug-vars:
+  uses: steps.tasks.step
+  with:
+    - name: "Step A"
+      run: "{{ tasks.greet }}"
+    - name: "Step B"
+      run: "{{ tasks.debug }}"
+```
+
+**Compiler behavior:**
+1. Resolve `uses` to task definition (e.g., `steps.step` → load from `qstd/steps.yaml`)
+2. Inline the referenced task body
+3. Substitute `with` values as positional args or loop vars
+4. No new function created; body is copied into caller
+5. No dependency on `steps:step` at runtime (already inlined)
+
+**Equivalent to writing:**
+```yaml
+debug-vars:
+  run: |
+    {% for step in with %}
+      # Inline call to steps.step logic with `step` as context
+    {% endfor %}
+```
+
+#### 6. Shorthand & Syntactic Sugar (TODO)
+
+**Deferred to Phase 2 (post-MVP):**
+- `{{ debug }}` → lookup `vars.debug` or `tasks.debug` with precedence
+- `{{ log.debug }}` → lookup `log.vars.debug` or `log.tasks.debug`
+- `$message` syntax for args (using Jinja custom filters)
+
+**Explicit namespace required for MVP:**
+- Always use `{{ vars.X }}`, `{{ tasks.X }}`, `{{ args.X }}`, `{{ module.tasks.X }}`
+
+#### 7. Module Registry & Include Mechanics
+
+**Module loading (in Resolver):**
+1. Parse root YAML
+2. For each entry in `modules:`, load `source:` file recursively
+3. Build flat registry (no nesting)
+4. Validate no reserved keywords used as module names
+5. Inject `module` (or `@module`) functions for dependency tracking
+
+**At runtime (bash):**
+```bash
+# In preamble / header:
+module:register_dependency () { ... }
+module:collect_dependencies () { ... }
+module:include () { ... }
+
+# Before executing user task:
+module:include "log:debug"
+# This declares log:debug and all its transitive dependencies
+```
+
+**Special case: `@module` (or `module`)**
+- Always loaded from `qstd/module.yaml` (or provided)
+- Contains core functions: `register_dependency`, `collect_dependencies`, `include`
+- Cannot be overridden by user
+
+#### 8. Standard Library Modules
+
+**Structure:**
+```
+qstd/
+  module.yaml       # Core: register_dependency, collect_dependencies, include
+  log.yaml          # Logging: debug (depends on: utils:once, utils:color)
+  utils.yaml        # Utilities: once, color
+  steps.yaml        # Steps: step (single), steps (multi)
+```
+
+**Dependency graph:**
+```
+log:debug → utils:once, utils:color
+steps:step → (no deps)
+steps:steps → (no deps) # Composite task, inlined
+module:include → (no deps, builtin)
+```
+
+**Example `qstd/log.yaml`:**
+```yaml
+name: log
+
+tasks:
+  debug:
+    args:
+      - name: message
+        default: ""
+        positional: 1
+    run: |
+      if [ "${DEBUG:-0}" -eq 0 ]; then
+        return
+      fi
+      {{ utils.tasks.once }} "utils:color"
+      echo -e "$1" >&2
+```
+
+**Example `qstd/utils.yaml`:**
+```yaml
+name: utils
+
+tasks:
+  once:
+    args:
+      - name: key
+        positional: 1
+      - name: command
+        positional: 2
+    run: |
+      declare -gA UTILS_ONCE_HASHSET
+      if [[ -z "${UTILS_ONCE_HASHSET[$1]+x}" ]]; then
+        UTILS_ONCE_HASHSET[$1]=1
+        eval "$2"
+      fi
+  
+  color:
+    run: |
+      if [ -t 1 ]; then
+        Q_RED='\033[0;31m'
+        Q_GREEN='\033[0;32m'
+        Q_BLUE='\033[0;34m'
+        Q_RESET='\033[0m'
+      else
+        Q_RED='' Q_GREEN='' Q_BLUE='' Q_RESET=''
+      fi
+```
+
+#### Implementation Roadmap
+
+**Phase 1 (Current): Full-path references + Module loading**
+- [x] Parser (AST)
+- [ ] Resolver (module loading, env tree construction)
+- [ ] Compiler IR (BashScript, BashFunction with deps)
+- [ ] Renderer (bash emission)
+- [ ] Test playgrounds (module_run_usage, task_with_args, module_inline, module-uses-with)
+
+**Phase 2 (Future): Syntactic sugar**
+- [ ] Shorthand lookup ({{ debug }} → vars/tasks precedence)
+- [ ] `$arg` syntax for args
+- [ ] Optional args (getopt) & named args
+
+**Phase 3 (Future): Advanced**
+- [ ] Automatic dependency detection via Jinja AST walk
+- [ ] Inlining macros (`uses/with` → compile-time expansion)
+- [ ] Validation & type hints for args/vars
