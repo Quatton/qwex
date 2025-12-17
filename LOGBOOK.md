@@ -2071,7 +2071,7 @@ render_bash(task_nodes, root_tasks)
 
 ---
 
-## Dec 17, 2025 (Late Evening): Args vs Vars Namespace Debate
+## Dec 17, 2025: Args vs Vars Namespace Debate
 
 ### The Question
 
@@ -2177,6 +2177,3 @@ tasks:
 - More Pythonic: "explicit is better than implicit" (the template IS explicit)
 
 ---
-
-
-
