@@ -80,13 +80,72 @@ class Compiler:
                 args_context[arg.name] = f"${{{arg.name.upper()}:-{arg.default or ''}}}"
         task_context["args"] = args_context
 
-        # Render the body with Jinja
-        body = self._render(task.run or "", task_context)
+        # Handle `uses/with` inlining
+        if task.uses:
+            body = self._compile_uses_with(task.uses, task.with_, env_tree, task_context)
+        else:
+            # Render the body with Jinja
+            body = self._render(task.run or "", task_context)
 
         # Detect dependencies from rendered body (look for module:task patterns)
         deps = self._detect_dependencies(body)
 
         return BashFunction(name=fn_name, body=body, dependencies=list(deps))
+
+    def _compile_uses_with(
+        self,
+        uses: str,
+        with_items: list,
+        env_tree: Dict[str, Any],
+        task_context: Dict[str, Any],
+    ) -> str:
+        """Compile a uses/with block by inlining and expanding the referenced task.
+
+        Args:
+            uses: Reference to task (e.g., "steps.step" or "log.debug").
+            with_items: List of items to substitute (positional args or dict mappings).
+            env_tree: Full environment tree.
+            task_context: Task-local context for rendering.
+
+        Returns:
+            Inlined and expanded bash body.
+        """
+        # Parse the uses reference: module.task or just module:task canonical
+        parts = uses.split(".")
+        if len(parts) != 2:
+            raise ValueError(f"Invalid uses reference: {uses} (expected module.task)")
+
+        module_name, task_name = parts
+
+        # Lookup the referenced task in env_tree
+        if module_name not in env_tree:
+            raise ValueError(f"Module '{module_name}' not found in modules")
+
+        module_env = env_tree[module_name]
+        if "tasks" not in module_env or task_name not in module_env["tasks"]:
+            raise ValueError(f"Task '{task_name}' not found in module '{module_name}'")
+
+        # Get the canonical name (e.g., "steps:step")
+        canonical_name = module_env["tasks"][task_name]
+
+        # Build a list of inlined commands, one per with_item
+        lines = []
+
+        for item in with_items:
+            if isinstance(item, dict):
+                # Dict item with name and run: inline the run command
+                run_cmd = item.get("run", "")
+                rendered_cmd = self._render(run_cmd, task_context)
+                lines.append(rendered_cmd)
+            elif isinstance(item, str):
+                # Simple string: treat as positional arg to the referenced task
+                lines.append(f"{canonical_name} {item}")
+            else:
+                # Default: render as is
+                rendered = self._render(str(item), task_context)
+                lines.append(rendered)
+
+        return "\n".join(lines)
 
     def _render(self, template: str, context: Dict[str, Any]) -> str:
         """Render a Jinja template string with context.
