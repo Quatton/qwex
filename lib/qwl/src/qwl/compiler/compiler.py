@@ -225,6 +225,14 @@ class Compiler:
             # Compile the task
             fn = self._compile_task(alias, task, mod_env)
 
+            # Also check for dependencies in the rendered body (post-render)
+            # These are canonical names like "log:_should_log" that weren't
+            # detected from the template but appear after rendering
+            for dep_canonical in fn.dependencies:
+                if dep_canonical not in visited and ":" in dep_canonical:
+                    dep_alias, dep_task = dep_canonical.split(":", 1)
+                    queue.append((dep_alias, dep_task))
+
             # Body-hash deduplication
             body_hash = hashlib.sha256(fn.body.encode()).hexdigest()[:16]
             if body_hash in body_hash_to_fqn:

@@ -2,6 +2,18 @@ name: local-ssh-docker-k8s
 
 defaults: [manual]
 
+modules:
+  steps:
+    source: std/steps
+  log:
+    source: std/log
+  test:
+    source: std/test
+
+vars:
+  # Store the starting directory for consistent paths
+  workspace_path: "${QWEX_START_DIR:-$PWD}/demo"
+
 presets:
   qwex:
     vars:
@@ -12,9 +24,28 @@ presets:
 
 tasks:
   # Setup tasks
+  setup-uv:
+    run: |
+      mkdir -p "{{ workspace_path }}"
+      cd "{{ workspace_path }}"
+      if [ ! -f "pyproject.toml" ]; then
+        uv init --name demo
+        echo 'print("Hello from demo!")' > hello.py
+      fi
+
+  setup-git:
+    run: |
+      cd "{{ workspace_path }}"
+      if [ ! -d ".git" ]; then
+        git init
+        git add -A
+        git commit -m "Initial commit"
+      fi
+
   setup-workspace:
     run: |
-      echo "Setting up workspace..."
+      {{ steps.step }} "setup-uv" "setup-uv"
+      {{ steps.step }} "setup-git" "setup-git"
   
   setup-local:
     run: |
@@ -70,6 +101,21 @@ tasks:
     run: |
       echo "Cleaning K8s backend..."
 
+  clean-workspace:
+    run: |
+      rm -rf "{{ workspace_path }}"
+
   clean-all:
     run: |
-      echo "Cleaning all backends..."
+      clean-workspace
+      echo "Cleaned all backends..."
+
+  # Test task
+  test-workspace:
+    run: |
+      clean-workspace
+      setup-workspace
+      {{ test.assert_dir }} "demo directory exists" "{{ workspace_path }}"
+      {{ test.assert_file }} "hello.py exists" "{{ workspace_path }}/hello.py"
+      {{ test.assert_dir }} ".git directory exists" "{{ workspace_path }}/.git"
+      clean-workspace

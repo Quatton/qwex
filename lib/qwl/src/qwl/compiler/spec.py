@@ -4,7 +4,10 @@ from dataclasses import dataclass, field
 from typing import List
 
 
-DEFAULT_PREAMBLE = "#!/usr/bin/env bash\n\nset -u"
+DEFAULT_PREAMBLE = """#!/usr/bin/env bash
+
+set -u
+QWEX_START_DIR="${QWEX_START_DIR:-$PWD}\""""
 
 MODULE_HEADER = """
 module:register_dependency () {
