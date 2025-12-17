@@ -19,6 +19,8 @@ class Resolver:
         self.base_dir = base_dir or Path.cwd()
         self.parser = Parser()
         self._module_cache: Dict[str, Module] = {}
+        # Map module name -> source file path
+        self._source_map: Dict[str, Path] = {}
 
     def resolve(self, root_module: Module) -> Dict[str, Any]:
         """Resolve all modules and build environment tree.
@@ -37,6 +39,8 @@ class Resolver:
             }
         """
         # Load all imported modules recursively
+        # Note: the root module may not have an associated path here; callers can
+        # optionally populate self._source_map for the root if known.
         self._load_modules_recursive(root_module, module_dir=self.base_dir)
 
         # Build environment tree
@@ -44,7 +48,12 @@ class Resolver:
 
         return env
 
-    def _load_modules_recursive(self, module: Module, visited: Optional[set] = None, module_dir: Optional[Path] = None):
+    def _load_modules_recursive(
+        self,
+        module: Module,
+        visited: Optional[set] = None,
+        module_dir: Optional[Path] = None,
+    ):
         """Load all modules referenced by the given module (recursive).
 
         Args:
@@ -70,10 +79,13 @@ class Resolver:
             # Resolve source path relative to the module's own directory
             source_path = module_dir / mod_ref.source
             if not source_path.exists():
-                raise FileNotFoundError(f"Module source not found: {mod_ref.source} (resolved to {source_path})")
+                raise FileNotFoundError(
+                    f"Module source not found: {mod_ref.source} (resolved to {source_path})"
+                )
 
             loaded = self.parser.parse_file(str(source_path))
             self._module_cache[mod_ref.name] = loaded
+            self._source_map[mod_ref.name] = source_path
 
             # Recursively load modules from imported module, with its own directory as base
             module_source_dir = source_path.parent

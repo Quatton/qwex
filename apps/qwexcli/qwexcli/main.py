@@ -64,7 +64,7 @@ def compile_cmd(
 
     Example:
         qwex compile playground/hello-world/qwex.yaml
-        qwex compile playground/hello-world/qwex.yaml -o .qwex/_internal/compiled/noop.sh
+        qwex compile playground/hello-world/qwex.yaml -o /tmp/out.sh
     """
     try:
         module = Parser().parse_file(str(filepath))

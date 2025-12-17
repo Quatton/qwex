@@ -76,4 +76,4 @@ class BashScript:
     available_tasks: List[str] = field(
         default_factory=list
     )  # list of task names for help
-    entrypoint: str = "if [ $# -eq 0 ]; then help; else \"$@\"; fi"
+    entrypoint: str = 'if [ $# -eq 0 ]; then help; else "$@"; fi'

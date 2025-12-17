@@ -90,7 +90,9 @@ class Compiler:
 
         # Handle `uses/with` inlining
         if task.uses:
-            body = self._compile_uses_with(task.uses, task.with_, env_tree, task_context)
+            body = self._compile_uses_with(
+                task.uses, task.with_, env_tree, task_context
+            )
         else:
             # Render the body with Jinja
             body = self._render(task.run or "", task_context)
@@ -183,7 +185,7 @@ class Compiler:
             Set of canonical function names (e.g., {'log:debug', 'steps:step'}).
         """
         # Match pattern: word:word (module:task)
-        pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\b'
+        pattern = r"\b([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\b"
         matches = re.findall(pattern, body)
         return set(matches)
 
@@ -199,4 +201,3 @@ class Compiler:
 
         body = "\n".join(lines)
         return BashFunction(name="help", body=body, dependencies=[])
-

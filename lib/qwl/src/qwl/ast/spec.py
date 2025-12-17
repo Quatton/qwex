@@ -58,9 +58,7 @@ class Module:
             else:
                 raise ValueError(f"Module '{mname}' must have 'source' field")
 
-        return cls(
-            name=str(name), vars=dict(vars_), tasks=tasks, modules=modules
-        )
+        return cls(name=str(name), vars=dict(vars_), tasks=tasks, modules=modules)
 
 
 @dataclass
