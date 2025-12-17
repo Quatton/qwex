@@ -1,0 +1,46 @@
+name: hello-world
+
+modules:
+  log: 
+    source: qstd/log.yaml
+  steps:
+    source: qstd/steps.yaml
+  "@internal": 
+    source: qstd/module.yaml
+
+tasks:
+  greet:
+    run: |
+      echo "Hello, World!"
+  debug:
+    run: |
+      {{ modules.log.debug }} "Debugging Hello World Module"
+  say:
+    args:
+      - name: message
+        default: "Hello from Hello World Module!"
+        positional: true
+      - name: times
+        default: 1
+    run: |
+      # using $ in command is raw by default. You don't need to escape it.
+      for i in $(seq 1 {{ args.times }}); do
+        echo "{{ args.message }}"
+      done
+  debug-vars:
+    uses: log.debug
+    with:
+      - "Debugging Hello World Module with Variables"
+      - "Module Name: {{ module.name }}"
+      - "Available Tasks: {{ module.tasks | keys | join(', ') }}"
+  runstep:
+    run: |
+      {{ modules.steps.step }} "Greet Step" "{{ module.tasks.greet }}"
+      {{ modules.steps.step }} "Debug Step" "{{ module.tasks.debug }}"
+  runsteps-vars:
+    uses: steps.steps
+    with:
+      - name: "Great Step"
+        command: "{{ module.tasks.greet }}"
+      - name: "Debug Step"
+        command: "{{ module.tasks.debug }}"

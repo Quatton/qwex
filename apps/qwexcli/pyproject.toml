@@ -4,9 +4,17 @@ dynamic = ["version"]
 description = "Qwex CLI - Run orchestration for ML workflows"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["typer>=0.9.0", "rich>=13.0.0", "pydantic>=2.0.0", "pyyaml>=6.0.0", "jinja2>=3.0.0"]
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0.0",
+    "jinja2>=3.0.0",
+    "qwl",
+]
 
 [tool.uv.sources]
+qwl = { workspace = true }
 
 [project.scripts]
 qwex = "qwexcli.main:app"

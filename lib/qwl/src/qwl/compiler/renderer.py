@@ -15,7 +15,7 @@ class Renderer:
         Returns:
             Complete bash script as a string.
         """
-        parts = [script.preamble, ""]
+        parts = [script.preamble, script.header.strip(), ""]
 
         # Emit each function definition + dependency registration
         for fn in script.functions:

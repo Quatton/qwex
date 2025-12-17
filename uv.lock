@@ -329,12 +329,13 @@ source = { virtual = "." }
 
 [[package]]
 name = "qwexcli"
-version = "2025.12.2.dev42+g272cb3739.d20251213"
+version = "2025.12.2.dev48+g52a1da21f.d20251217"
 source = { editable = "apps/qwexcli" }
 dependencies = [
     { name = "jinja2" },
     { name = "pydantic" },
     { name = "pyyaml" },
+    { name = "qwl" },
     { name = "rich" },
     { name = "typer" },
 ]
@@ -350,6 +351,7 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.0.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "qwl", editable = "lib/qwl" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "typer", specifier = ">=0.9.0" },
 ]

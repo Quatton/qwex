@@ -12,7 +12,9 @@ class Compiler:
     def __init__(self):
         pass
 
-    def compile(self, module: Module, context: Optional[Dict[str, Any]] = None) -> BashScript:
+    def compile(
+        self, module: Module, context: Optional[Dict[str, Any]] = None
+    ) -> BashScript:
         """Compile a Module into a BashScript IR.
 
         Args:
@@ -34,6 +36,8 @@ class Compiler:
         for task_name, task in module.tasks.items():
             fn = self._compile_task(module.name, task, ctx)
             functions.append(fn)
+
+        functions.append(self._compile_help(module))
 
         return BashScript(functions=functions)
 
@@ -76,3 +80,17 @@ class Compiler:
         env = Environment()
         tmpl = env.from_string(template)
         return tmpl.render(**context)
+
+    def _compile_help(self, module: Module) -> BashFunction:
+        """Create a simple help function listing available tasks."""
+
+        lines = [
+            'echo "Usage: $0 [task]"',
+            'echo ""',
+            'echo "Tasks:"',
+        ]
+        for task_name in module.tasks:
+            lines.append(f'echo "  {task_name}"')
+
+        body = "\n".join(lines)
+        return BashFunction(name="help", body=body, dependencies=[])
