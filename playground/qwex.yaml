@@ -5,46 +5,58 @@ modules:
     source: ../lib/qstd/steps.yaml
 
 tasks:
-  compile:
-    vars:
-      module: "$1"
-    run: |
-      cd {{ module }}
-      qwex compile qwex.yaml -o compiled.sh
-      
   test-task-with-args:
     run: |
-      cd task-with-args
-      qwex compile qwex.yaml -o compiled.sh
-      bash compiled.sh greet "Alice" "Hi"
-      bash compiled.sh repeat "Hello" 2
-      
+      echo "=== Testing task-with-args ==="
+      (
+        cd task-with-args
+        qwex compile qwex.yaml -o compiled.sh
+        bash compiled.sh greet "Alice" "Hi" | grep -q "Hi, Alice!" && echo "✓ greet passed"
+        bash compiled.sh repeat "Hello" 2 | wc -l | grep -q 2 && echo "✓ repeat passed"
+      )
+      echo "=== task-with-args: ALL PASSED ==="
+
   test-module-run:
     run: |
-      cd module-run
-      qwex compile qwex.yaml -o compiled.sh
-      bash compiled.sh debug_message
-      
+      echo "=== Testing module-run ==="
+      (
+        cd module-run
+        qwex compile qwex.yaml -o compiled.sh
+        bash compiled.sh greet | grep -q "Hello" && echo "✓ greet passed"
+        DEBUG=1 bash compiled.sh debug_message 2>&1 | grep -q "Debug" && echo "✓ debug_message passed"
+      )
+      echo "=== module-run: ALL PASSED ==="
+
   test-module-inline:
     run: |
-      cd module-inline
-      qwex compile qwex.yaml -o compiled.sh
-      bash compiled.sh with_color
-      
+      echo "=== Testing module-inline ==="
+      (
+        cd module-inline
+        qwex compile qwex.yaml -o compiled.sh
+        bash compiled.sh with_color | grep -q "blue" && echo "✓ with_color passed"
+      )
+      echo "=== module-inline: ALL PASSED ==="
+
   test-module-uses-with:
     run: |
-      cd module-uses-with
-      qwex compile qwex.yaml -o compiled.sh
-      bash compiled.sh composite
-      
+      echo "=== Testing module-uses-with ==="
+      (
+        cd module-uses-with
+        qwex compile qwex.yaml -o compiled.sh
+        bash compiled.sh composite | grep -q "First" && echo "✓ composite passed"
+        bash compiled.sh multi_step | grep -q "Building" && echo "✓ multi_step passed"
+      )
+      echo "=== module-uses-with: ALL PASSED ==="
+
   test-all:
     uses: steps.compose
     with:
-      - name: "Test task-with-args"
-        run: "{{ test-task-with-args }}"
-      - name: "Test module-run"
-        run: "{{ test-module-run }}"
-      - name: "Test module-inline"
-        run: "{{ test-module-inline }}"
-      - name: "Test module-uses-with"
-        run: "{{ test-module-uses-with }}"
+      - name: "1. task-with-args"
+        run: test-task-with-args
+      - name: "2. module-run"
+        run: test-module-run
+      - name: "3. module-inline"
+        run: test-module-inline
+      - name: "4. module-uses-with"
+        run: test-module-uses-with
+

@@ -24,6 +24,7 @@ class Renderer:
 
         # Entrypoint
         parts.append(script.entrypoint)
+        parts.append("")  # Trailing newline
 
         return "\n".join(parts)
 

@@ -39,9 +39,11 @@ class Compiler:
         emitted_fns: set[str] = set()
 
         # Helper to compile module tasks recursively
-        def emit_module_tasks(mod: Module, mod_env: Dict[str, Any]):
+        def emit_module_tasks(mod: Module, mod_env: Dict[str, Any], is_root: bool = False):
+            # Root module uses empty namespace, imported modules use their name
+            namespace = "" if is_root else mod.name
             for task in mod.tasks.values():
-                fn = self._compile_task(mod.name, task, mod_env)
+                fn = self._compile_task(namespace, task, mod_env)
                 if fn.name not in emitted_fns:
                     emitted_fns.add(fn.name)
                     functions.append(fn)
@@ -51,10 +53,10 @@ class Compiler:
                 loaded = self.resolver._module_cache.get(mod_ref_name)
                 if loaded and mod_ref_name in mod_env:
                     sub_env = mod_env[mod_ref_name]
-                    emit_module_tasks(loaded, sub_env)
+                    emit_module_tasks(loaded, sub_env, is_root=False)
 
-        # Start with root module
-        emit_module_tasks(module, env_tree)
+        # Start with root module (is_root=True)
+        emit_module_tasks(module, env_tree, is_root=True)
 
         # Auto-generate help function
         functions.append(self._compile_help(task_names))
@@ -68,14 +70,15 @@ class Compiler:
         """Compile a single Task to a BashFunction.
 
         Args:
-            module_name: The parent module's name (for namespacing).
+            module_name: The parent module's name (for namespacing). Empty string for root.
             task: The Task to compile.
             env_tree: Full environment tree from resolver.
 
         Returns:
             BashFunction with rendered body and dependencies detected.
         """
-        fn_name = f"{module_name}:{task.name}"
+        # Root tasks have no prefix, imported tasks have module:task format
+        fn_name = task.name if module_name == "" else f"{module_name}:{task.name}"
 
         # Build task-local context: flattened env + task vars
         task_context = dict(env_tree)

@@ -110,13 +110,17 @@ class Resolver:
 
         return resolved
 
-    def _build_env_tree(self, root_module: Module) -> Dict[str, Any]:
+    def _build_env_tree(self, root_module: Module, is_root: bool = True) -> Dict[str, Any]:
         """Build the environment tree for Jinja rendering.
 
         Returns a flattened dictionary where:
         - vars are at the root
         - tasks are at the root (name -> canonical name)
         - imported modules are at the root (name -> env dict)
+        
+        Args:
+            root_module: The module to build env for.
+            is_root: If True, tasks use empty namespace (just "taskname").
         """
         # Start with vars
         env: Dict[str, Any] = dict(root_module.vars)
@@ -125,13 +129,17 @@ class Resolver:
         env["module_name"] = root_module.name
 
         # Add tasks (name -> canonical name)
+        # Root tasks have no prefix, imported tasks have module:task format
         for name in root_module.tasks:
-            env[name] = f"{root_module.name}:{name}"
+            if is_root:
+                env[name] = name  # Root: just "greet"
+            else:
+                env[name] = f"{root_module.name}:{name}"  # Imported: "log:debug"
 
         # Add imported modules to environment
         for mod_ref in root_module.modules.values():
             loaded = self._module_cache.get(mod_ref.name)
             if loaded:
-                env[mod_ref.name] = self._build_env_tree(loaded)
+                env[mod_ref.name] = self._build_env_tree(loaded, is_root=False)
 
         return env
