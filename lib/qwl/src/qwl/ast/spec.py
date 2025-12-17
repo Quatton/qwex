@@ -59,7 +59,7 @@ class Task:
 @dataclass
 class Preset:
     """A preset is like a partial module - can define vars, tasks, includes, and modules.
-    
+
     When activated, its content is merged into the root module.
     Presets are applied in order, with later presets overriding earlier ones.
     The root module's own definitions have highest priority.
@@ -101,7 +101,9 @@ class Preset:
             if isinstance(md, dict) and "source" in md:
                 modules[mname] = ModuleRef(name=mname, source=md["source"])
             else:
-                raise ValueError(f"Preset '{name}' module '{mname}' must have 'source' field")
+                raise ValueError(
+                    f"Preset '{name}' module '{mname}' must have 'source' field"
+                )
 
         return cls(
             name=name,

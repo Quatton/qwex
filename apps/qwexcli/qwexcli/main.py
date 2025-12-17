@@ -59,19 +59,25 @@ def is_yaml_file(arg: str) -> bool:
     }
 )
 @click.option("-v", "--version", is_flag=True, help="Show version and exit.")
-@click.option("-h", "--help", "show_help", is_flag=True, help="Show this help and exit.")
 @click.option(
-    "-p", "--preset", "--presets",
+    "-h", "--help", "show_help", is_flag=True, help="Show this help and exit."
+)
+@click.option(
+    "-p",
+    "--preset",
+    "--presets",
     "presets",
     help="Comma-separated list of presets to apply.",
 )
 @click.option(
-    "-o", "--output",
+    "-o",
+    "--output",
     type=click.Path(path_type=Path),
     help="Output compiled bash to file instead of executing.",
 )
 @click.option(
-    "-f", "--file",
+    "-f",
+    "--file",
     "file_path",
     type=click.Path(exists=True, path_type=Path),
     help="Path to qwex.yaml file.",
@@ -130,7 +136,9 @@ def cli(
     if filepath is None:
         filepath = find_qwex_file()
         if filepath is None:
-            click.echo("Error: No qwex.yaml found in current directory or parents.", err=True)
+            click.echo(
+                "Error: No qwex.yaml found in current directory or parents.", err=True
+            )
             raise SystemExit(1)
 
     try:
