@@ -1,0 +1,21 @@
+name: steps
+
+tasks:
+  step:
+    args:
+      - name: name
+        positional: 1
+      - name: command
+        positional: 2
+    run: |
+      echo "Running step: $1"
+      eval "$2"
+
+  steps:
+    args:
+      - name: steps_json
+        positional: 1
+    run: |
+      echo "Running multiple steps from: $1"
+      # This would be parsed and executed, but for now just a stub
+      echo "Steps not fully implemented yet"

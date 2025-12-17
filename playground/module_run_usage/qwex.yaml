@@ -1,0 +1,13 @@
+name: module_run_usage
+
+modules:
+  log:
+    source: ../../lib/qstd/log.yaml
+
+tasks:
+  greet:
+    run: echo "Hello from module_run_usage"
+  
+  debug_message:
+    run: |
+      {{ log.tasks.debug }} "Debug message"

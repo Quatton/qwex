@@ -1,9 +1,18 @@
 name: log
 
+modules:
+  utils:
+    source: utils.yaml
+
 tasks:
   debug:
+    args:
+      - name: message
+        default: ""
+        positional: 1
     run: |
       if [ "${DEBUG:-0}" -eq 0 ]; then
         return
       fi
-      echo -e "$*" >&2
+      {{ utils.tasks.once }} "utils:color" "{{ utils.tasks.color }}"
+      echo -e "$1" >&2

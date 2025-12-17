@@ -1,0 +1,12 @@
+name: module_inline
+
+modules:
+  utils:
+    source: ../../lib/qstd/utils.yaml
+
+tasks:
+  with_color:
+    run: |
+      {{ utils.tasks.color }}
+      echo "${Q_BLUE}This text is blue${Q_RESET}"
+      echo "${Q_GREEN}This text is green${Q_RESET}"

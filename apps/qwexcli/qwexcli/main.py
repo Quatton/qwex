@@ -68,7 +68,9 @@ def compile_cmd(
     """
     try:
         module = Parser().parse_file(str(filepath))
-        script = Compiler().compile(module)
+        base_dir = filepath.parent
+        compiler = Compiler(base_dir=base_dir)
+        script = compiler.compile(module)
         bash = Renderer().render(script)
 
         if out is not None:

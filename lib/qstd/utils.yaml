@@ -1,0 +1,27 @@
+name: utils
+
+tasks:
+  once:
+    args:
+      - name: key
+        positional: 1
+      - name: command
+        positional: 2
+    run: |
+      declare -gA UTILS_ONCE_HASHSET
+      if [[ -z "${UTILS_ONCE_HASHSET[$1]+x}" ]]; then
+        UTILS_ONCE_HASHSET[$1]=1
+        eval "$2"
+      fi
+
+  color:
+    run: |
+      if [ -t 1 ]; then
+        Q_RED='\033[0;31m'
+        Q_GREEN='\033[0;32m'
+        Q_BLUE='\033[0;34m'
+        Q_GRAY='\033[0;90m'
+        Q_RESET='\033[0m'
+      else
+        Q_RED='' Q_GREEN='' Q_BLUE='' Q_GRAY='' Q_RESET=''
+      fi

@@ -1,0 +1,12 @@
+name: module-uses-with
+
+modules:
+  steps:
+    source: ../../lib/qstd/steps.yaml
+
+tasks:
+  composite:
+    uses: steps.step
+    with:
+      - name: "Step 1"
+        run: "echo First step"

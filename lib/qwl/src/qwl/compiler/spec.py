@@ -58,11 +58,12 @@ module:register_dependency "module:include" ""
 class BashFunction:
     """A single bash function definition."""
 
-    name: str  # e.g., "std:step"
+    name: str  # e.g., "hello-world:greet"
     body: str  # rendered function body
     dependencies: List[str] = field(
         default_factory=list
-    )  # e.g., ["std:once", "log:debug"]
+    )  # e.g., ["log:debug", "steps:step"]
+    description: str = ""  # optional description
 
 
 @dataclass
@@ -72,4 +73,7 @@ class BashScript:
     preamble: str = DEFAULT_PREAMBLE
     header: str = MODULE_HEADER
     functions: List[BashFunction] = field(default_factory=list)
-    entrypoint: str = "${@:-help}"  # default entrypoint calls help
+    available_tasks: List[str] = field(
+        default_factory=list
+    )  # list of task names for help
+    entrypoint: str = "if [ $# -eq 0 ]; then help; else \"$@\"; fi"
