@@ -10,10 +10,10 @@ tasks:
   
   debug_message:
     run: |
-      {{ log.tasks.debug }} "Debug message"
+      {{ log.debug }} "Debug message"
   
   combined:
     run: |
       echo "Step 1: Greeting"
-      {{ log.tasks.debug }} "About to say debug"
+      {{ log.debug }} "About to say debug"
       echo "Step 2: Done"

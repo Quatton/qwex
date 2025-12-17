@@ -6,13 +6,13 @@ modules:
 
 tasks:
   composite:
-    uses: steps.step
+    uses: steps.compose
     with:
       - name: "Step 1"
         run: "echo First step"
   
   multi_step:
-    uses: steps.step
+    uses: steps.compose
     with:
       - name: "Build"
         run: "echo Building..."

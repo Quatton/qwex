@@ -1,0 +1,14 @@
+name: task_with_args
+
+tasks:
+  greet:
+    run: echo "$2, $1!"
+  
+  repeat:
+    vars:
+      message: "$1"
+      count: "${2:-3}" # Default to 3 if not provided
+    run: |
+      for i in $(seq 1 {{ count }}); do
+        echo "{{ message }}"
+      done

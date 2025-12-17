@@ -113,17 +113,20 @@ class Resolver:
     def _build_env_tree(self, root_module: Module) -> Dict[str, Any]:
         """Build the environment tree for Jinja rendering.
 
-        Args:
-            root_module: Root module.
-
-        Returns:
-            Environment dict.
+        Returns a flattened dictionary where:
+        - vars are at the root
+        - tasks are at the root (name -> canonical name)
+        - imported modules are at the root (name -> env dict)
         """
-        env: Dict[str, Any] = {
-            "name": root_module.name,
-            "vars": dict(root_module.vars),
-            "tasks": {name: f"{root_module.name}:{name}" for name in root_module.tasks},
-        }
+        # Start with vars
+        env: Dict[str, Any] = dict(root_module.vars)
+
+        # Add metadata
+        env["module_name"] = root_module.name
+
+        # Add tasks (name -> canonical name)
+        for name in root_module.tasks:
+            env[name] = f"{root_module.name}:{name}"
 
         # Add imported modules to environment
         for mod_ref in root_module.modules.values():
@@ -132,24 +135,3 @@ class Resolver:
                 env[mod_ref.name] = self._build_env_tree(loaded)
 
         return env
-
-    def get_args_context(self, task_args: list) -> Dict[str, str]:
-        """Build args context for a task (renders args to bash variable references).
-
-        Args:
-            task_args: List of Arg objects.
-
-        Returns:
-            Dict mapping arg name to bash reference (e.g., "$1", "$2", "${X:-default}").
-        """
-        args_ctx: Dict[str, str] = {}
-
-        for arg in task_args:
-            if arg.positional > 0:
-                # Positional arg: $1, $2, etc.
-                args_ctx[arg.name] = f"${{{arg.positional}:-{arg.default or ''}}}"
-            else:
-                # Named arg: ${NAME:-default}
-                args_ctx[arg.name] = f"${{{arg.name.upper()}:-{arg.default or ''}}}"
-
-        return args_ctx

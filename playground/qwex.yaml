@@ -1,0 +1,50 @@
+name: playground
+
+modules:
+  steps:
+    source: ../lib/qstd/steps.yaml
+
+tasks:
+  compile:
+    vars:
+      module: "$1"
+    run: |
+      cd {{ module }}
+      qwex compile qwex.yaml -o compiled.sh
+      
+  test-task-with-args:
+    run: |
+      cd task-with-args
+      qwex compile qwex.yaml -o compiled.sh
+      bash compiled.sh greet "Alice" "Hi"
+      bash compiled.sh repeat "Hello" 2
+      
+  test-module-run:
+    run: |
+      cd module-run
+      qwex compile qwex.yaml -o compiled.sh
+      bash compiled.sh debug_message
+      
+  test-module-inline:
+    run: |
+      cd module-inline
+      qwex compile qwex.yaml -o compiled.sh
+      bash compiled.sh with_color
+      
+  test-module-uses-with:
+    run: |
+      cd module-uses-with
+      qwex compile qwex.yaml -o compiled.sh
+      bash compiled.sh composite
+      
+  test-all:
+    uses: steps.compose
+    with:
+      - name: "Test task-with-args"
+        run: "{{ test-task-with-args }}"
+      - name: "Test module-run"
+        run: "{{ test-module-run }}"
+      - name: "Test module-inline"
+        run: "{{ test-module-inline }}"
+      - name: "Test module-uses-with"
+        run: "{{ test-module-uses-with }}"

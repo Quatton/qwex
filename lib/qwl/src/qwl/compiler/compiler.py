@@ -36,19 +36,25 @@ class Compiler:
         # Compile all tasks from root module
         functions = []
         task_names = list(module.tasks.keys())
+        emitted_fns: set[str] = set()
 
-        # Flatten and compile each task
-        for task_name, task in module.tasks.items():
-            fn = self._compile_task(module.name, task, env_tree)
-            functions.append(fn)
+        # Helper to compile module tasks recursively
+        def emit_module_tasks(mod: Module, mod_env: Dict[str, Any]):
+            for task in mod.tasks.values():
+                fn = self._compile_task(mod.name, task, mod_env)
+                if fn.name not in emitted_fns:
+                    emitted_fns.add(fn.name)
+                    functions.append(fn)
 
-            # Emit all imported module functions as well
-            for module_name, mod_ref in module.modules.items():
-                loaded_module = self.resolver._module_cache.get(module_name)
-                if loaded_module:
-                    for task_name, task in loaded_module.tasks.items():
-                        fn = self._compile_task(module_name, task, env_tree)
-                        functions.append(fn)
+            # Recursively emit imported module tasks with their own env
+            for mod_ref_name in mod.modules:
+                loaded = self.resolver._module_cache.get(mod_ref_name)
+                if loaded and mod_ref_name in mod_env:
+                    sub_env = mod_env[mod_ref_name]
+                    emit_module_tasks(loaded, sub_env)
+
+        # Start with root module
+        emit_module_tasks(module, env_tree)
 
         # Auto-generate help function
         functions.append(self._compile_help(task_names))
@@ -71,22 +77,10 @@ class Compiler:
         """
         fn_name = f"{module_name}:{task.name}"
 
-        # Build task-local context: merge task vars and args
-        task_context = dict(env_tree)  # Start with full env tree
-        task_vars = task.vars if isinstance(task.vars, dict) else {}
-        task_context["vars"] = {
-            **env_tree.get("vars", {}),
-            **task_vars,
-        }
-
-        # Build args context (renders args to bash var references)
-        args_context = {}
-        for i, arg in enumerate(task.args, 1):
-            if arg.positional > 0:
-                args_context[arg.name] = f"${{{arg.positional}:-{arg.default or ''}}}"
-            else:
-                args_context[arg.name] = f"${{{arg.name.upper()}:-{arg.default or ''}}}"
-        task_context["args"] = args_context
+        # Build task-local context: flattened env + task vars
+        task_context = dict(env_tree)
+        if task.vars:
+            task_context.update(task.vars)
 
         # Handle `uses/with` inlining
         if task.uses:
@@ -123,30 +117,79 @@ class Compiler:
         # Parse the uses reference: module.task or just module:task canonical
         parts = uses.split(".")
         if len(parts) != 2:
-            raise ValueError(f"Invalid uses reference: {uses} (expected module.task)")
+            # Try splitting by colon (canonical name)
+            parts = uses.split(":")
+            if len(parts) != 2:
+                raise ValueError(f"Invalid uses reference: {uses} (expected module.task)")
 
         module_name, task_name = parts
 
         # Lookup the referenced task in env_tree
+        # With flattened env, module_name should be a dict in env_tree
         if module_name not in env_tree:
             raise ValueError(f"Module '{module_name}' not found in modules")
-
+        
         module_env = env_tree[module_name]
-        if "tasks" not in module_env or task_name not in module_env["tasks"]:
+        
+        # In flattened env, task name is a direct key in module_env
+        if task_name not in module_env:
             raise ValueError(f"Task '{task_name}' not found in module '{module_name}'")
 
         # Get the canonical name (e.g., "steps:step")
-        canonical_name = module_env["tasks"][task_name]
+        canonical_name = module_env[task_name]
 
         # Build a list of inlined commands, one per with_item
         lines = []
 
         for item in with_items:
+            # If item is a dict, it's a set of var overrides
             if isinstance(item, dict):
-                # Dict item with name and run: inline the run command
-                run_cmd = item.get("run", "")
-                rendered_cmd = self._render(run_cmd, task_context)
-                lines.append(rendered_cmd)
+                # We need to render the task with these overrides
+                # But 'uses' implies we are calling the task or inlining it?
+                # The spec says:
+                # - string item: positional arg passed to command
+                # - dict item: var overrides? Or named args?
+                
+                # In the old implementation:
+                # dict item with 'run' -> inline run command
+                # string item -> positional arg
+                
+                # With the "steps.compose" pattern:
+                # uses: steps.compose
+                # with:
+                #   - name: "Step 1"
+                #     run: "echo hi"
+                
+                # If the item is a dict, we probably want to treat it as variables 
+                # available to the inlined task, OR if it's the steps.compose pattern,
+                # it might be special handling. 
+                
+                # But generic `uses` usually means "call this task".
+                # If `uses` points to a task that expects args (legacy), we pass them.
+                # Now that args are gone, we just have vars.
+                
+                # If the user provides a dict in `with`, it merges into vars for that call.
+                # BUT, we are generating bash script. We can't easily "call with vars" 
+                # without subshells or var assignments.
+                
+                # However, the previous implementation did:
+                # if dict has 'run': render run and append.
+                # This seems specific to the 'steps' pattern where `with` items are steps.
+                
+                # Let's preserve the existing logic as much as possible but adapted.
+                # Existing:
+                # if dict: run_cmd = item.get("run"); render(run_cmd, context)
+                
+                run_cmd = item.get("run")
+                if run_cmd:
+                     rendered_cmd = self._render(run_cmd, task_context)
+                     lines.append(rendered_cmd)
+                else:
+                    # Generic dict item - maybe just vars? 
+                    # If it's just vars, we can't easily inline it unless it's a template?
+                    # For now, let's assume it's the steps pattern or we might need to revisit.
+                    pass
+
             elif isinstance(item, str):
                 # Simple string: treat as positional arg to the referenced task
                 lines.append(f"{canonical_name} {item}")

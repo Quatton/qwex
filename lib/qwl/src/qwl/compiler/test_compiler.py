@@ -12,7 +12,7 @@ def test_compile_simple_module():
         tasks={
             "greet": Task(
                 name="greet",
-                run='echo "{{ vars.message }}"',
+                run='echo "{{ message }}"',
             )
         },
     )

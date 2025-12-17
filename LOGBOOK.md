@@ -2177,3 +2177,44 @@ tasks:
 - More Pythonic: "explicit is better than implicit" (the template IS explicit)
 
 ---
+
+## Dec 18, 2025: Compiler Refactor & Playground Standardization
+
+### Overview
+
+Based on the feedback from Dec 17, we have refactored the compiler and standard library to simplify the namespace model and standardize the playground.
+
+### Changes Implemented
+
+1.  **Removed `args` Namespace**
+    *   Removed `Arg` dataclass from AST.
+    *   Removed `args:` field from `Task`.
+    *   Adopted native Bash positional parameters (`$1`, `$2`) directly in templates.
+    *   For semantic naming, users can alias them in `vars:` (e.g., `message: "$1"`).
+
+2.  **Flattened Environment Model**
+    *   Removed `vars.` and `tasks.` prefixes.
+    *   Variables and tasks are now accessible directly in the Jinja context (e.g., `{{ color }}` instead of `{{ vars.color }}`, `{{ log.debug }}` instead of `{{ log.tasks.debug }}`).
+    *   `Resolver` now produces a flattened dictionary instead of a nested tree.
+
+3.  **Standard Library Updates**
+    *   `log.yaml`, `utils.yaml`, `steps.yaml` updated to new spec.
+    *   `utils.color` now calls `once` internally.
+    *   `steps.step` renamed to `steps.compose`.
+
+4.  **Playground Standardization**
+    *   Renamed directories to kebab-case:
+        *   `module_inline` → `module-inline`
+        *   `module_run_usage` → `module-run`
+        *   `task_with_args` → `task-with-args`
+    *   Updated all `qwex.yaml` files to reflect the new spec.
+    *   Added `playground/qwex.yaml` orchestration workflow to test all examples.
+
+### Migration Guide
+
+| Old Spec | New Spec |
+| :--- | :--- |
+| `{{ args.name }}` | `$1` (or alias in vars) |
+| `{{ vars.color }}` | `{{ color }}` |
+| `{{ log.tasks.debug }}` | `{{ log.debug }}` |
+| `tasks.step` | `tasks.compose` |
