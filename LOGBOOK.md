@@ -2071,5 +2071,112 @@ render_bash(task_nodes, root_tasks)
 
 ---
 
+## Dec 17, 2025 (Late Evening): Args vs Vars Namespace Debate
+
+### The Question
+
+Should we keep `args` as a separate field in `Task`, or merge it into `vars`?
+
+**Current Design (Phase 1):**
+```python
+@dataclass
+class Arg:
+    name: str
+    default: Any = None
+    positional: int = 0
+
+@dataclass
+class Task:
+    args: List[Arg]  # Separate namespace
+    vars: Dict[str, Any]
+```
+
+**Proposed Design (Phase 2):**
+```python
+@dataclass
+class Task:
+    vars: Dict[str, Any]  # Unified namespace, includes {{ $1 }} refs
+    # args field removed
+```
+
+### Initial Position: Keep Separate
+
+**Arguments FOR separation:**
+1. **Explicit positional semantics**: `Arg(positional=1)` makes runtime params obvious
+2. **Inline expansion clarity**: Parent knows which fields are compile-time (vars) vs runtime (args)
+3. **Collision prevention**: Prevents parent from accidentally overriding runtime params with `with:`
+
+### The Rebuttal
+
+**User's counterarguments:**
+1. **`$1` IS explicit**: Template syntax `{{ $1 }}` is MORE explicit than metadata field `Arg(positional=1)`
+2. **Current design breaks inline expansion**: Args are inaccessible during `uses/with` expansion
+3. **Dict `with:` should override everything**: No reason to hide args from parent; let parent customize all vars
+
+**Example of the problem:**
+```yaml
+# Current (Phase 1) - BROKEN
+tasks:
+  deploy:
+    args:
+      - {name: environment, positional: 1}
+    vars:
+      flags: "--verbose"
+    run: |
+      echo "Deploying to {{ environment }}"
+      deploy.sh {{ flags }}
+
+  deploy_prod:
+    uses: deploy
+    with:
+      flags: "--quiet"  # ✓ Can override vars
+      # ❌ CANNOT override args.environment!
+```
+
+With merged namespace:
+```yaml
+# Proposed (Phase 2) - FIXED
+tasks:
+  deploy:
+    vars:
+      environment: "{{ $1 }}"  # Explicit bash param
+      flags: "--verbose"
+    run: |
+      echo "Deploying to {{ environment }}"
+      deploy.sh {{ flags }}
+
+  deploy_prod:
+    uses: deploy
+    with:
+      environment: "production"  # ✓ Can override!
+      flags: "--quiet"
+```
+
+### Resolution: Merge Into Vars
+
+**Why the merge is better:**
+
+1. **Template-as-metadata**: `{{ $1 }}` in the template IS the positional metadata. We don't need a separate dataclass to track what's already explicit in the code.
+
+2. **Inline expansion works**: Parent can override both compile-time defaults and runtime params via `with:` dict. Current design makes args invisible to parent, which breaks customization.
+
+3. **Consistent override semantics**: Everything in `vars` can be overridden by parent. No special cases, no hidden fields.
+
+4. **Simpler AST**: Remove `Arg` dataclass entirely. Parser just needs to detect `{{ $N }}` pattern for validation/analysis.
+
+**What changes:**
+- Remove `Arg` dataclass from `ast/spec.py`
+- Update `Task.from_dict()` to parse args-like vars (detect `{{ $N }}` for positional inference)
+- Update inline expansion: `with:` dict can override any var, including ones with `{{ $1 }}` refs
+- Emit behavior unchanged: `{{ $1 }}` still renders as bash positional param
+
+**Benefits:**
+- Unified namespace: all task inputs in one place
+- Flexible parent overrides: no arbitrary restrictions
+- Cleaner AST: one less dataclass to maintain
+- More Pythonic: "explicit is better than implicit" (the template IS explicit)
+
+---
+
 
 
