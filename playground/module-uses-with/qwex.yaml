@@ -10,3 +10,13 @@ tasks:
     with:
       - name: "Step 1"
         run: "echo First step"
+  
+  multi_step:
+    uses: steps.step
+    with:
+      - name: "Build"
+        run: "echo Building..."
+      - name: "Test"
+        run: "echo Testing..."
+      - name: "Deploy"
+        run: "echo Deploying..."

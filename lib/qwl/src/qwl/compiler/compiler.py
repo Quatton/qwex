@@ -42,6 +42,14 @@ class Compiler:
             fn = self._compile_task(module.name, task, env_tree)
             functions.append(fn)
 
+            # Emit all imported module functions as well
+            for module_name, mod_ref in module.modules.items():
+                loaded_module = self.resolver._module_cache.get(module_name)
+                if loaded_module:
+                    for task_name, task in loaded_module.tasks.items():
+                        fn = self._compile_task(module_name, task, env_tree)
+                        functions.append(fn)
+
         # Auto-generate help function
         functions.append(self._compile_help(task_names))
 

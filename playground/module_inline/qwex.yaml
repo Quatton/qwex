@@ -10,3 +10,9 @@ tasks:
       {{ utils.tasks.color }}
       echo "${Q_BLUE}This text is blue${Q_RESET}"
       echo "${Q_GREEN}This text is green${Q_RESET}"
+      echo "${Q_RED}This text is red${Q_RESET}"
+  
+  multi_call:
+    run: |
+      {{ utils.tasks.color }}
+      echo "${Q_GRAY}Color vars are now available${Q_RESET}"
