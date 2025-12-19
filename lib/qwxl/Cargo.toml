@@ -1,0 +1,16 @@
+[package]
+name = "qwxl"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "qwxl"
+
+[dependencies]
+ahash = "0.8.12"
+askama = "0.14.0"
+ron = "0.12.0"
+saphyr = "0.0.6"
+serde = { version = "1.0", features = ["derive"] }
+serde-saphyr = "0.0.11"
+thiserror = "2.0.17"

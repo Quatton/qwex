@@ -2858,3 +2858,18 @@ $root:
     $with:
       filename: $1
 ```
+
+## Week 14: Dec 19, 2025, The Computer Science Project
+
+- programming language 
+- algo
+- mlops
+- nlp/llm
+- system
+- hci
+- distributed/cloud
+
+### Introduction
+
+- command-line tools -> other computers
+

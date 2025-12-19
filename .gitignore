@@ -37,6 +37,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # qwex internal
 .qwex/_internal/
+.qwex/build/
 
 # Python
 
@@ -62,3 +63,5 @@ tmp/
 
 _version.py
 compiled.sh
+
+target/

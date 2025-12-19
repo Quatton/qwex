@@ -1,0 +1,28 @@
+{
+  "folders": [
+    {
+      "path": "apps/qwex",
+      "name": "qwex"
+    },
+    {
+      "path": "lib/qwxl",
+      "name": "qwxl"
+    },
+    {
+      "path": "apps/qwexcli",
+      "name": "qwexcli"
+    },
+    {
+      "path": "playground",
+      "name": "playground"
+    },
+    {
+      "path": ".",
+      "name": "root"
+    },
+    {
+      "path": "lib/pyqwxl",
+      "name": "pyqwxl"
+    }
+  ]
+}

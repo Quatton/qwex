@@ -6,6 +6,7 @@ members = [
     "qwex",
     "qwexcli",
     "qwl",
+    "qwxl",
 ]
 
 [[package]]
@@ -380,6 +381,11 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "xxhash", specifier = ">=3.6.0" },
 ]
+
+[[package]]
+name = "qwxl"
+version = "0.1.0"
+source = { editable = "lib/qwxl" }
 
 [[package]]
 name = "rich"
