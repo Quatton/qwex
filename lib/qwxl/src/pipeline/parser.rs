@@ -74,19 +74,44 @@ mod tests {
         let module = parser.load_yaml(input);
         assert!(module.is_ok());
         let module = module.unwrap();
-        println!("{:#?}", module);
-        let default = module.get("default");
-        assert!(default.is_some());
-        let default = default.unwrap();
+        let default = &module.default;
         let task1 = default.tasks.get("task1");
         assert!(task1.is_some());
         let task1 = task1.unwrap();
         match task1 {
-            Task::Cmd { cmd, props } => {
+            Task::Cmd { cmd, props, .. } => {
                 assert_eq!(cmd.trim(), r#"echo "Hello, World!""#);
                 assert!(props.is_some());
             }
             _ => panic!("Expected Cmd task"),
         }
+    }
+
+    #[test]
+    fn test_load_multi_features() {
+        let input = r#"
+        default: 
+          tasks:
+            task1: 
+                props:
+                  foo: "bar"
+                  nested:
+                    - 1
+                    - 2
+                    - 3
+                cmd: |
+                    echo "Hello, World!"
+        feature1:
+            tasks:
+                task2:
+                    cmd: |
+                        echo "Feature 1"
+        "#;
+
+        let mut parser = Parser::new();
+        let module = parser.load_yaml(input);
+        assert!(module.is_ok());
+        let module = module.unwrap();
+        assert!(module.features.contains_key("feature1"));
     }
 }
