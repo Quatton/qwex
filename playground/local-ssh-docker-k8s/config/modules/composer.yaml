@@ -1,0 +1,16 @@
+vars:
+  
+
+modules:
+  backend:
+    source: ./modules/backends/local.yaml
+  storage:
+    source: ./modules/storages/local.yaml
+  lifecycle:
+    source: ./modules/lifecycle.yaml
+
+tasks:
+  run:
+    vars:
+      command: "$@"
+    run: |

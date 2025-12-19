@@ -1,0 +1,7 @@
+vars:
+  notimplemented: |
+    _ () {
+      echo 'Not implemented' >&2
+      return 1
+    } && _ $@
+    unset -f _

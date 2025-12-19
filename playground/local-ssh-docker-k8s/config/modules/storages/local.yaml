@@ -1,0 +1,33 @@
+name: storage
+
+vars:
+  qwex_home: "${QWEX_HOME:-$HOME/.qwex}"
+  workspace: ""
+
+tasks:
+  dir:
+    run: echo "{{ qwex_home }}/{{ workspace }}/runs/$1"
+  
+  write:
+    run: mkdir -p "$(dirname "$1")" && echo "${@:2}" > "$1"
+  
+  read:
+    run: cat "$1" 2>/dev/null
+  
+  exec:
+    run: "$@"
+  
+  tail:
+    run: tail -f "$1"
+  
+  set_status:
+    run: |
+      {{ write }} "$({{ dir }} "$1")/meta/status" "$2"
+  
+  mount:
+    run: |
+      ln -sfn "{{ qwex_home }}/{{ workspace }}/runs" "$PWD/.qwex"
+  
+  sync:
+    run: |
+      echo "Already local, nothing to sync"

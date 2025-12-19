@@ -1,0 +1,53 @@
+name: local-ssh-docker-k8s
+
+defaults: [local]
+
+modules:
+  log:
+    source: std/log
+  lifecycle:
+    source: ./modules/lifecycle.yaml
+  local_storage:
+    source: ./modules/storages/local.yaml
+    vars:
+      workspace: "{{ workspace }}"
+
+vars:
+  workspace: "local-ssh-docker-k8s"
+
+presets:
+  local:
+    modules:
+      backend:
+        source: ./modules/backends/local.yaml
+        vars:
+          workspace: "{{ workspace }}"
+  ssh:
+    modules:
+      backend:
+        source: ./modules/backends/ssh.yaml
+        vars:
+          workspace: "{{ workspace }}"
+
+tasks:
+  submit:
+    run: |
+      echo $({{ backend.submit }} "$@")
+  run:
+    run: |
+      {{ log.info }} "Completed: $({{ backend.run }} "$@")"
+  retrieve:
+    run: |
+      {{ backend.retrieve }} "$1"
+  attach:
+    run: |
+      {{ backend.attach }} "$1"
+  status:
+    run: |
+      {{ backend.status }} "$1"
+  sync:
+    run: |
+      {{ backend.sync }} "$1"
+  mount:
+    run: |
+      {{ local_storage.mount }}

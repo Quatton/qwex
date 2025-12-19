@@ -1,121 +1,41 @@
-name: local-ssh-docker-k8s
-
-defaults: [manual]
+name: local-ssh-docker-k8s-setup
 
 modules:
-  steps:
-    source: std/steps
   log:
     source: std/log
-  test:
-    source: std/test
 
 vars:
-  # Store the starting directory for consistent paths
-  workspace_path: "${QWEX_START_DIR:-$PWD}/demo"
-
-presets:
-  qwex:
-    vars:
-      cmd: "with qwex"
-  manual:
-    includes:
-      - ./manual.vars.yaml
+  demo_dir: "./demo"
 
 tasks:
-  # Setup tasks
-  setup-uv:
+  setup:
     run: |
-      mkdir -p "{{ workspace_path }}"
-      cd "{{ workspace_path }}"
-      if [ ! -f "pyproject.toml" ]; then
-        uv init --name demo
-        echo 'print("Hello from demo!")' > hello.py
-      fi
+      {{ log.info }} "Setting up demo workspace..."
+      
+      # Create demo directory
+      mkdir -p "{{ demo_dir }}"
+      cd "{{ demo_dir }}"
+      
+      # Initialize uv project
+      {{ log.info }} "Initializing uv project..."
+      uv init --name demo
+      
+      # Initialize git
+      {{ log.info }} "Initializing git..."
+      git init
+      
+      # Copy config
+      {{ log.info }} "Copying config..."
+      cp -r ../config/* .
+      
+      # Create hello.py
+      {{ log.info }} "Creating hello.py..."
+      printf '%s\n' 'def main():' '    print("hello 0")' '' 'if __name__ == "__main__":' '    main()' > hello.py
+      
+      {{ log.info }} "Setup complete! cd {{ demo_dir }} to start."
 
-  setup-git:
+  clean:
     run: |
-      cd "{{ workspace_path }}"
-      if [ ! -d ".git" ]; then
-        git init
-        git add -A
-        git commit -m "Initial commit"
-      fi
-
-  setup-workspace:
-    run: |
-      {{ steps.step }} "setup-uv" "setup-uv"
-      {{ steps.step }} "setup-git" "setup-git"
-  
-  setup-local:
-    run: |
-      echo "Setting up local backend..."
-  
-  setup-ssh:
-    run: |
-      echo "Setting up SSH backend..."
-  
-  setup-docker:
-    run: |
-      echo "Setting up Docker backend..."
-  
-  setup-k8s:
-    run: |
-      echo "Setting up K8s backend..."
-  
-  # Eval tasks
-  eval-local:
-    run: |
-      echo "Evaluating on local backend..."
-  
-  eval-ssh:
-    run: |
-      echo "Evaluating on SSH backend..."
-  
-  eval-docker:
-    run: |
-      echo "Evaluating on Docker backend..."
-  
-  eval-k8s:
-    run: |
-      echo "Evaluating on K8s backend..."
-  
-  eval-all:
-    run: |
-      # just for testing presets and includes
-      echo "{{ cmd }}"
-  
-  clean-local:
-    run: |
-      echo "Cleaning local backend..."
-  
-  clean-ssh:
-    run: |
-      echo "Cleaning SSH backend..."
-  
-  clean-docker:
-    run: |
-      echo "Cleaning Docker backend..."
-  
-  clean-k8s:
-    run: |
-      echo "Cleaning K8s backend..."
-
-  clean-workspace:
-    run: |
-      rm -rf "{{ workspace_path }}"
-
-  clean-all:
-    run: |
-      clean-workspace
-      echo "Cleaned all backends..."
-
-  # Test task
-  test-workspace:
-    run: |
-      clean-workspace
-      setup-workspace
-      {{ test.assert_dir }} "demo directory exists" "{{ workspace_path }}"
-      {{ test.assert_file }} "hello.py exists" "{{ workspace_path }}/hello.py"
-      {{ test.assert_dir }} ".git directory exists" "{{ workspace_path }}/.git"
-      clean-workspace
+      {{ log.info }} "Cleaning up demo..."
+      rm -rf "{{ demo_dir }}"
+      {{ log.info }} "Done."
