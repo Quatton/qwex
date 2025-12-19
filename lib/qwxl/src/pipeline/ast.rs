@@ -16,7 +16,8 @@ pub enum Task {
     Cmd {
         props: Option<Props>,
         // You can use either "cmd" or "command" or "run" as the key for the command string
-        #[serde(alias = "command", alias = "run")]
+        // Nah not anymore
+        // #[serde(alias = "command", alias = "run")]
         cmd: String,
     },
     Uses {
@@ -25,4 +26,4 @@ pub enum Task {
     },
 }
 
-pub type Props = BTreeMap<String, String>;
+pub type Props = BTreeMap<String, ron::Value>;

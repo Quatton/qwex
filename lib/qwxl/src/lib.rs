@@ -1,1 +1,1 @@
-mod pipeline;
+pub mod pipeline;

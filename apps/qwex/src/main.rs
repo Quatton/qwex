@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use qwxl::pipeline::{Config, Pipeline};
 use std::env;
 use std::path::PathBuf;
 
@@ -20,11 +21,14 @@ enum Commands {
         /// Output target path
         #[arg(short, long, value_name = "TARGET")]
         o: Option<PathBuf>,
+
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
     },
     /// Run the project (defaults to ./qwex.yaml)
     Run {
         /// Path to qwex.yaml
-        #[arg(value_name = "FILE", default_value = "./qwex.yaml")]
+        #[arg(value_name = "FILE")]
         file: PathBuf,
     },
 }
@@ -37,39 +41,38 @@ fn main() -> anyhow::Result<()> {
         None => env::current_dir()?.join(".qwex"),
     };
 
+    let mut config = Config {
+        home_dir: qwex_dir,
+        ..Default::default()
+    };
+
     match cli.command {
-        Some(Commands::Build { o }) => {
-            let out = o.unwrap_or_else(|| PathBuf::from("./build-output"));
-            build(&qwex_dir, &out)?;
+        Some(Commands::Build { o, file }) => {
+            if let Some(target) = o {
+                config.target_path = target;
+            }
+            config.source_path = file;
+            build(config)?;
         }
         Some(Commands::Run { file }) => {
-            run(&qwex_dir, &file)?;
+            config.source_path = file;
+            run(config)?;
         }
         None => {
-            let default = PathBuf::from("./qwex.yaml");
-            run(&qwex_dir, &default)?;
+            run(config)?;
         }
     }
 
     Ok(())
 }
 
-fn build(qwex_dir: &PathBuf, target: &PathBuf) -> anyhow::Result<()> {
-    println!(
-        "qwex: build (dir={}) -> {}",
-        qwex_dir.display(),
-        target.display()
-    );
-    // TODO: implement real build logic
+fn build(config: Config) -> anyhow::Result<()> {
+    let mut pipeline = Pipeline::new(config);
+    pipeline.build()?;
     Ok(())
 }
 
-fn run(qwex_dir: &PathBuf, file: &PathBuf) -> anyhow::Result<()> {
-    println!(
-        "qwex: run (dir={}) -> {}",
-        qwex_dir.display(),
-        file.display()
-    );
-    // TODO: implement run logic (use qwex_dir for state/config, parse file, execute, etc.)
+fn run(config: Config) -> anyhow::Result<()> {
+    build(config)?;
     Ok(())
 }

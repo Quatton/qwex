@@ -1,23 +1,42 @@
-use ahash::HashMap;
+use crate::pipeline::{ast::ModuleFile, cache::Cache, error::PipelineError};
 
-use crate::pipeline::{ast::ModuleFile, error::PipelineError};
-
-#[derive(Default)]
-struct Parser {
-    ast_cache: HashMap<String, ModuleFile>,
+/// A parser for pipeline module files.
+pub struct Parser {
+    pub cache: Cache<String, ModuleFile>,
 }
 
 impl Parser {
-    fn load_with<F>(&mut self, input: &str, parser: F) -> Result<&ModuleFile, PipelineError>
+    /// Create a parser with a fresh internal cache.
+    pub fn new() -> Self {
+        Self {
+            cache: Cache::new(None),
+        }
+    }
+
+    /// Create a parser that uses the provided cache manager.
+    pub fn with_cache(cache: Cache<String, ModuleFile>) -> Self {
+        Self { cache }
+    }
+
+    pub fn load_with<F>(&mut self, input: &str, parser: F) -> Result<&ModuleFile, PipelineError>
     where
         F: FnOnce(&str) -> Result<ModuleFile, PipelineError>,
     {
-        use std::collections::hash_map::Entry;
+        let key = input.to_string();
 
-        match self.ast_cache.entry(input.to_string()) {
-            Entry::Occupied(e) => Ok(e.into_mut()),
-            Entry::Vacant(e) => Ok(e.insert(parser(input)?)),
+        if self.cache.memory.contains_key(&key) {
+            return Ok(self.cache.memory.get(&key).unwrap());
         }
+
+        let module = parser(input)?;
+
+        self.cache.insert(key.clone(), module);
+
+        Ok(self
+            .cache
+            .memory
+            .get(&key)
+            .expect("Just inserted, should be there"))
     }
 
     pub fn load_yaml(&mut self, input: &str) -> Result<&ModuleFile, PipelineError> {
@@ -38,13 +57,19 @@ mod tests {
     use super::*;
     #[test]
     fn test_load_yaml() {
-        let mut parser = Parser::default();
+        let mut parser = Parser::new();
         let input = r#"
         default: 
           tasks:
-            task1:
-              cmd: |
-                echo "Hello, World!"
+            task1: 
+                props:
+                  foo: "bar"
+                  nested:
+                    - 1
+                    - 2
+                    - 3
+                cmd: |
+                    echo "Hello, World!"
         "#;
         let module = parser.load_yaml(input);
         assert!(module.is_ok());
@@ -57,8 +82,9 @@ mod tests {
         assert!(task1.is_some());
         let task1 = task1.unwrap();
         match task1 {
-            Task::Cmd { cmd, .. } => {
+            Task::Cmd { cmd, props } => {
                 assert_eq!(cmd.trim(), r#"echo "Hello, World!""#);
+                assert!(props.is_some());
             }
             _ => panic!("Expected Cmd task"),
         }
