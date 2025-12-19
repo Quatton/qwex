@@ -68,11 +68,10 @@ class Compiler:
     ) -> Module:
         """Apply presets and includes to a module.
 
-        Order of application:
+        Order of application (lowest to highest priority):
         1. Load and merge base includes (module.includes)
-        2. Determine active presets (presets arg or module.defaults)
-        3. For each preset, load its includes then apply its vars/tasks/modules
-        4. Module's own vars/tasks/modules override everything
+        2. Module's own vars/tasks/modules (defaults)
+        3. Determine active presets and apply them (highest priority - overrides)
 
         Args:
             module: The original module.
@@ -93,10 +92,15 @@ class Compiler:
             merged_tasks.update(included.tasks)
             merged_modules.update(included.modules)
 
-        # 2. Determine active presets
+        # 2. Module's own vars/tasks/modules are the defaults
+        merged_vars.update(module.vars)
+        merged_tasks.update(module.tasks)
+        merged_modules.update(module.modules)
+
+        # 3. Determine active presets
         active_presets = presets if presets is not None else module.defaults
 
-        # 3. Apply each preset in order
+        # 4. Apply each preset in order (highest priority - overrides defaults)
         for preset_name in active_presets:
             if preset_name not in module.presets:
                 raise ValueError(f"Preset '{preset_name}' not found in module")
@@ -110,15 +114,10 @@ class Compiler:
                 merged_tasks.update(included.tasks)
                 merged_modules.update(included.modules)
 
-            # Then apply preset's own content (override includes)
+            # Then apply preset's own content (override module defaults)
             merged_vars.update(preset.vars)
             merged_tasks.update(preset.tasks)
             merged_modules.update(preset.modules)
-
-        # 4. Module's own vars/tasks/modules have highest priority
-        merged_vars.update(module.vars)
-        merged_tasks.update(module.tasks)
-        merged_modules.update(module.modules)
 
         # Create new module with merged content
         return Module(
@@ -486,12 +485,12 @@ class Compiler:
         from qwl.compiler.extensions import get_qwl_jinja_env
 
         env = get_qwl_jinja_env()
-        
+
         # Set context for qx extension to use
         # These are runtime attributes, not part of Environment's type definition
         env.qx_context = context  # type: ignore[attr-defined]
         env.qx_dependencies = set()  # type: ignore[attr-defined]
-        
+
         tmpl = env.from_string(template)
         return tmpl.render(**context)
 

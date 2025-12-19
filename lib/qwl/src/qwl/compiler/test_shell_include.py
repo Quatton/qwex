@@ -12,13 +12,13 @@ from qwl.ast import Parser
 
 def test_shell_function():
     """Test that shell() executes at compile time."""
-    yaml_content = '''
+    yaml_content = """
 name: test
 tasks:
   show:
     run: |
       echo "{{ shell('echo hello') }}"
-'''
+"""
     parser = Parser()
     mod = parser.parse(yaml_content)
     comp = Compiler()
@@ -36,18 +36,18 @@ def test_include_file():
         # Create test files
         qwex_path = Path(tmpdir) / "qwex.yaml"
         data_path = Path(tmpdir) / "data.txt"
-        
+
         data_path.write_text("Line 1\nLine 2\nLine 3")
-        qwex_path.write_text('''
+        qwex_path.write_text("""
 name: test
 tasks:
   show:
     run: |
       cat <<HEREDOC
-      {{ include_file("data.txt", __source_dir__) }}
+      {{ include_file("data.txt", __srcdir__) }}
       HEREDOC
-''')
-        
+""")
+
         parser = Parser()
         mod = parser.parse_file(str(qwex_path))
         comp = Compiler(base_dir=Path(tmpdir))
@@ -62,17 +62,17 @@ tasks:
 
 
 def test_source_dir_in_root_module():
-    """Test that __source_dir__ is set correctly for root module."""
+    """Test that __srcdir__ is set correctly for root module."""
     with tempfile.TemporaryDirectory() as tmpdir:
         qwex_path = Path(tmpdir) / "qwex.yaml"
-        qwex_path.write_text('''
+        qwex_path.write_text("""
 name: test
 tasks:
   show:
     run: |
-      echo "Source: {{ __source_dir__ }}"
-''')
-        
+      echo "Source: {{ __srcdir__ }}"
+""")
+
         parser = Parser()
         mod = parser.parse_file(str(qwex_path))
         comp = Compiler(base_dir=Path(tmpdir))
@@ -84,9 +84,9 @@ tasks:
 
 
 def test_source_dir_in_imported_module():
-    """Test that __source_dir__ is set correctly for imported modules."""
+    """Test that __srcdir__ is set correctly for imported modules."""
     parser = Parser()
-    mod = parser.parse('''
+    mod = parser.parse("""
 name: test
 modules:
   log:
@@ -94,35 +94,35 @@ modules:
 tasks:
   greet:
     run: echo "hi"
-''')
+""")
     comp = Compiler(base_dir=Path.cwd())
     env_tree = comp.resolver.resolve(mod)
-    
+
     # Root module should have cwd as source_dir
-    assert "__source_dir__" in env_tree
-    
+    assert "__srcdir__" in env_tree
+
     # Log module should have builtins/std as source_dir
-    assert "__source_dir__" in env_tree.get("log", {})
-    assert "builtins/std" in env_tree["log"]["__source_dir__"]
+    assert "__srcdir__" in env_tree.get("log", {})
+    assert "builtins/std" in env_tree["log"]["__srcdir__"]
 
 
 def test_shell_with_cwd():
-    """Test that shell() can use __source_dir__ as cwd."""
+    """Test that shell() can use __srcdir__ as cwd."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a subdirectory with a file
         subdir = Path(tmpdir) / "subdir"
         subdir.mkdir()
         (subdir / "version.txt").write_text("1.0.0")
-        
+
         qwex_path = Path(tmpdir) / "qwex.yaml"
-        qwex_path.write_text('''
+        qwex_path.write_text("""
 name: test
 tasks:
   show:
     run: |
-      echo "Version: {{ shell('cat subdir/version.txt', cwd=__source_dir__) }}"
-''')
-        
+      echo "Version: {{ shell('cat subdir/version.txt', cwd=__srcdir__) }}"
+""")
+
         parser = Parser()
         mod = parser.parse_file(str(qwex_path))
         comp = Compiler(base_dir=Path(tmpdir))

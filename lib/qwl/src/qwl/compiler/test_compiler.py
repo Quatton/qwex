@@ -252,11 +252,11 @@ def test_qx_boundary_includes_dependencies():
     1. Marks a remote execution boundary
     2. Detects canonical task dependencies (module:task) inside the block
     3. Prepends $(module:include ...) for those dependencies
-    
+
     Note: Root tasks (without module prefix) are not auto-detected as dependencies
     since they don't have the module:task format. This is intentional - root tasks
     are already available globally.
-    
+
     Note: heredocs are NOT automatically generated - users write them explicitly.
     """
     module = Module(
@@ -287,7 +287,7 @@ EOF""",
     # Should detect log:info and utils:color as dependencies
     assert "log:info" in fn.body
     assert "utils:color" in fn.body
-    
+
     # The heredoc should be exactly as written (not auto-generated)
     assert "<<'EOF'" in fn.body
     assert "EOF" in fn.body
@@ -339,5 +339,6 @@ def test_random_filter():
     # Should contain a rendered random string (8 uppercase chars)
     # The body should have "echo XXXXXXXX" where X is alphanumeric
     import re
-    match = re.search(r'echo ([A-Z0-9]{8})', fn.body)
+
+    match = re.search(r"echo ([A-Z0-9]{8})", fn.body)
     assert match is not None, f"Expected 8-char random string in: {fn.body}"

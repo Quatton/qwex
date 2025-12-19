@@ -8,6 +8,7 @@ class ModuleRef:
 
     name: str
     source: str
+    vars: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -164,7 +165,12 @@ class Module:
         modules: Dict[str, ModuleRef] = {}
         for mname, md in modules_.items():
             if isinstance(md, dict) and "source" in md:
-                modules[mname] = ModuleRef(name=mname, source=md["source"])
+                mod_vars = md.get("vars") or {}
+                if not isinstance(mod_vars, dict):
+                    raise TypeError(f"Module '{mname}' 'vars' must be a mapping")
+                modules[mname] = ModuleRef(
+                    name=mname, source=md["source"], vars=mod_vars
+                )
             else:
                 raise ValueError(f"Module '{mname}' must have 'source' field")
 

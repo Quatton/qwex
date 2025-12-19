@@ -184,13 +184,13 @@ class Resolver:
         env: Dict[str, Any] = dict(resolved_vars)
         env["module_name"] = module.name
 
-        # Add __source_dir__ for compile-time file access
+        # Add __srcdir__ for compile-time file access
         source_hash = self.alias_to_source_hash.get(alias)
         if source_hash and source_hash in self.source_hash_to_path:
-            env["__source_dir__"] = str(self.source_hash_to_path[source_hash].parent)
+            env["__srcdir__"] = str(self.source_hash_to_path[source_hash].parent)
         else:
             # Root module uses base_dir
-            env["__source_dir__"] = str(self.base_dir)
+            env["__srcdir__"] = str(self.base_dir)
 
         # Add task name mappings
         is_root = alias == ""
@@ -348,7 +348,11 @@ class Resolver:
         return resolved
 
     def _build_env_tree(
-        self, root_module: Module, is_root: bool = True
+        self,
+        root_module: Module,
+        is_root: bool = True,
+        alias: str = "",
+        override_vars: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Build the environment tree for Jinja rendering.
 
@@ -360,36 +364,65 @@ class Resolver:
         Args:
             root_module: The module to build env for.
             is_root: If True, tasks use empty namespace (just "taskname").
+            alias: The alias used to import this module (for canonical names).
+            override_vars: Vars passed from parent to override module defaults.
         """
-        # Start with vars
+        # Start with module's own vars, then apply overrides from parent
         env: Dict[str, Any] = dict(root_module.vars)
+        if override_vars:
+            env.update(override_vars)
 
         # Add metadata
         env["module_name"] = root_module.name
 
-        # Add __source_dir__ for compile-time file access
+        # Add __srcdir__ for compile-time file access (module source directory)
         if is_root:
-            env["__source_dir__"] = str(self.base_dir)
+            env["__srcdir__"] = str(self.base_dir)
         else:
             # For imported modules, find the source path
             source_path = self._source_map.get(root_module.name)
             if source_path:
-                env["__source_dir__"] = str(source_path.parent)
+                env["__srcdir__"] = str(source_path.parent)
             else:
-                env["__source_dir__"] = str(self.base_dir)
+                env["__srcdir__"] = str(self.base_dir)
 
         # Add tasks (name -> canonical name)
-        # Root tasks have no prefix, imported tasks have module:task format
+        # Root tasks have no prefix, imported tasks have alias:task format
         for name in root_module.tasks:
             if is_root:
                 env[name] = name  # Root: just "greet"
             else:
-                env[name] = f"{root_module.name}:{name}"  # Imported: "log:debug"
+                env[name] = f"{alias}:{name}"  # Imported: "local:submit"
 
         # Add imported modules to environment
         for mod_ref in root_module.modules.values():
             loaded = self._module_cache.get(mod_ref.name)
             if loaded:
-                env[mod_ref.name] = self._build_env_tree(loaded, is_root=False)
+                # Resolve vars from import declaration using current env as context
+                resolved_override_vars: Optional[Dict[str, Any]] = None
+                if mod_ref.vars:
+                    resolved_override_vars = {}
+                    for key, value in mod_ref.vars.items():
+                        if isinstance(value, str):
+                            resolved_override_vars[key] = self._render_var(value, env)
+                        else:
+                            resolved_override_vars[key] = value
+
+                child_env = self._build_env_tree(
+                    loaded,
+                    is_root=False,
+                    alias=mod_ref.name,
+                    override_vars=resolved_override_vars,
+                )
+                env[mod_ref.name] = child_env
 
         return env
+
+    def _render_var(self, value: str, context: Dict[str, Any]) -> str:
+        """Render a var value using Jinja2 templating."""
+        from jinja2 import Template
+
+        try:
+            return Template(value).render(context)
+        except Exception:
+            return value
