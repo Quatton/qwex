@@ -31,8 +31,8 @@ class Task:
             raise TypeError(f"Task '{name}' must be a mapping or string")
 
         run = d.get("run")
-        vars_ = d.get("vars") or {}
-        env_ = d.get("env") or {}
+        vars = d.get("vars") or {}
+        env = d.get("env") or {}
         uses = d.get("uses")
         with_ = d.get("with") or []
 
@@ -41,30 +41,24 @@ class Task:
         else:
             run_val = str(run)
 
-        # accept either a mapping or a list (some task types use a list of steps)
-        if not isinstance(vars_, (dict, list)):
+        if not isinstance(vars, (dict, list)):
             raise TypeError(f"Task '{name}' 'vars' must be a mapping or list")
-        if not isinstance(env_, dict):
+        if not isinstance(env, dict):
             raise TypeError(f"Task '{name}' 'env' must be a mapping")
 
         return cls(
             name=name,
             run=run_val,
-            vars=dict(vars_) if isinstance(vars_, dict) else {},
-            env=dict(env_),
+            vars=dict(vars) if isinstance(vars, dict) else {},
+            env=dict(env),
             uses=uses,
             with_=with_,
         )
 
 
 @dataclass
-class Preset:
-    """A preset is like a partial module - can define vars, tasks, includes, and modules.
-
-    When activated, its content is merged into the root module.
-    Presets are applied in order, with later presets overriding earlier ones.
-    The root module's own definitions have highest priority.
-    """
+class PartialModule:
+    """This is a PartialModule used for presets, which can be merged into a full Module depending on the compile flags."""
 
     name: str
     vars: Dict[str, Any] = field(default_factory=dict)
@@ -73,9 +67,9 @@ class Preset:
     includes: List[str] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, name: str, d: dict) -> "Preset":
+    def from_dict(cls, name: str, d: dict) -> "PartialModule":
         if not isinstance(d, dict):
-            raise TypeError(f"Preset '{name}' must be a mapping")
+            raise TypeError(f"PartialModule '{name}' must be a mapping")
 
         vars_ = d.get("vars") or {}
         includes_ = d.get("includes") or []
@@ -83,27 +77,25 @@ class Preset:
         modules_ = d.get("modules") or {}
 
         if not isinstance(vars_, dict):
-            raise TypeError(f"Preset '{name}' 'vars' must be a mapping")
+            raise TypeError(f"PartialModule '{name}' 'vars' must be a mapping")
         if not isinstance(includes_, list):
-            raise TypeError(f"Preset '{name}' 'includes' must be a list")
+            raise TypeError(f"PartialModule '{name}' 'includes' must be a list")
         if not isinstance(tasks_, dict):
-            raise TypeError(f"Preset '{name}' 'tasks' must be a mapping")
+            raise TypeError(f"PartialModule '{name}' 'tasks' must be a mapping")
         if not isinstance(modules_, dict):
-            raise TypeError(f"Preset '{name}' 'modules' must be a mapping")
+            raise TypeError(f"PartialModule '{name}' 'modules' must be a mapping")
 
-        # Parse tasks
         tasks: Dict[str, Task] = {}
         for tname, td in tasks_.items():
             tasks[tname] = Task.from_dict(tname, td)
 
-        # Parse modules
         modules: Dict[str, ModuleRef] = {}
         for mname, md in modules_.items():
             if isinstance(md, dict) and "source" in md:
                 modules[mname] = ModuleRef(name=mname, source=md["source"])
             else:
                 raise ValueError(
-                    f"Preset '{name}' module '{mname}' must have 'source' field"
+                    f"PartialModule '{name}' module '{mname}' must have 'source' field"
                 )
 
         return cls(
@@ -116,15 +108,10 @@ class Preset:
 
 
 @dataclass
-class Module:
-    """A module is the root unit containing tasks, vars, imports, and presets."""
+class Module(PartialModule):
+    """A module is the root unit containing tasks, vars, imports, and also presets."""
 
-    name: str
-    vars: Dict[str, Any] = field(default_factory=dict)
-    tasks: Dict[str, Task] = field(default_factory=dict)
-    modules: Dict[str, ModuleRef] = field(default_factory=dict)
-    includes: List[str] = field(default_factory=list)
-    presets: Dict[str, Preset] = field(default_factory=dict)
+    presets: Dict[str, PartialModule] = field(default_factory=dict)
     defaults: List[str] = field(default_factory=list)
 
     @classmethod
@@ -132,58 +119,33 @@ class Module:
         if not isinstance(d, dict):
             raise TypeError("Module.from_dict expects a mapping")
 
-        name = d.get("name", "root")
+        name = d.get("name") or "main"
 
-        vars_ = d.get("vars") or {}
-        if not isinstance(vars_, dict):
-            raise TypeError("Module 'vars' must be a mapping")
+        partial = PartialModule.from_dict(name, d)
 
-        tasks_ = d.get("tasks") or {}
-        if not isinstance(tasks_, dict):
-            raise TypeError("Module 'tasks' must be a mapping")
+        vars_ = partial.vars
+        includes = partial.includes
+        tasks = partial.tasks
+        modules = partial.modules
 
-        modules_ = d.get("modules") or {}
-        if not isinstance(modules_, dict):
-            raise TypeError("Module 'modules' must be a mapping")
+        presets_config = d.get("presets") or {}
+        defaults_ = d.get("defaults") or []
 
-        includes_ = d.get("includes") or []
-        if not isinstance(includes_, list):
-            raise TypeError("Module 'includes' must be a list")
-
-        presets_ = d.get("presets") or {}
-        if not isinstance(presets_, dict):
+        if not isinstance(presets_config, dict):
             raise TypeError("Module 'presets' must be a mapping")
 
-        defaults_ = d.get("defaults") or []
-        if not isinstance(defaults_, list):
-            raise TypeError("Module 'defaults' must be a list")
-
-        tasks: Dict[str, Task] = {}
-        for tname, td in tasks_.items():
-            tasks[tname] = Task.from_dict(tname, td)
-
         modules: Dict[str, ModuleRef] = {}
-        for mname, md in modules_.items():
-            if isinstance(md, dict) and "source" in md:
-                mod_vars = md.get("vars") or {}
-                if not isinstance(mod_vars, dict):
-                    raise TypeError(f"Module '{mname}' 'vars' must be a mapping")
-                modules[mname] = ModuleRef(
-                    name=mname, source=md["source"], vars=mod_vars
-                )
-            else:
-                raise ValueError(f"Module '{mname}' must have 'source' field")
 
-        presets: Dict[str, Preset] = {}
-        for pname, pd in presets_.items():
-            presets[pname] = Preset.from_dict(pname, pd)
+        presets: Dict[str, PartialModule] = {}
+        for pname, pd in presets_config.items():
+            presets[pname] = PartialModule.from_dict(pname, pd)
 
         return cls(
             name=str(name),
             vars=dict(vars_),
             tasks=tasks,
             modules=modules,
-            includes=list(includes_),
-            presets=presets,
+            includes=list(includes),
+            presets=presets_config,
             defaults=list(defaults_),
         )

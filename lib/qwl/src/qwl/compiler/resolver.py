@@ -16,7 +16,7 @@ from qwl.ast.parser import Parser
 from qwl.ast.spec import Module
 
 
-# Builtin modules directory (lib/qwl/builtins relative to src/qwl/compiler/resolver.py)
+# Builtin modules directory (lib/qwl/builtins relative to lib/qwl/src/qwl/compiler/resolver.py)
 # Goes up: compiler -> qwl -> src -> qwl -> then into builtins
 _BUILTINS_DIR = Path(__file__).parent.parent.parent.parent / "builtins"
 
@@ -32,7 +32,6 @@ def _hash_env(source_hash: str, vars_dict: Dict[str, Any]) -> str:
 
     This identifies a unique module instantiation (same source + same var bindings).
     """
-    # Serialize vars deterministically
     vars_json = json.dumps(vars_dict, sort_keys=True, default=str)
     combined = f"{source_hash}:{vars_json}"
     return hashlib.sha256(combined.encode()).hexdigest()[:16]
@@ -41,13 +40,27 @@ def _hash_env(source_hash: str, vars_dict: Dict[str, Any]) -> str:
 class Resolver:
     """Resolves module references using flat hash-indexed maps.
 
-    Phase 2 Data Structures:
+    Phase 2 Data Structures (box diagram):
+
+       [alias]                          [source_hash]                    [env_hash]
+         |                                  |                                |
+         |-- alias_to_source_hash ---------->|                                |
+         |                                  |-- source_hash_to_ast ----------> [Module AST]
+         |                                  |                                |
+         |                                  |-- source_hash_to_path ---------> [Path]
+         |                                  |                                |
+         |-- alias_to_env_hash ----------------------------------------------> |
+                                                                            |-- env_hash_to_env ----------------> [resolved env dict]
+                                                                            |
+                                                                            |-- env_hash_to_canonical_alias ---> [canonical alias]
+
+    Summary mappings:
     - alias_to_source_hash: alias -> source file hash
     - source_hash_to_ast: source hash -> parsed Module AST
-    - alias_to_env_hash: alias -> environment hash (source + vars)
-    - env_hash_to_canonical_alias: env_hash -> first alias (BFS order)
-    - env_hash_to_env: env_hash -> resolved environment dict
     - source_hash_to_path: source hash -> source file path
+    - alias_to_env_hash: alias -> environment hash (source + vars)
+    - env_hash_to_env: env_hash -> resolved environment dict
+    - env_hash_to_canonical_alias: env_hash -> first alias (BFS order)
     """
 
     def __init__(self, base_dir: Optional[Path] = None):

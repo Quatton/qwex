@@ -2829,3 +2829,32 @@ BashScript(
    - Named boundaries: `{% qx "boundary_name" %}`
    - Context passing: `{% qx with vars %}`
    - Nested boundaries (boundary within boundary)
+
+## Dec 19, 2025: Qwex Breaking Changes
+
+### New Spec?
+
+```yaml
+$?~windows:
+  rm: rm -rf "$*"
+$?windows:
+  rm: del /F /Q "$*"
+
+$root:
+  catr: cat
+  catfile: {{ cat.$ }} "./file.txt" # rendered as cat "./file.txt"
+  catvar:
+    $vars:
+      filename: "./file.txt"
+    $: |
+      {{ catr }} "{{ filename }}"
+      # rendered as catr "./file.txt"
+  catinline:
+    $uses: catvar
+    $with:
+      filename: "./inline.txt"
+  catargs:
+    $uses: cat
+    $with:
+      filename: $1
+```

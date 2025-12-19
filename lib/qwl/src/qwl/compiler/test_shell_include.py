@@ -1,12 +1,9 @@
 """Tests for shell() and include_file() compile-time functions."""
 
-import pytest
 from pathlib import Path
 import tempfile
-import os
 
 from qwl.compiler import Compiler
-from qwl.compiler.renderer import Renderer
 from qwl.ast import Parser
 
 
