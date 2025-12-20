@@ -41,7 +41,7 @@ pub struct Module {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModuleRef {
-    pub uses: String,
+    pub module: String,
     pub features: Option<Vec<String>>,
     pub props: Option<Props>,
 }
@@ -58,7 +58,7 @@ pub enum Task {
     },
     Uses {
         props: Option<Props>,
-        uses: String,
+        task: String,
     },
 }
 

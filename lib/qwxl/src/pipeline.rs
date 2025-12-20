@@ -52,18 +52,14 @@ impl Pipeline {
     }
 
     pub fn build(&mut self) -> Result<(), error::PipelineError> {
-        match self.config.source_path.extension() {
-            Some(ext) if ext == "ron" => {
-                let _module = self
-                    .parser
-                    .load_ron(&std::fs::read_to_string(&self.config.source_path)?)?;
-            }
-            _ => {
-                let _module = self
-                    .parser
-                    .load_yaml(&std::fs::read_to_string(&self.config.source_path)?)?;
-            }
-        }
+        let module = match self.config.source_path.extension() {
+            Some(ext) if ext == "ron" => self
+                .parser
+                .load_ron(&std::fs::read_to_string(&self.config.source_path)?),
+            _ => self
+                .parser
+                .load_yaml(&std::fs::read_to_string(&self.config.source_path)?),
+        }?;
         Ok(())
     }
 }
