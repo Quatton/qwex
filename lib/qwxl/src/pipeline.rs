@@ -1,24 +1,25 @@
 use std::path::PathBuf;
 
+use crate::pipeline::{
+    loader::read_to_string,
+    parser::{load_ron, load_yaml},
+};
+
 mod ast;
 mod cache;
 mod error;
+mod loader;
 mod parser;
+mod renderer;
+mod resolver;
 
 /// Shared pipeline configuration.
 pub struct Config {
     pub home_dir: PathBuf,
-    pub features: String,
     pub target_path: PathBuf,
+    pub features: String,
     pub source_path: PathBuf,
-}
-
-impl Config {
-    pub fn make_cache_dir(&self, name: &str) -> PathBuf {
-        let path = self.home_dir.join("build").join(name);
-        std::fs::create_dir_all(&path).expect("Failed to create cache dir");
-        path
-    }
+    pub enable_cache: bool,
 }
 
 impl Default for Config {
@@ -27,39 +28,49 @@ impl Default for Config {
         let home_dir = cwd.join(".qwex");
         let features = "default".to_string();
         Config {
-            target_path: home_dir
-                .clone()
-                .join("build")
-                .join("target")
-                .join(features.clone()),
+            target_path: cwd.join("build").join(&features).join("qwex.sh"),
             home_dir,
             features,
             source_path: cwd.join("qwex.yaml"),
+            enable_cache: true,
         }
     }
 }
 
 pub struct Pipeline {
     config: Config,
-    parser: parser::Parser,
+    cache: cache::CacheTree,
 }
 
 impl Pipeline {
     pub fn new(config: Config) -> Self {
-        let parser =
-            parser::Parser::with_cache(cache::Cache::with_dir(config.make_cache_dir("ast")));
-        Pipeline { config, parser }
+        Pipeline {
+            cache: cache::CacheTree::new(),
+            config,
+        }
+    }
+
+    fn parse_with_cache<T: Into<PathBuf>>(
+        &mut self,
+        path: T,
+    ) -> Result<&ast::ModuleFile, error::PipelineError> {
+        let source_string = read_to_string(&path.into())?;
+        self.cache
+            .source_ast_cache
+            .query_or_compute_with(source_string.clone(), || {
+                match self.config.source_path.extension() {
+                    Some(ext) if ext == "ron" => load_ron(&source_string),
+                    _ => load_yaml(&source_string),
+                }
+            })
     }
 
     pub fn build(&mut self) -> Result<(), error::PipelineError> {
-        let module = match self.config.source_path.extension() {
-            Some(ext) if ext == "ron" => self
-                .parser
-                .load_ron(&std::fs::read_to_string(&self.config.source_path)?),
-            _ => self
-                .parser
-                .load_yaml(&std::fs::read_to_string(&self.config.source_path)?),
-        }?;
+        let source_path = self.config.source_path.clone();
+        let module = self.parse_with_cache(source_path)?;
+
         Ok(())
     }
 }
+
+// module -> root tasks -> find dependencies ->

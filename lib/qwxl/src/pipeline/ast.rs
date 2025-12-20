@@ -2,6 +2,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+pub const TASK_INLINE_KEYWORD: &str = "cmd";
+pub const TASK_PREFIX: &str = "tasks";
+pub const PROP_PREFIX: &str = "props";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Resource {
@@ -33,7 +37,7 @@ pub struct ModuleFile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Module {
-    pub extends: Option<String>,
+    pub uses: Option<String>,
     pub modules: Option<BTreeMap<String, ModuleRef>>,
     pub props: Option<Props>,
     pub tasks: BTreeMap<String, Task>,
@@ -41,7 +45,7 @@ pub struct Module {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModuleRef {
-    pub module: String,
+    pub uses: String,
     pub features: Option<Vec<String>>,
     pub props: Option<Props>,
 }
@@ -58,7 +62,7 @@ pub enum Task {
     },
     Uses {
         props: Option<Props>,
-        task: String,
+        uses: String,
     },
 }
 

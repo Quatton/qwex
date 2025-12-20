@@ -22,4 +22,10 @@ pub enum PipelineError {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Ron(#[from] ron::de::SpannedError),
+
+    #[error(transparent)]
+    Minijinja(#[from] minijinja::Error),
 }

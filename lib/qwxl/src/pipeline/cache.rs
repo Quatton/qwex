@@ -1,86 +1,63 @@
-use ahash::{AHasher, HashMap, HashMapExt as _};
-use serde::{Serialize, de::DeserializeOwned};
-use std::hash::Hasher as _;
+use ahash::{HashMap, HashMapExt as _};
+use std::hash::Hash;
 
-use std::fs;
-use std::hash::Hash as _;
-use std::path::PathBuf;
+use crate::pipeline::error::PipelineError;
 
-#[derive(Debug, Clone)]
-pub struct Cache<K, V> {
-    pub cache_dir: Option<PathBuf>,
-    pub memory: HashMap<K, V>,
+/// A simple, high-performance memory store for pipeline artifacts.
+pub struct Store<K, V> {
+    memory: HashMap<K, V>,
 }
 
-impl<K, V> Cache<K, V>
+impl<K, V> Store<K, V>
 where
-    K: Eq + std::hash::Hash + Clone + ToString,
-    V: Serialize + DeserializeOwned + Clone,
+    K: Eq + Hash + Clone,
+    V: Clone,
 {
-    pub fn new(dir: Option<PathBuf>) -> Self {
-        if let Some(ref path) = dir {
-            let _ = fs::create_dir_all(path);
-        }
+    pub fn new() -> Self {
         Self {
-            cache_dir: dir,
             memory: HashMap::new(),
         }
     }
 
-    pub fn with_dir(dir: PathBuf) -> Self {
-        Self::new(Some(dir))
-    }
-
-    fn get_path_for_key(&self, key: &K) -> Option<PathBuf> {
-        self.cache_dir.as_ref().map(|dir| {
-            let mut hasher = AHasher::default();
-            key.to_string().hash(&mut hasher);
-            let hash = hasher.finish();
-            dir.join(format!("{:x}.ron", hash))
-        })
-    }
-
-    /// Private helper to handle disk persistence
-    fn save_to_disk(&self, key: &K, value: &V) {
-        if let Some(path) = self.get_path_for_key(key) {
-            if let Ok(serialized) = ron::to_string(value) {
-                let _ = fs::write(path, serialized);
-            }
-        }
-    }
-
+    /// Insert a value directly into the store.
     pub fn insert(&mut self, key: K, value: V) {
-        self.save_to_disk(&key, &value);
         self.memory.insert(key, value);
     }
 
-    pub fn get(&mut self, key: &K) -> Option<&V> {
-        // 1. If it's in memory, return it immediately
-        if self.memory.contains_key(key) {
-            return self.memory.get(key);
+    /// Get a reference to a value if it exists.
+    pub fn get(&self, key: &K) -> Option<&V> {
+        self.memory.get(key)
+    }
+
+    /// The primary interface: Query memory, or run the producer function on a miss.
+    /// Propagates any error that can be converted into a PipelineError.
+    pub fn query_or_compute_with<F, E>(&mut self, key: K, f: F) -> Result<&V, E>
+    where
+        F: FnOnce() -> Result<V, E>,
+        E: From<PipelineError>,
+    {
+        // 1. Fast path: check if we already have it
+        if self.memory.contains_key(&key) {
+            return Ok(self.memory.get(&key).expect("infallible"));
         }
 
-        // 2. If not, try disk
-        let disk_value = if let Some(path) = self.get_path_for_key(key) {
-            if let Ok(contents) = fs::read_to_string(path) {
-                match ron::from_str(&contents) {
-                    Ok(v) => Some(v),
-                    Err(_) => None,
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        // 2. Slow path: run the producer
+        let value = f()?;
 
-        // 3. If we found it on disk, put it in memory
-        if let Some(v) = disk_value {
-            self.memory.insert(key.clone(), v);
-            // Now that it's inserted, we can return the reference from memory
-            return self.memory.get(key);
+        // 3. Store and return reference
+        self.memory.insert(key.clone(), value);
+        Ok(self.memory.get(&key).expect("infallible"))
+    }
+}
+
+pub(crate) struct CacheTree {
+    pub source_ast_cache: Store<String, crate::pipeline::ast::ModuleFile>,
+}
+
+impl CacheTree {
+    pub fn new() -> Self {
+        Self {
+            source_ast_cache: Store::new(),
         }
-
-        None
     }
 }
