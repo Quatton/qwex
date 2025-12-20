@@ -2,7 +2,16 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum PipelineError {
-    #[error("Unknown file format")]
+    #[error("Invalid alias format: {0}")]
+    InvalidAliasFormat(String),
+
+    #[error("Alias already exists: {0}")]
+    AliasAlreadyExists(String),
+
+    #[error("Import alias not found: {0}")]
+    ImportAliasNotFound(String),
+
+    #[error("Unknown file format: {0}")]
     UnsupportedFormat(String),
 
     #[error(transparent)]

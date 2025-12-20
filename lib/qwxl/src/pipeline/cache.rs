@@ -1,17 +1,17 @@
 use ahash::{HashMap, HashMapExt as _};
 use std::hash::Hash;
+use std::sync::Arc;
 
 use crate::pipeline::error::PipelineError;
 
 /// A simple, high-performance memory store for pipeline artifacts.
 pub struct Store<K, V> {
-    memory: HashMap<K, V>,
+    memory: HashMap<K, Arc<V>>,
 }
 
 impl<K, V> Store<K, V>
 where
     K: Eq + Hash + Clone,
-    V: Clone,
 {
     pub fn new() -> Self {
         Self {
@@ -19,33 +19,52 @@ where
         }
     }
 
-    /// Insert a value directly into the store.
-    pub fn insert(&mut self, key: K, value: V) {
-        self.memory.insert(key, value);
+    /// Insert a value directly into the store (wraps it in `Arc`).
+    pub fn insert(&mut self, key: K, value: V) -> Option<Arc<V>> {
+        self.memory.insert(key, Arc::new(value))
     }
 
-    /// Get a reference to a value if it exists.
-    pub fn get(&self, key: &K) -> Option<&V> {
-        self.memory.get(key)
+    /// Get a cloned `Arc` to a value if it exists.
+    pub fn get(&self, key: &K) -> Option<Arc<V>> {
+        self.memory.get(key).cloned()
     }
 
     /// The primary interface: Query memory, or run the producer function on a miss.
-    /// Propagates any error that can be converted into a PipelineError.
-    pub fn query_or_compute_with<F, E>(&mut self, key: K, f: F) -> Result<&V, E>
+    /// Returns an `Arc` to the value and propagates any error that can be converted into a PipelineError.
+    pub fn query_or_compute_with<F, E>(&mut self, key: K, f: F) -> Result<Arc<V>, E>
     where
         F: FnOnce() -> Result<V, E>,
         E: From<PipelineError>,
     {
         // 1. Fast path: check if we already have it
-        if self.memory.contains_key(&key) {
-            return Ok(self.memory.get(&key).expect("infallible"));
+        if let Some(v) = self.memory.get(&key) {
+            return Ok(v.clone());
         }
 
         // 2. Slow path: run the producer
         let value = f()?;
 
-        // 3. Store and return reference
-        self.memory.insert(key.clone(), value);
-        Ok(self.memory.get(&key).expect("infallible"))
+        // 3. Store and return Arc
+        let arc = Arc::new(value);
+        self.memory.insert(key.clone(), arc.clone());
+        Ok(arc)
+    }
+
+    pub fn query_or_compute_as_arc<F, E>(&mut self, key: K, f: F) -> Result<Arc<V>, E>
+    where
+        F: FnOnce() -> Result<Arc<V>, E>,
+        E: From<PipelineError>,
+    {
+        // 1. Fast path: check if we already have it
+        if let Some(v) = self.memory.get(&key) {
+            return Ok(v.clone());
+        }
+
+        // 2. Slow path: run the producer
+        let arc = f()?;
+
+        // 3. Store (but no need to create a new Arc) and return Arc
+        self.memory.insert(key.clone(), arc.clone());
+        Ok(arc)
     }
 }

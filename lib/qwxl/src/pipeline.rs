@@ -42,9 +42,11 @@ pub enum QueueItem {
 
 pub struct Pipeline {
     config: Config,
-    file_queue: VecDeque<(PathBuf, bool)>,
-    file_cache: Store<PathBuf, String>,
-    ast_cache: Store<String, Module>,
+    file_queue: VecDeque<(PathBuf, String, String)>,
+    path_to_string: Store<PathBuf, String>,
+    path_to_ast: Store<String, Module>,
+    alias_to_path: Store<String, PathBuf>,
+    alias_to_ast: Store<String, Module>,
 }
 
 impl Pipeline {
@@ -52,20 +54,23 @@ impl Pipeline {
         Pipeline {
             config,
             file_queue: VecDeque::new(),
-            file_cache: Store::new(),
-            ast_cache: Store::new(),
+            path_to_string: Store::new(),
+            path_to_ast: Store::new(),
+            alias_to_ast: Store::new(),
+            alias_to_path: Store::new(),
         }
     }
 
     pub fn build(&mut self) -> Result<(), error::PipelineError> {
         let source_path = self.config.source_path.clone();
-        self.file_queue.push_back((source_path, true));
+        self.file_queue
+            .push_back((source_path, "".to_string(), "".to_string()));
         // let env = minijinja::Environment::new();
 
         while !self.file_queue.is_empty() {
             // 1. Process file queue and process ASTs
-            while let Some((file_path, is_src)) = self.file_queue.pop_front() {
-                let module = self.parse(file_path, is_src)?;
+            while let Some((file_path, from, alias)) = self.file_queue.pop_front() {
+                let module = self.parse(file_path, from, alias)?;
                 println!("Parsed module: {:?}", module);
             }
         }
