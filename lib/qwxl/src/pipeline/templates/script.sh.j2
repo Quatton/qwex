@@ -1,14 +1,12 @@
-{% macro render(task) -%}
+{% macro render_task(task) -%}
 {{ task.name }}() {
     {{ task.body }}
 }
-{{ task.dependencies | render }}
 {%- endmacro %}
 
 #!/usr/bin/env bash
 set -euo pipefail
 
 {% for task in tasks %}
-{{ task_template.render(task) }}
+{{ render_task(task) }}
 {% endfor %}
-  

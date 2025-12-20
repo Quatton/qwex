@@ -1,12 +1,10 @@
-use std::path::PathBuf;
+use std::{collections::VecDeque, path::PathBuf};
 
-use crate::pipeline::{
-    loader::read_to_string,
-    parser::{load_ron, load_yaml},
-};
+use crate::pipeline::{ast::Module, cache::Store};
 
 mod ast;
 mod cache;
+mod context;
 mod error;
 mod loader;
 mod parser;
@@ -37,37 +35,40 @@ impl Default for Config {
     }
 }
 
+pub enum QueueItem {
+    File(PathBuf),
+    Task(String),
+}
+
 pub struct Pipeline {
     config: Config,
-    cache: cache::CacheTree,
+    file_queue: VecDeque<(PathBuf, bool)>,
+    file_cache: Store<PathBuf, String>,
+    ast_cache: Store<String, Module>,
 }
 
 impl Pipeline {
     pub fn new(config: Config) -> Self {
         Pipeline {
-            cache: cache::CacheTree::new(),
             config,
+            file_queue: VecDeque::new(),
+            file_cache: Store::new(),
+            ast_cache: Store::new(),
         }
-    }
-
-    fn parse_with_cache<T: Into<PathBuf>>(
-        &mut self,
-        path: T,
-    ) -> Result<&ast::ModuleFile, error::PipelineError> {
-        let source_string = read_to_string(&path.into())?;
-        self.cache
-            .source_ast_cache
-            .query_or_compute_with(source_string.clone(), || {
-                match self.config.source_path.extension() {
-                    Some(ext) if ext == "ron" => load_ron(&source_string),
-                    _ => load_yaml(&source_string),
-                }
-            })
     }
 
     pub fn build(&mut self) -> Result<(), error::PipelineError> {
         let source_path = self.config.source_path.clone();
-        let module = self.parse_with_cache(source_path)?;
+        self.file_queue.push_back((source_path, true));
+        // let env = minijinja::Environment::new();
+
+        while !self.file_queue.is_empty() {
+            // 1. Process file queue and process ASTs
+            while let Some((file_path, is_src)) = self.file_queue.pop_front() {
+                let module = self.parse(file_path, is_src)?;
+                println!("Parsed module: {:?}", module);
+            }
+        }
 
         Ok(())
     }

@@ -49,15 +49,3 @@ where
         Ok(self.memory.get(&key).expect("infallible"))
     }
 }
-
-pub(crate) struct CacheTree {
-    pub source_ast_cache: Store<String, crate::pipeline::ast::ModuleFile>,
-}
-
-impl CacheTree {
-    pub fn new() -> Self {
-        Self {
-            source_ast_cache: Store::new(),
-        }
-    }
-}

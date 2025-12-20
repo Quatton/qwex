@@ -1,26 +1,20 @@
-use std::fmt::format;
+use crate::pipeline::{ast::Task, cache::Store};
 
-use minijinja::Environment;
-
-use crate::pipeline::{
-    ast::{Module, TASK_INLINE_KEYWORD, Task},
-    cache::Store,
-};
-
-pub enum ReferenceType {
-    Task(Task),
-    Module(Module),
-    Prop,
-    Alias(String),
+struct EnvironmentContext {
+    module_context: Store<String, String>,
 }
-
-pub type ReferenceTree = Store<String, ReferenceType>;
 
 pub fn normalize_task(task: Task) -> Task {
     match task {
         Task::Uses { props, uses } => Task::Cmd {
-            props,
-            cmd: format!("{{{{ {}.{} }}}}", uses, TASK_INLINE_KEYWORD),
+            props: None,
+            cmd: format!(
+                "{{{{ {}({}) }}}}",
+                uses,
+                props.map_or("{}".to_string(), |p| {
+                    serde_json::to_string(&p).unwrap_or_else(|_| "{}".to_string())
+                })
+            ),
         },
         _ => task,
     }
@@ -41,7 +35,7 @@ mod tests {
 
         match normalized {
             Task::Cmd { cmd, .. } => {
-                assert_eq!(cmd, "{{ moduleA.tasks.task.cmd }}");
+                assert_eq!(cmd, "{{ moduleA.tasks.task({}) }}");
             }
             _ => panic!("Expected Cmd task"),
         }

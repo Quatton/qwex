@@ -1,8 +1,8 @@
 use std::{fs::OpenOptions, path::PathBuf};
 
-use crate::pipeline::error::PipelineError;
+use crate::pipeline::{Pipeline, error::PipelineError};
 
-pub fn read_to_string(path: &PathBuf) -> Result<String, PipelineError> {
+fn read_to_string(path: &PathBuf) -> Result<String, PipelineError> {
     OpenOptions::new()
         .read(true)
         .open(path)
@@ -13,4 +13,11 @@ pub fn read_to_string(path: &PathBuf) -> Result<String, PipelineError> {
             Ok(contents)
         })
         .map_err(PipelineError::from)
+}
+
+impl Pipeline {
+    pub fn load_file(&mut self, path: PathBuf) -> Result<&String, PipelineError> {
+        self.file_cache
+            .query_or_compute_with(path.clone(), || read_to_string(&path))
+    }
 }

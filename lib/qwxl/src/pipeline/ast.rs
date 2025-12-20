@@ -1,6 +1,7 @@
-use std::collections::BTreeMap;
-
+use ahash::HashMap;
 use serde::{Deserialize, Serialize};
+
+use crate::pipeline::context::Props;
 
 pub const TASK_INLINE_KEYWORD: &str = "cmd";
 pub const TASK_PREFIX: &str = "tasks";
@@ -28,26 +29,15 @@ impl From<String> for Resource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModuleFile {
-    pub default: Module,
-
-    #[serde(flatten)]
-    pub features: BTreeMap<String, Module>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Module {
     pub uses: Option<String>,
-    pub modules: Option<BTreeMap<String, ModuleRef>>,
-    pub props: Option<Props>,
-    pub tasks: BTreeMap<String, Task>,
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModuleRef {
-    pub uses: String,
-    pub features: Option<Vec<String>>,
-    pub props: Option<Props>,
+    #[serde(default)]
+    pub props: Props,
+    pub tasks: HashMap<String, Task>,
+
+    #[serde(flatten, default)]
+    pub modules: HashMap<String, Module>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,4 +56,17 @@ pub enum Task {
     },
 }
 
-pub type Props = BTreeMap<String, ron::Value>;
+/*
+module1:
+    uses: "builtin://log.yaml"
+    features:
+        - "featureA"
+
+props:
+    prop1: "value1"
+
+tasks:
+    task1:
+        props: "pp"
+        cmd: "echo Hello"
+*/

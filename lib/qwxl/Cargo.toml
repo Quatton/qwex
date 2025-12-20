@@ -13,4 +13,5 @@ ron = "0.12.0"
 saphyr = "0.0.6"
 serde = { version = "1.0", features = ["derive"] }
 serde-saphyr = "0.0.11"
+serde_json = "1.0.145"
 thiserror = "2.0.17"

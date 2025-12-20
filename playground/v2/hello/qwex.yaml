@@ -1,4 +1,3 @@
-default:
-  tasks:
-    hello:
-      cmd: echo "Hello, Qwex!"
+tasks:
+  hello:
+    cmd: echo "Hello, Qwex!"
