@@ -2,7 +2,9 @@ name: playground
 
 modules:
   steps:
-    source: std/steps
+    uses: std/steps
+  utils:
+    uses: std/utils
 
 tasks:
   test-task-with-args:
@@ -13,6 +15,7 @@ tasks:
         qwex compile qwex.yaml -o compiled.sh
         bash compiled.sh greet "Alice" "Hi" | grep -q "Hi, Alice!" && echo "✓ greet passed"
         bash compiled.sh repeat "Hello" 2 | wc -l | grep -q 2 && echo "✓ repeat passed"
+        rm -f compiled.sh
       )
       echo "=== task-with-args: ALL PASSED ==="
 
@@ -24,6 +27,7 @@ tasks:
         qwex compile qwex.yaml -o compiled.sh
         bash compiled.sh greet | grep -q "Hello" && echo "✓ greet passed"
         DEBUG=1 bash compiled.sh debug_message 2>&1 | grep -q "Debug" && echo "✓ debug_message passed"
+        rm -f compiled.sh
       )
       echo "=== module-run: ALL PASSED ==="
 
@@ -34,6 +38,7 @@ tasks:
         cd module-inline
         qwex compile qwex.yaml -o compiled.sh
         bash compiled.sh with_color | grep -q "blue" && echo "✓ with_color passed"
+        rm -f compiled.sh
       )
       echo "=== module-inline: ALL PASSED ==="
 
@@ -45,6 +50,7 @@ tasks:
         qwex compile qwex.yaml -o compiled.sh
         bash compiled.sh composite | grep -q "First" && echo "✓ composite passed"
         bash compiled.sh multi_step | grep -q "Building" && echo "✓ multi_step passed"
+        rm -f compiled.sh
       )
       echo "=== module-uses-with: ALL PASSED ==="
 

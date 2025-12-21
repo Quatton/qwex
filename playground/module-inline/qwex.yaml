@@ -1,18 +1,10 @@
-name: module_inline
-
+name: module-inline
 modules:
   utils:
-    source: std/utils
+    uses: std/utils
 
 tasks:
   with_color:
     run: |
-      {{ utils.color }}
-      echo -e "${Q_BLUE}This text is blue${Q_RESET}"
-      echo -e "${Q_GREEN}This text is green${Q_RESET}"
-      echo -e "${Q_RED}This text is red${Q_RESET}"
-  
-  multi_call:
-    run: |
-      {{ utils.color }}
-      echo "${Q_GRAY}Color vars are now available${Q_RESET}"
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      echo "This is blue text"

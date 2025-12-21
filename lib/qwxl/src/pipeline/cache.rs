@@ -1,21 +1,28 @@
-use ahash::{HashMap, HashMapExt as _};
+use ahash::AHashMap;
+use serde::Serialize;
 use std::hash::Hash;
 use std::sync::Arc;
 
 use crate::pipeline::error::PipelineError;
 
 /// A simple, high-performance memory store for pipeline artifacts.
-pub struct Store<K, V> {
-    memory: HashMap<K, Arc<V>>,
+#[derive(Debug, Serialize)]
+pub struct Store<K, V>
+where
+    K: Eq + Hash + Clone + Serialize,
+{
+    #[serde(flatten)]
+    memory: AHashMap<K, Arc<V>>,
 }
 
 impl<K, V> Store<K, V>
 where
-    K: Eq + Hash + Clone,
+    K: Eq + Hash + Clone + Serialize,
+    V: Serialize,
 {
     pub fn new() -> Self {
         Self {
-            memory: HashMap::new(),
+            memory: AHashMap::new(),
         }
     }
 

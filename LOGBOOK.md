@@ -79,6 +79,8 @@ After extensive design discussions, we've finalized the architecture for Qwex's 
 
 Simplified state machine for MVP:
 ```
+
+
 PENDING (submitted + queued + initializing)
   ↓
 RUNNING (actively executing)
@@ -657,18 +659,18 @@ Instead of hiding layers behind Python abstractions, expose them as **user-owned
 
 #### Architecture: Rigid Core + Flexible Templates
 
-| **Core (rigid, built-in)** | **Templates (user-owned, `.qwex/templates/`)** |
-|---|---|
-| Run lifecycle management | SSH connection/execution |
-| `run.json` generation & tracking | Docker container execution |
-| Run ID generation (UUID) | Slurm job submission |
-| Logging infrastructure | Singularity/Apptainer |
-| `qwex list` / `qwex logs` / `qwex cancel` | Kubernetes Job templates |
-| Artifact tracking (inputs/outputs) | Git worktree setup |
-| Process detachment / background runs | Storage mount commands |
-| Exit code capture & status | Custom wrappers (conda, nix, etc.) |
-| Backend storage for run metadata | |
-| Template rendering engine (Jinja) | |
+| **Core (rigid, built-in)**                | **Templates (user-owned, `.qwex/templates/`)** |
+| ----------------------------------------- | ---------------------------------------------- |
+| Run lifecycle management                  | SSH connection/execution                       |
+| `run.json` generation & tracking          | Docker container execution                     |
+| Run ID generation (UUID)                  | Slurm job submission                           |
+| Logging infrastructure                    | Singularity/Apptainer                          |
+| `qwex list` / `qwex logs` / `qwex cancel` | Kubernetes Job templates                       |
+| Artifact tracking (inputs/outputs)        | Git worktree setup                             |
+| Process detachment / background runs      | Storage mount commands                         |
+| Exit code capture & status                | Custom wrappers (conda, nix, etc.)             |
+| Backend storage for run metadata          |                                                |
+| Template rendering engine (Jinja)         |                                                |
 
 #### Directory Structure
 
@@ -711,12 +713,12 @@ ssh qtn@csc bash -c '
 
 #### Comparison with Similar Tools
 
-| | GitHub Workflows | Taskfile | qwex |
-|---|---|---|---|
-| **Focus** | CI/CD on GitHub runners | Local task runner | Remote execution anywhere |
-| **Templates** | Built-in actions | None | User-owned `.j2` files |
-| **Registry** | GitHub Marketplace | None | `qwex add ssh` (shadcn-style) |
-| **Composition** | Steps in sequence | Task dependencies | Nested shell wrappers |
+|                 | GitHub Workflows        | Taskfile          | qwex                          |
+| --------------- | ----------------------- | ----------------- | ----------------------------- |
+| **Focus**       | CI/CD on GitHub runners | Local task runner | Remote execution anywhere     |
+| **Templates**   | Built-in actions        | None              | User-owned `.j2` files        |
+| **Registry**    | GitHub Marketplace      | None              | `qwex add ssh` (shadcn-style) |
+| **Composition** | Steps in sequence       | Task dependencies | Nested shell wrappers         |
 
 #### Design Questions (Open)
 
@@ -1487,6 +1489,7 @@ tasks:
 **Stage 1: Parse** 
 - Load YAML → AST (Module, Task, Args)
 - Validate structure
+- Validate structure
 
 **Stage 2: Resolve**
 - Load all modules recursively (e.g., `qstd/log.yaml`, `qstd/steps.yaml`)
@@ -2042,16 +2045,16 @@ render_bash(task_nodes, root_tasks)
 
 ### Comparison with Current Implementation
 
-| Aspect | Current (Phase 1) | Improved (Phase 2) |
-|--------|-------------------|-------------------|
-| Module loading | Eager (all modules) | Lazy (only reachable) |
-| Env structure | Nested tree | Flat hash-indexed map |
-| Canonicalization | Separate loop after resolution | Immediate during dep traversal |
-| Inline expansion | Separate phase | Integrated with dep traversal |
-| Dep detection | Regex post-render | AST-based pre-render |
-| Task deduplication | None (emit all) | Body-hash deduplication |
-| Namespace | Separate `tasks.X` and `vars.Y` | Unified `alias.X` |
-| Unused tasks | Emitted anyway | Never loaded or emitted |
+| Aspect             | Current (Phase 1)               | Improved (Phase 2)             |
+| ------------------ | ------------------------------- | ------------------------------ |
+| Module loading     | Eager (all modules)             | Lazy (only reachable)          |
+| Env structure      | Nested tree                     | Flat hash-indexed map          |
+| Canonicalization   | Separate loop after resolution  | Immediate during dep traversal |
+| Inline expansion   | Separate phase                  | Integrated with dep traversal  |
+| Dep detection      | Regex post-render               | AST-based pre-render           |
+| Task deduplication | None (emit all)                 | Body-hash deduplication        |
+| Namespace          | Separate `tasks.X` and `vars.Y` | Unified `alias.X`              |
+| Unused tasks       | Emitted anyway                  | Never loaded or emitted        |
 
 ### What Needs to Change
 
@@ -2212,12 +2215,12 @@ Based on the feedback from Dec 17, we have refactored the compiler and standard 
 
 ### Migration Guide
 
-| Old Spec | New Spec |
-| :--- | :--- |
-| `{{ args.name }}` | `$1` (or alias in vars) |
-| `{{ vars.color }}` | `{{ color }}` |
-| `{{ log.tasks.debug }}` | `{{ log.debug }}` |
-| `tasks.step` | `tasks.compose` |
+| Old Spec                | New Spec                |
+| :---------------------- | :---------------------- |
+| `{{ args.name }}`       | `$1` (or alias in vars) |
+| `{{ vars.color }}`      | `{{ color }}`           |
+| `{{ log.tasks.debug }}` | `{{ log.debug }}`       |
+| `tasks.step`            | `tasks.compose`         |
 
 ---
 
@@ -2873,3 +2876,4 @@ $root:
 
 - command-line tools -> other computers
 
+---

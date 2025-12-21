@@ -1,0 +1,8 @@
+name: task-with-args-test
+
+tasks:
+  run-tests:
+    run: |
+      qwex compile qwex.yaml -o compiled.sh
+      bash compiled.sh greet "Alice" "Hi" | grep -q "Hi, Alice!" && echo "✓ greet passed"
+      bash compiled.sh repeat "Hello" 2 | wc -l | grep -q 2 && echo "✓ repeat passed"

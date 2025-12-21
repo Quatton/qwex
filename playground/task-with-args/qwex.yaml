@@ -1,14 +1,16 @@
-name: task_with_args
+name: task-with-args
 
 tasks:
   greet:
-    run: echo "$2, $1!"
-  
-  repeat:
-    vars:
-      message: "$1"
-      count: "${2:-3}" # Default to 3 if not provided
     run: |
-      for i in $(seq 1 {{ count }}); do
-        echo "{{ message }}"
+      local name="$1"
+      local greeting="$2"
+      echo "${greeting}, ${name}!"
+
+  repeat:
+    run: |
+      local text="$1"
+      local times="$2"
+      for i in $(seq 1 "$times"); do
+        echo "$text"
       done

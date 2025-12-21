@@ -1,21 +1,15 @@
 name: module-uses-with
 modules:
-  steps:
-    source: std/steps
+  utils:
+    uses: std/utils
 
 tasks:
   composite:
-    uses: steps.compose
-    with:
-      - name: "Step 1"
-        run: "echo First step"
-  
+    run: |
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      echo "First"
+
   multi_step:
-    uses: steps.compose
-    with:
-      - name: "Build"
-        run: "echo Building..."
-      - name: "Test"
-        run: "echo Testing..."
-      - name: "Deploy"
-        run: "echo Deploying..."
+    run: |
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      echo "Building..."

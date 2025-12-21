@@ -1,6 +1,16 @@
-use std::{collections::VecDeque, path::PathBuf};
+use std::{
+    collections::{HashSet, VecDeque},
+    path::PathBuf,
+    sync::Arc,
+};
 
-use crate::pipeline::{ast::Module, cache::Store};
+use crate::pipeline::{
+    ast::Module,
+    cache::Store,
+    context::Props,
+    error::PipelineError,
+    renderer::{NodeRecord, TaskNode},
+};
 
 mod ast;
 mod cache;
@@ -12,6 +22,7 @@ mod renderer;
 mod resolver;
 
 /// Shared pipeline configuration.
+#[derive(Clone)]
 pub struct Config {
     pub home_dir: PathBuf,
     pub target_path: PathBuf,
@@ -35,48 +46,64 @@ impl Default for Config {
     }
 }
 
-pub enum QueueItem {
-    File(PathBuf),
-    Task(String),
+/// Aggregate stores used by the pipeline. Keeps related stores together
+/// so they are easier to reason about and maintain.
+#[derive(Debug)]
+pub struct PipelineStore {
+    /// path -> content
+    pub content: Store<String, String>,
+
+    /// alias -> source_path
+    pub source_paths: Store<String, String>,
+
+    /// resolved_path -> Module
+    pub sources: Store<String, Module>,
+
+    /// alias -> Module instance
+    pub modules: Store<String, Module>,
+
+    /// alias -> Node
+    pub tasks: Store<String, NodeRecord>,
+
+    /// alias -> Value
+    pub props: Store<String, minijinja::Value>,
+}
+
+impl PipelineStore {
+    pub fn new() -> Self {
+        PipelineStore {
+            content: Store::new(),
+            sources: Store::new(),
+            source_paths: Store::new(),
+            modules: Store::new(),
+            tasks: Store::new(),
+            props: Store::new(),
+        }
+    }
+}
+
+impl Default for PipelineStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub struct Pipeline {
     config: Config,
-    file_queue: VecDeque<(PathBuf, String, String)>,
-    path_to_string: Store<PathBuf, String>,
-    path_to_ast: Store<String, Module>,
-    alias_to_path: Store<String, PathBuf>,
-    alias_to_ast: Store<String, Module>,
+    stores: PipelineStore,
 }
 
 impl Pipeline {
     pub fn new(config: Config) -> Self {
         Pipeline {
             config,
-            file_queue: VecDeque::new(),
-            path_to_string: Store::new(),
-            path_to_ast: Store::new(),
-            alias_to_ast: Store::new(),
-            alias_to_path: Store::new(),
+            stores: PipelineStore::new(),
         }
     }
 
-    pub fn build(&mut self) -> Result<(), error::PipelineError> {
-        let source_path = self.config.source_path.clone();
-        self.file_queue
-            .push_back((source_path, "".to_string(), "".to_string()));
-        // let env = minijinja::Environment::new();
-
-        while !self.file_queue.is_empty() {
-            // 1. Process file queue and process ASTs
-            while let Some((file_path, from, alias)) = self.file_queue.pop_front() {
-                let module = self.parse(file_path, from, alias)?;
-                println!("Parsed module: {:?}", module);
-            }
-        }
-
-        Ok(())
+    pub fn compile(&mut self) -> Result<String, PipelineError> {
+        let parsed = self.parse_root()?;
+        let script = ron::ser::to_string_pretty(&parsed, ron::ser::PrettyConfig::default())?;
+        Ok(script)
     }
 }
-
-// module -> root tasks -> find dependencies ->

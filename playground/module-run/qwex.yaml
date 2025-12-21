@@ -1,19 +1,19 @@
-name: module_run_usage
-
+name: module-run
 modules:
-  log:
-    source: std/log
+  utils:
+    uses: std/utils
 
 tasks:
   greet:
-    run: echo "Hello from module_run_usage"
-  
+    run: |
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      echo "Hello"
+
   debug_message:
     run: |
-      {{ log.debug }} "Debug message"
-  
-  combined:
-    run: |
-      echo "Step 1: Greeting"
-      {{ log.debug }} "About to say debug"
-      echo "Step 2: Done"
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      if [ -n "${DEBUG-}" ]; then
+        echo "Debug: something happened"
+      else
+        echo "No debug"
+      fi

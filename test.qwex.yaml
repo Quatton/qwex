@@ -1,0 +1,6 @@
+props:
+  name: "world"
+
+tasks:
+  hello:
+    cmd: "echo Hello {{ props.name }}"

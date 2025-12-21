@@ -1,6 +1,0 @@
-props:
-  prop1: "value1"
-
-$exports:
-  task1:
-    result: "some_value"
