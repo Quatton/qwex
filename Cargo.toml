@@ -1,4 +1,4 @@
 [workspace]
-members = ["lib/qwxl", "lib/pyqwxl", "apps/qwex"]
+members = ["lib/qwxl", "apps/qwex"]
 resolver = "3"
 default-members = ["apps/qwex"]

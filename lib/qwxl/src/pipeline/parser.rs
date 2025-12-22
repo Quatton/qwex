@@ -27,7 +27,9 @@ pub fn load_source(input: &str, ext: &str) -> Result<Module, PipelineError> {
     match ext {
         "yaml" | "yml" => load_yaml(input),
         "ron" => load_ron(input),
-        other => Err(PipelineError::UnsupportedFormat(other.to_string())),
+        other => load_yaml(input).map_err(|_| {
+            PipelineError::UnsupportedFormat(format!("Unsupported file format: {}", other))
+        }),
     }
 }
 
@@ -56,18 +58,6 @@ fn merge_module_in_place(base: &mut Module, addition: &Module) {
     for (prop_key, prop_value) in &addition.props {
         base.props.insert(prop_key.clone(), prop_value.clone());
     }
-}
-
-fn merge_module(mut base: Module, addition: &Module) -> Module {
-    for (task_name, task) in &addition.tasks {
-        base.tasks.insert(task_name.clone(), task.clone());
-    }
-
-    for (prop_key, prop_value) in &addition.props {
-        base.props.insert(prop_key.clone(), prop_value.clone());
-    }
-
-    base
 }
 
 fn merge_features(mf: Module, is_src: bool, features: String) -> Module {
@@ -116,15 +106,7 @@ pub struct ModuleJob {
 }
 
 impl Pipeline {
-    pub fn load_source(
-        &mut self,
-        content: &str,
-        path_str: &str,
-    ) -> Result<Arc<Module>, PipelineError> {
-        if let Some(module) = self.stores.sources.get(&path_str.to_string()) {
-            return Ok(module);
-        }
-
+    pub fn load_source(&mut self, content: &str, path_str: &str) -> Result<Module, PipelineError> {
         let path_string = PathBuf::from(path_str);
         let ext = path_string
             .extension()
@@ -132,14 +114,13 @@ impl Pipeline {
             .unwrap_or("");
         let module = load_source(content, ext)?;
 
-        Ok(Arc::new(module))
+        Ok(module)
     }
 
     pub fn resolve_path_and_alias(
         &mut self,
         job: &ModuleJob,
     ) -> Result<(String, String), PipelineError> {
-        // validate alias
         if job.from.is_none() && job.alias != "root" {
             return Err(PipelineError::InvalidAliasFormat(
                 "my fault bro this should not happen".to_string(),
@@ -192,7 +173,7 @@ impl Pipeline {
         Ok((path, joined_alias))
     }
 
-    pub fn parse_root(&mut self) -> Result<Module, PipelineError> {
+    pub fn parse_root(&mut self) -> Result<(Arc<Module>, String), PipelineError> {
         let source_path = self.config.source_path.clone();
 
         let job = ModuleJob {
@@ -206,17 +187,21 @@ impl Pipeline {
 
         let mut hashset = HashSet::from_iter([]);
 
-        let module = self.parse(&job, &mut hashset)?;
+        let module_with_path = self.parse(&job, &mut hashset)?;
 
-        Ok(module)
+        Ok(module_with_path)
     }
 
     pub fn parse(
         &mut self,
         job: &ModuleJob,
         visited: &mut HashSet<String>,
-    ) -> Result<Module, PipelineError> {
+    ) -> Result<(Arc<Module>, String), PipelineError> {
         let (path, alias) = self.resolve_path_and_alias(job)?;
+
+        if let Some(module) = self.stores.sources.get(&path) {
+            return Ok((module, path));
+        }
 
         if visited.contains(&path) {
             return Err(PipelineError::Io(std::io::Error::new(
@@ -227,8 +212,7 @@ impl Pipeline {
 
         let content_arc = self.load_file(&path)?;
 
-        let module = self.load_source(&content_arc, &path)?;
-        let mut module = (*module).clone();
+        let mut module = self.load_source(&content_arc, &path)?;
 
         let is_src = job.from.is_none();
 
@@ -243,12 +227,33 @@ impl Pipeline {
 
             visited.insert(path.clone());
 
-            let used_module = self.parse(&use_job, visited)?;
-
-            module = merge_module(used_module, &module);
+            // will scream if it is already visited before, signaling cyclic dependencies
+            let _ = self.parse(&use_job, visited)?;
         }
 
-        Ok(module)
+        for (submodule_alias, submodule) in module.modules.iter_mut() {
+            if let Some(use_entry) = &submodule.uses {
+                let use_job = ModuleJob {
+                    alias: submodule_alias.clone(),
+                    from: Some(alias.clone()),
+                    path: use_entry.clone(),
+                };
+
+                visited.insert(path.clone());
+
+                _ = self.parse(&use_job, visited)?;
+            }
+        }
+
+        visited.remove(&path);
+
+        let module_arc = Arc::new(module);
+
+        self.stores
+            .sources
+            .insert_as_arc(path.clone(), module_arc.clone());
+
+        Ok((module_arc, path))
     }
 }
 

@@ -3,16 +3,28 @@ use std::sync::Arc;
 
 use crate::pipeline::{Pipeline, error::PipelineError};
 
+macro_rules! accept {
+    ($name:expr) => {
+        concat!($name, ".yaml") | concat!($name, ".yml") | concat!($name)
+    };
+}
+
+macro_rules! builtin {
+    ($name: expr) => {
+        include_str!(concat!("./builtins/", $name, ".yaml"))
+    };
+}
+
 fn read_to_string(path: &str) -> Result<String, PipelineError> {
     if path.starts_with("@std/") {
         let name = path.trim_start_matches("@std/");
 
+        // log, steps, test, utils
         match name {
-            // accept both with and without the .yaml extension
-            "log.yaml" | "log" => Ok(include_str!("builtins/log.yaml").to_string()),
-            "steps.yaml" | "steps" => Ok(include_str!("builtins/steps.yaml").to_string()),
-            "test.yaml" | "test" => Ok(include_str!("builtins/test.yaml").to_string()),
-            "utils.yaml" | "utils" => Ok(include_str!("builtins/utils.yaml").to_string()),
+            accept!("log") => Ok(builtin!("log").to_string()),
+            accept!("steps") => Ok(builtin!("steps").to_string()),
+            accept!("test") => Ok(builtin!("test").to_string()),
+            accept!("utils") => Ok(builtin!("utils").to_string()),
             other => Err(PipelineError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 format!("builtin not found: {}", other),

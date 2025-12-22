@@ -1,5 +1,5 @@
 utils:
-  uses: std/utils
+  uses: "@std/utils"
 
 props:
   message: "default message"
@@ -27,14 +27,14 @@ tasks:
 
   trace:
     run: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      {{ utils.once }} "{{ utils.color }}"
       if log:_should_log 1; then
         echo -e "${Q_GRAY}[TRACE]${Q_RESET} $1" >&2
       fi
 
   debug:
     run: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      {{ utils.once }} "{{ utils.color }}"
       echo {{ props.message }}
       if log:_should_log 2; then
         echo -e "${Q_GRAY}[DEBUG]${Q_RESET} $1" >&2
@@ -42,21 +42,21 @@ tasks:
 
   info:
     run: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      {{ utils.once }} "{{ utils.color }}"
       if log:_should_log 3; then
         echo -e "${Q_BLUE}ℹ${Q_RESET} $1" >&2
       fi
 
   warn:
     run: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      {{ utils.once }} "{{ utils.color }}"
       if log:_should_log 4; then
         echo -e "${Q_YELLOW}⚠${Q_RESET} $1" >&2
       fi
 
   error:
     run: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      {{ utils.once }} "{{ utils.color }}"
       if log:_should_log 5; then
         echo -e "${Q_RED}✘${Q_RESET} $1" >&2
       fi

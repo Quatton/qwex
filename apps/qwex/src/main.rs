@@ -57,13 +57,6 @@ fn main() -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    // Ensure the target path is computed relative to `home_dir` so builds
-    // end up under the specified qwex home directory instead of the CWD.
-    config.target_path = config
-        .home_dir
-        .join("build")
-        .join(&config.features)
-        .join("qwex.sh");
     match cli.command {
         Some(Commands::Build { o, file }) => {
             if let Some(target) = o {

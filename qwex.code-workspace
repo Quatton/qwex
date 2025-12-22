@@ -1,6 +1,9 @@
 {
   "folders": [
     {
+      "path": ".qwex"
+    },
+    {
       "path": "apps/qwex",
       "name": "qwex"
     },
@@ -19,10 +22,6 @@
     {
       "path": ".",
       "name": "root"
-    },
-    {
-      "path": "lib/pyqwxl",
-      "name": "pyqwxl"
     }
   ]
 }

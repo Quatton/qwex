@@ -1,19 +1,8 @@
-name: module-run
-modules:
-  utils:
-    uses: std/utils
+utils:
+  uses: "@std/utils"
 
 tasks:
-  greet:
+  with_color:
     run: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
-      echo "Hello"
-
-  debug_message:
-    run: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
-      if [ -n "${DEBUG-}" ]; then
-        echo "Debug: something happened"
-      else
-        echo "No debug"
-      fi
+      {{ utils.once }} "{{ utils.color }}"
+      echo "This is blue text"

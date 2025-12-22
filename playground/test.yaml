@@ -65,4 +65,3 @@ tasks:
         run: test-module-inline
       - name: "4. module-uses-with"
         run: test-module-uses-with
-

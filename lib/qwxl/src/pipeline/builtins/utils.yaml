@@ -2,9 +2,9 @@ tasks:
   once:
     run: |
       declare -gA UTILS_ONCE_HASHSET
-      if [[ -z "${UTILS_ONCE_HASHSET[$1]+x}" ]]; then
-        UTILS_ONCE_HASHSET[$1]=1
-        eval "$2"
+      if [[ -z "${UTILS_ONCE_HASHSET[$*]+x}" ]]; then
+        UTILS_ONCE_HASHSET[$*]=1
+        eval "$@"
       fi
 
   color:

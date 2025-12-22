@@ -12,5 +12,4 @@ members = [
   "lib/qwl",
   "playground/local-ssh-docker-k8s/demo",
   "lib/qwxl",
-  "lib/pyqwxl",
 ]

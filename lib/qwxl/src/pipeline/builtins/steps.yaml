@@ -7,7 +7,7 @@ tasks:
   # Simple step runner - executes a named step
   step:
     run: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      {{ utils.once }} "{{ utils.color }}"
       {{ log.info }} "${Q_GRAY}┌── ${Q_BLUE}Step: $1${Q_RESET}"
 
       local command_str="$2"
@@ -32,8 +32,11 @@ tasks:
         return $exit_code
       fi
 
-  # Compose - simple inline execution without the step wrapper
   compose:
+    props:
+      steps:
+        - name: Sample Step
     run: |
-      echo "Running step: $1"
-      eval "$2"
+      {{ for step in props.steps }}
+        {{ steps.step }} "{{ step.name }}" "{{ step() }}"
+      {{ endfor }}
