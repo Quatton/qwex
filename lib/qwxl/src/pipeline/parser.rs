@@ -1,7 +1,10 @@
+use ahash::RandomState;
+use std::hash::{BuildHasher, Hasher};
 use std::{path::PathBuf, sync::Arc};
 
 use ahash::{HashMap, HashMapExt as _, HashSet};
 
+use crate::pipeline::ast::{MetaModule, UseRef};
 use crate::pipeline::{
     Pipeline,
     ast::{Module, PROP_PREFIX, TASK_PREFIX},
@@ -13,6 +16,12 @@ where
     F: FnOnce(&str) -> Result<Module, PipelineError>,
 {
     parser(input)
+}
+
+pub fn str_hash(t: &str) -> u64 {
+    let mut h = RandomState::with_seed(0).build_hasher();
+    h.write(t.as_bytes());
+    h.finish()
 }
 
 pub fn load_yaml(input: &str) -> Result<Module, PipelineError> {
@@ -121,7 +130,7 @@ impl Pipeline {
         &mut self,
         job: &ModuleJob,
     ) -> Result<(String, String), PipelineError> {
-        if job.from.is_none() && job.alias != "root" {
+        if job.from.is_none() && job.alias != self.config.root_alias {
             return Err(PipelineError::InvalidAliasFormat(
                 "my fault bro this should not happen".to_string(),
             ));
@@ -173,7 +182,7 @@ impl Pipeline {
         Ok((path, joined_alias))
     }
 
-    pub fn parse_root(&mut self) -> Result<(Arc<Module>, String), PipelineError> {
+    pub fn parse_root(&mut self) -> Result<Arc<MetaModule>, PipelineError> {
         let source_path = self.config.source_path.clone();
 
         let job = ModuleJob {
@@ -182,35 +191,24 @@ impl Pipeline {
                 .to_string_lossy()
                 .to_string(),
             from: None,
-            alias: "root".to_string(),
+            alias: self.config.root_alias.clone(),
         };
 
-        let mut hashset = HashSet::from_iter([]);
+        let metamodule = self.parse(&job)?;
 
-        let module_with_path = self.parse(&job, &mut hashset)?;
-
-        Ok(module_with_path)
+        Ok(metamodule)
     }
 
-    pub fn parse(
-        &mut self,
-        job: &ModuleJob,
-        visited: &mut HashSet<String>,
-    ) -> Result<(Arc<Module>, String), PipelineError> {
+    pub fn parse(&mut self, job: &ModuleJob) -> Result<Arc<MetaModule>, PipelineError> {
         let (path, alias) = self.resolve_path_and_alias(job)?;
 
-        if let Some(module) = self.stores.sources.get(&path) {
-            return Ok((module, path));
-        }
-
-        if visited.contains(&path) {
-            return Err(PipelineError::Io(std::io::Error::new(
-                std::io::ErrorKind::AlreadyExists,
-                format!("Cyclic module import detected for path: {}", path),
-            )));
-        }
-
         let content_arc = self.load_file(&path)?;
+
+        let content_hash = str_hash(&content_arc);
+
+        if let Some(module) = self.stores.metamodules.get(&content_hash) {
+            return Ok(module);
+        }
 
         let mut module = self.load_source(&content_arc, &path)?;
 
@@ -218,42 +216,66 @@ impl Pipeline {
 
         module = merge_features(module, is_src, self.config.features.clone());
 
-        if let Some(use_entry) = &module.uses {
-            let use_job = ModuleJob {
-                alias: alias.clone(),
-                from: job.from.clone(),
-                path: use_entry.clone(),
-            };
+        if let Some(use_entry) = &mut module.uses {
+            match use_entry {
+                UseRef::Define(path) => {
+                    let use_job = ModuleJob {
+                        alias: alias.clone(),
+                        from: job.from.clone(),
+                        path: path.clone(),
+                    };
 
-            visited.insert(path.clone());
+                    // will scream if it is already visited before, signaling cyclic dependencies
+                    let module = self.parse(&use_job)?;
 
-            // will scream if it is already visited before, signaling cyclic dependencies
-            let _ = self.parse(&use_job, visited)?;
-        }
-
-        for (submodule_alias, submodule) in module.modules.iter_mut() {
-            if let Some(use_entry) = &submodule.uses {
-                let use_job = ModuleJob {
-                    alias: submodule_alias.clone(),
-                    from: Some(alias.clone()),
-                    path: use_entry.clone(),
-                };
-
-                visited.insert(path.clone());
-
-                _ = self.parse(&use_job, visited)?;
+                    *use_entry = UseRef::Hash(module.hash);
+                }
+                UseRef::Hash(_) => {
+                    unreachable!("Module seen for the first time already has its `uses` hashed?")
+                }
             }
         }
 
-        visited.remove(&path);
+        for (_, submodule) in module.modules.iter_mut() {
+            if let Some(use_entry) = &mut submodule.uses {
+                match use_entry {
+                    UseRef::Define(path) => {
+                        let use_job = ModuleJob {
+                            alias: alias.clone(),
+                            from: job.from.clone(),
+                            path: path.clone(),
+                        };
 
-        let module_arc = Arc::new(module);
+                        // will scream if it is already visited before, signaling cyclic dependencies
+                        let module = self.parse(&use_job)?;
+
+                        *use_entry = UseRef::Hash(module.hash);
+                    }
+                    UseRef::Hash(_) => {
+                        unreachable!(
+                            "Module seen for the first time already has its `uses` hashed?"
+                        )
+                    }
+                }
+            }
+        }
+
+        let metamodule = MetaModule {
+            module,
+            hash: content_hash,
+        };
+
+        let metamodule_arc = Arc::new(metamodule);
 
         self.stores
-            .sources
-            .insert_as_arc(path.clone(), module_arc.clone());
+            .metamodules
+            .insert_as_arc(content_hash, metamodule_arc.clone());
 
-        Ok((module_arc, path))
+        self.stores
+            .aliases
+            .insert_as_arc(alias.clone(), metamodule_arc.clone());
+
+        Ok(metamodule_arc)
     }
 }
 
@@ -282,13 +304,9 @@ mod tests {
         let task1 = default.tasks.get("task1");
         assert!(task1.is_some());
         let task1 = task1.unwrap();
-        match task1 {
-            Task::Cmd { cmd, props, .. } => {
-                assert_eq!(cmd.trim(), r#"echo "Hello, World!""#);
-                assert!(props.get("foo").is_some());
-            }
-            _ => panic!("Expected Cmd task"),
-        }
+        let Task { cmd, props, .. } = task1;
+        assert_eq!(cmd.trim(), r#"echo "Hello, World!""#);
+        assert!(props.get("foo").is_some());
     }
 
     #[test]

@@ -1,11 +1,12 @@
 use ahash::AHashMap;
+use derive_more::IntoIterator;
 use serde::Serialize;
 use std::{hash::Hash, sync::Arc};
 
 use crate::pipeline::error::PipelineError;
-
 /// A simple, high-performance memory store for pipeline artifacts.
-#[derive(Default, Debug, Serialize)]
+#[derive(Default, Debug, Serialize, IntoIterator)]
+#[into_iterator(owned, ref, ref_mut)]
 pub struct Store<K, V>(pub AHashMap<K, Arc<V>>)
 where
     K: Eq + Hash + Clone + Serialize;

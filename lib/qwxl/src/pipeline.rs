@@ -1,18 +1,12 @@
-use std::{
-    collections::{HashSet, VecDeque},
-    fs::OpenOptions,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{fs::OpenOptions, path::PathBuf, sync::Arc};
 
 use serde::Serialize;
 
 use crate::pipeline::{
-    ast::Module,
+    ast::{MetaModule, Module},
     cache::Store,
-    context::Props,
     error::PipelineError,
-    renderer::{NodeRecord, TaskNode},
+    resolver::TaskNode,
 };
 
 mod ast;
@@ -33,6 +27,7 @@ pub struct Config {
     pub features: String,
     pub source_path: PathBuf,
     pub enable_cache: bool,
+    pub root_alias: String,
 }
 
 impl Default for Config {
@@ -48,13 +43,14 @@ impl Default for Config {
             features,
             source_path: cwd.join("qwex.yaml"),
             enable_cache: true,
+            root_alias: "root".to_string(),
         }
     }
 }
 
 /// Aggregate stores used by the pipeline. Keeps related stores together
 /// so they are easier to reason about and maintain.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default)]
 pub struct PipelineStore {
     /// path -> content
     pub content: Store<String, String>,
@@ -63,35 +59,19 @@ pub struct PipelineStore {
     pub source_paths: Store<String, String>,
 
     /// resolved_path -> Module
-    pub sources: Store<String, Module>,
+    pub metamodules: Store<u64, MetaModule>,
 
     /// alias -> Module instance
-    pub modules: Store<String, Module>,
+    pub aliases: Store<String, MetaModule>,
 
-    /// alias -> Node
-    pub tasks: Store<String, NodeRecord>,
+    /// task_alias -> resolved_source
+    pub task_sources: Store<String, String>,
+
+    /// task_alias -> rendered_content
+    pub tasks: Store<String, TaskNode>,
 
     /// alias -> Value
     pub props: Store<String, minijinja::Value>,
-}
-
-impl PipelineStore {
-    pub fn new() -> Self {
-        PipelineStore {
-            content: Store::new(),
-            sources: Store::new(),
-            source_paths: Store::new(),
-            modules: Store::new(),
-            tasks: Store::new(),
-            props: Store::new(),
-        }
-    }
-}
-
-impl Default for PipelineStore {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 pub struct Pipeline {
@@ -103,7 +83,7 @@ impl Pipeline {
     pub fn new(config: Config) -> Self {
         Pipeline {
             config,
-            stores: PipelineStore::new(),
+            stores: PipelineStore::default(),
         }
     }
 

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ahash::{HashMap, HashMapExt as _};
 use serde::{Deserialize, Serialize};
 
@@ -7,8 +9,21 @@ pub const TASK_PREFIX: &str = "tasks";
 pub const PROP_PREFIX: &str = "props";
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct MetaModule {
+    pub module: Module,
+    pub hash: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum UseRef {
+    Define(String),
+    Hash(u64),
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct Module {
-    pub uses: Option<String>,
+    pub uses: Option<UseRef>,
 
     #[serde(default)]
     pub props: Props,
@@ -20,28 +35,20 @@ pub struct Module {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Task {
-    Cmd {
-        #[serde(default, alias = "with")]
-        props: Props,
-        // You can use either "cmd" or "command" or "run" as the key for the command string
-        // Nah not anymore
-        #[serde(alias = "command", alias = "run")]
-        cmd: String,
-    },
-    Uses {
-        #[serde(default, alias = "with")]
-        props: Props,
-        uses: String,
-    },
+pub struct Task {
+    pub uses: Option<UseRef>,
+    #[serde(default, alias = "with")]
+    pub props: Props,
+    #[serde(default, alias = "command", alias = "run")]
+    pub cmd: String,
 }
 
 impl Default for Task {
     fn default() -> Self {
-        Task::Cmd {
+        Task {
             props: Props::new(),
             cmd: "".to_string(),
+            uses: None,
         }
     }
 }
