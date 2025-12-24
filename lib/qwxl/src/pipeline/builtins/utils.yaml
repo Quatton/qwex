@@ -1,14 +1,15 @@
 tasks:
   once:
-    run: |
+    cmd: |
       declare -gA UTILS_ONCE_HASHSET
-      if [[ -z "${UTILS_ONCE_HASHSET[$*]+x}" ]]; then
-        UTILS_ONCE_HASHSET[$*]=1
-        eval "$@"
+      local func_name="$1"
+      if [[ -z "${UTILS_ONCE_HASHSET[$func_name]+x}" ]]; then
+        UTILS_ONCE_HASHSET[$func_name]=1
+        "$func_name"
       fi
 
   color:
-    run: |
+    cmd: |
       if [ -t 1 ]; then
         Q_RED=$'\033[0;31m'
         Q_GREEN=$'\033[0;32m'

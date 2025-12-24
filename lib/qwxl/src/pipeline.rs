@@ -103,3 +103,35 @@ impl Pipeline {
         self.generate_script()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pipeline::ast::{MetaModule, Module, Task};
+
+    #[test]
+    fn test_e2e_compile_cycle() {
+        // This is a high-level integration test of the stores + renderer + emitter
+        let mut p = Pipeline::new(Config::default());
+
+        // Setup a module graph manually to simulate "parsed" state
+        let mut module = Module::default();
+        module.tasks.insert(
+            "deploy".to_string(),
+            Task {
+                cmd: "echo deploying".to_string(),
+                ..Default::default()
+            },
+        );
+
+        let meta = MetaModule { module, hash: 123 };
+        p.stores.metamodules.insert(123, meta);
+        p.stores.aliases.insert("root".to_string(), 123);
+
+        // Compile
+        let script = p.generate_script().expect("Failed to generate script");
+
+        assert!(script.contains("root:deploy"));
+        assert!(script.contains("echo deploying"));
+    }
+}

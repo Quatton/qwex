@@ -1,61 +1,47 @@
 log:
-  uses: std/log
+  uses: "@std/log"
 
 tasks:
   assert:
-    run: |
+    cmd: |
       local description="$1"
       local condition="$2"
 
       if eval "$condition"; then
-        {{ log.info }} "${Q_GREEN}✔${Q_RESET} $description"
+        {{ log.tasks.info }} "${Q_GREEN}✔${Q_RESET} $description"
         return 0
       else
-        {{ log.error }} "${Q_RED}✘${Q_RESET} $description"
-        {{ log.error }} "  Condition: $condition"
+        {{ log.tasks.error }} "${Q_RED}✘${Q_RESET} $description"
+        {{ log.tasks.error }} "  Condition: $condition"
         return 1
       fi
 
   assert_eq:
-    run: |
+    cmd: |
       local description="$1"
       local expected="$2"
       local actual="$3"
 
       if [ "$expected" = "$actual" ]; then
-        {{ log.info }} "${Q_GREEN}✔${Q_RESET} $description"
+        {{ log.tasks.info }} "${Q_GREEN}✔${Q_RESET} $description"
         return 0
       else
-        {{ log.error }} "${Q_RED}✘${Q_RESET} $description"
-        {{ log.error }} "  Expected: $expected"
-        {{ log.error }} "  Actual:   $actual"
+        {{ log.tasks.error }} "${Q_RED}✘${Q_RESET} $description"
+        {{ log.tasks.error }} "  Expected: $expected"
+        {{ log.tasks.error }} "  Actual:   $actual"
         return 1
       fi
 
   assert_file:
-    run: |
+    cmd: |
       local description="$1"
       local filepath="$2"
 
       if [ -f "$filepath" ]; then
-        {{ log.info }} "${Q_GREEN}✔${Q_RESET} $description"
+        {{ log.tasks.info }} "${Q_GREEN}✔${Q_RESET} $description"
         return 0
       else
-        {{ log.error }} "${Q_RED}✘${Q_RESET} $description"
-        {{ log.error }} "  File not found: $filepath"
-        return 1
-      fi
-
-  assert_dir:
-    run: |
-      local description="$1"
-      local dirpath="$2"
-
-      if [ -d "$dirpath" ]; then
-        {{ log.info }} "${Q_GREEN}✔${Q_RESET} $description"
-        return 0
-      else
-        {{ log.error }} "${Q_RED}✘${Q_RESET} $description"
-        {{ log.error }} "  Directory not found: $dirpath"
+        {{ log.tasks.error }} "${Q_RED}✘${Q_RESET} $description"
+        {{ log.tasks.error }} "  File not found: $filepath"
         return 1
       fi

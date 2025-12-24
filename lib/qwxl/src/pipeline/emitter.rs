@@ -108,3 +108,79 @@ impl ShellGenerator {
             .map_err(|e| PipelineError::Internal(e.to_string()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pipeline::{
+        Config,
+        ast::{MetaModule, Module, Task},
+    };
+
+    fn create_pipeline() -> Pipeline {
+        Pipeline::new(Config::default())
+    }
+
+    fn register_module(p: &mut Pipeline, alias: &str, module: Module, hash: u64) {
+        let meta = MetaModule { module, hash };
+        p.stores.metamodules.insert(hash, meta);
+        p.stores.aliases.insert(alias.to_string(), hash);
+    }
+
+    #[test]
+    fn test_generate_simple_script() {
+        let mut p = create_pipeline();
+        let mut module = Module::default();
+        module.tasks.insert(
+            "build".to_string(),
+            Task {
+                cmd: "cargo build".to_string(),
+                ..Default::default()
+            },
+        );
+        register_module(&mut p, "root", module, 1);
+
+        let generator = ShellGenerator::new();
+        let script = generator.generate(&mut p).expect("Generate failed");
+
+        assert!(script.contains("root:build() {"));
+        assert!(script.contains("cargo build"));
+        assert!(script.contains("FN=\"root:$CMD\""));
+    }
+
+    #[test]
+    fn test_generate_with_deps() {
+        let mut p = create_pipeline();
+
+        // Lib module
+        let mut lib = Module::default();
+        lib.tasks.insert(
+            "helper".to_string(),
+            Task {
+                cmd: "echo help".to_string(),
+                ..Default::default()
+            },
+        );
+        register_module(&mut p, "lib", lib.clone(), 10);
+
+        // Root module uses lib
+        let mut root = Module::default();
+        root.modules.insert("lib".to_string(), lib);
+        root.tasks.insert(
+            "main".to_string(),
+            Task {
+                cmd: "{{ lib.tasks.helper() }}".to_string(),
+                ..Default::default()
+            },
+        );
+        register_module(&mut p, "root", root, 20);
+
+        let generator = ShellGenerator::new();
+        let script = generator.generate(&mut p).expect("Generate failed");
+
+        assert!(script.contains("root:main() {"));
+        // Dependency should be rendered as hash task
+        assert!(script.contains("task_"));
+        assert!(script.contains("echo help"));
+    }
+}

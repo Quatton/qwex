@@ -34,7 +34,7 @@ enum Commands {
     /// Run the project (defaults to ./qwex.yaml)
     Run {
         /// Path to qwex.yaml
-        #[arg(value_name = "FILE")]
+        #[arg(value_name = "FILE", default_value = "qwex.yaml")]
         file: PathBuf,
     },
 }
@@ -70,6 +70,7 @@ fn main() -> anyhow::Result<()> {
             run(config)?;
         }
         None => {
+            // Default behavior: run qwex.yaml
             run(config)?;
         }
     }
@@ -93,6 +94,8 @@ fn build(config: Config) -> anyhow::Result<()> {
 fn run(config: Config) -> anyhow::Result<()> {
     build(config.clone())?;
     // Execute the script
+    // We pass any extra arguments to the script if possible, but clap handles parsing.
+    // For now just run the script.
     let status = std::process::Command::new("bash")
         .arg(&config.target_path)
         .status()?;

@@ -5,11 +5,14 @@ props:
   message: "default message"
 
 tasks:
+  # Internal helper, can be inlined or called.
+  # Since it's small and used in conditionals, we'll keep it compatible with 'call'
+  # but here we use it inline inside the if-statement logic usually.
+  # However, to support {{ tasks._should_log }} "$1", we use $1.
   _should_log:
-    run: |
+    cmd: |
       local msg_level="$1"
       local current_level="${QWEX_LOG_LEVEL:-INFO}"
-      # inline level_to_num helper
       level_to_num() {
         case "$1" in
           TRACE|trace|1) echo 1 ;;
@@ -26,37 +29,36 @@ tasks:
       [ "$msg_num" -ge "$current_num" ]
 
   trace:
-    run: |
-      {{ utils.once }} "{{ utils.color }}"
-      if log:_should_log 1; then
+    cmd: |
+      {{ utils.tasks.once }} {{ utils.tasks.color }}
+      if {{ tasks._should_log }} 1; then
         echo -e "${Q_GRAY}[TRACE]${Q_RESET} $1" >&2
       fi
 
   debug:
-    run: |
-      {{ utils.once }} "{{ utils.color }}"
-      echo {{ props.message }}
-      if log:_should_log 2; then
+    cmd: |
+      {{ utils.tasks.once }} {{ utils.tasks.color }}
+      if {{ tasks._should_log }} 2; then
         echo -e "${Q_GRAY}[DEBUG]${Q_RESET} $1" >&2
       fi
 
   info:
-    run: |
-      {{ utils.once }} "{{ utils.color }}"
-      if log:_should_log 3; then
+    cmd: |
+      {{ utils.tasks.once }} {{ utils.tasks.color }}
+      if {{ tasks._should_log }} 3; then
         echo -e "${Q_BLUE}ℹ${Q_RESET} $1" >&2
       fi
 
   warn:
-    run: |
-      {{ utils.once }} "{{ utils.color }}"
-      if log:_should_log 4; then
+    cmd: |
+      {{ utils.tasks.once }} {{ utils.tasks.color }}
+      if {{ tasks._should_log }} 4; then
         echo -e "${Q_YELLOW}⚠${Q_RESET} $1" >&2
       fi
 
   error:
-    run: |
-      {{ utils.once }} "{{ utils.color }}"
-      if log:_should_log 5; then
+    cmd: |
+      {{ utils.tasks.once }} {{ utils.tasks.color }}
+      if {{ tasks._should_log }} 5; then
         echo -e "${Q_RED}✘${Q_RESET} $1" >&2
       fi
