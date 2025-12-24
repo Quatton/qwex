@@ -104,12 +104,14 @@ impl Object for TaskScopeProxy {
         Some(Value::from_function(
             move |_: &State, args: &[Value]| -> Result<Value, Error> {
                 let call_args = if let Some(first) = args.first() {
+                    // Optimization TODO: Use minijinja Value directly to avoid JSON roundtrip
                     let v = serde_json::to_value(first).map_err(to_jinja_err)?;
                     serde_json::from_value(v).unwrap_or_default()
                 } else {
                     Props::default()
                 };
 
+                // Syntactic Sugar for 'uses'
                 if let Some(UseRef::Hash(target_hash)) = &task_def.uses {
                     let mut merged_props = task_def.props.clone();
                     merged_props.extend(call_args);
@@ -121,6 +123,7 @@ impl Object for TaskScopeProxy {
                     };
                     let virtual_ctx =
                         ModuleContext::new(virtual_module, store.clone(), ctx.visited.clone());
+
                     let node = compile_task_internal(virtual_ctx, "main".into(), Props::default())
                         .map_err(to_jinja_err)?;
                     return Ok(Value::from(node.cmd.clone()));
@@ -191,12 +194,11 @@ fn compile_task_internal(
         )));
     };
 
+    // Handle "uses" Sugar for Entry Points
     if let Some(UseRef::Hash(target_hash)) = &task_def.uses {
-        // Merge props: Call Args > Task Props
         let mut merged_props = task_def.props.clone();
         merged_props.extend(call_props);
 
-        // Create Virtual Module to point to the library
         let virtual_module = Module {
             uses: Some(UseRef::Hash(*target_hash)),
             props: merged_props,
@@ -205,13 +207,11 @@ fn compile_task_internal(
 
         let virtual_ctx =
             ModuleContext::new(virtual_module, ctx.store.clone(), ctx.visited.clone());
-
-        // Recurse: Call "main" (or your preferred default entry) on the target library
         return compile_task_internal(virtual_ctx, "main".to_string(), Props::default());
     }
-    // --- FIX END ---
 
-    // 2. Normal Compilation Logic (Props, Hashing, Rendering)
+    // 2. Normal Compilation
+    // Optimization TODO: Use ChainMap or Copy-on-Write to avoid cloning maps
     let mut effective_props = Props::default();
     if let Some(UseRef::Hash(h)) = ctx.module.uses {
         if let Some(m) = ctx.store.metamodules.get(&h) {
@@ -222,10 +222,11 @@ fn compile_task_internal(
     effective_props.extend(task_def.props.clone());
     effective_props.extend(call_props.clone());
 
-    // ... (rest of the function: hashing, cache check, env creation, rendering) ...
+    // 3. Hashing
     let mut hasher = ahash::AHasher::default();
     use std::hash::{Hash, Hasher};
     task_def.cmd.hash(&mut hasher);
+    // Optimization: JSON serialization for hashing is slow but robust for Value types
     serde_json::to_string(&effective_props)
         .unwrap()
         .hash(&mut hasher);
@@ -236,6 +237,7 @@ fn compile_task_internal(
         return Ok(node.clone());
     }
 
+    // 4. Render
     let mut env = Environment::new();
     env.add_template("main", &task_def.cmd)
         .map_err(|e| PipelineError::Internal(e.to_string()))?;
@@ -325,14 +327,12 @@ mod tests {
     };
     use ahash::RandomState;
 
-    // --- Helpers ---
-
     fn create_pipeline() -> Pipeline {
         Pipeline::new(Config::default())
     }
 
     fn create_props(pairs: &[(&str, &str)]) -> Props {
-        let mut p = Props::with_hasher(RandomState::new());
+        let mut p = Props::with_hasher(RandomState::with_seed(0));
         for (k, v) in pairs {
             p.insert(k.to_string(), minijinja::Value::from(v.to_string()));
         }
@@ -356,7 +356,8 @@ mod tests {
 
     fn register_module(p: &mut Pipeline, alias: &str, module: Module, hash: u64) {
         let meta = MetaModule { module, hash };
-        p.stores.metamodules.insert(hash, meta); // Insert raw (Store auto-wraps in Arc)
+        // Note: Store::insert wraps in Arc automatically
+        p.stores.metamodules.insert(hash, meta);
         p.stores.aliases.insert(alias.to_string(), hash);
     }
 
@@ -366,7 +367,6 @@ mod tests {
     fn test_basic_render_with_props() {
         let mut p = create_pipeline();
 
-        // Define a module with a global prop and a task using it
         let module = create_module(&[("hello", "echo {{ props.msg }}")], &[("msg", "World")]);
 
         register_module(&mut p, "root", module, 1);
@@ -387,7 +387,6 @@ mod tests {
             &[("val", "MODULE_LEVEL")],
         );
 
-        // Add task-specific override
         if let Some(t) = module.tasks.get_mut("override_task") {
             t.props = create_props(&[("val", "TASK_LEVEL")]);
         }
@@ -401,6 +400,19 @@ mod tests {
         // 2. Task Level
         let res2 = p.render("root", "override_task").unwrap();
         assert_eq!(res2.cmd, "TASK_LEVEL");
+
+        // 3. Call Level (Inline override)
+        // This requires a task that calls another with args
+        let module_call = create_module(
+            &[
+                ("identity", "{{ props.val }}"),
+                ("caller", "{{ tasks.identity(val='CALL_LEVEL') }}"),
+            ],
+            &[("val", "MODULE_LEVEL")],
+        );
+        register_module(&mut p, "root_call", module_call, 11);
+        let res3 = p.render("root_call", "caller").unwrap();
+        assert_eq!(res3.cmd, "CALL_LEVEL");
     }
 
     #[test]
@@ -422,25 +434,30 @@ mod tests {
     }
 
     #[test]
-    fn test_submodule_access() {
+    fn test_submodule_access_and_props() {
         let mut p = create_pipeline();
 
-        // 1. Create a "Utils" module
-        let utils_mod = create_module(&[("help", "display help")], &[]);
-        register_module(&mut p, "ignored_alias", utils_mod.clone(), 31); // Hash 31
+        // 1. Create a "Utils" module with its own props
+        let utils_mod = create_module(
+            &[("log", "LOG: {{ props.prefix }} {{ props.msg }}")],
+            &[("prefix", "DEFAULT")],
+        );
+        let utils_hash = 31;
+        register_module(&mut p, "ignored", utils_mod.clone(), utils_hash);
 
-        // 2. Create Root module that imports Utils
-        let mut root_mod = create_module(&[("main", "Running: {{ utils.tasks.help() }}")], &[]);
+        // 2. Create Root module that overrides Utils props on import
+        let mut root_mod = create_module(&[("main", "{{ utils.tasks.log(msg='Injected') }}")], &[]);
 
-        // Add submodule manually to AST
-        // We use Inline definition for the AST, but point it to the hash if we wanted 'uses'
-        // For this test, let's use the Inline Submodule structure you support:
-        root_mod.modules.insert("utils".to_string(), utils_mod);
+        // Simulate submodule import with property overrides
+        let mut utils_instance = utils_mod;
+        utils_instance.props = create_props(&[("prefix", "OVERRIDDEN")]);
+        root_mod.modules.insert("utils".to_string(), utils_instance);
 
         register_module(&mut p, "root", root_mod, 30);
 
         let result = p.render("root", "main").unwrap();
-        assert_eq!(result.cmd, "Running: display help");
+        // Should resolve: prefix (from import override) + msg (from task call)
+        assert_eq!(result.cmd, "LOG: OVERRIDDEN Injected");
     }
 
     #[test]
@@ -477,21 +494,51 @@ mod tests {
     }
 
     #[test]
-    fn test_task_calling_task_with_args() {
+    fn test_deep_inheritance_props() {
         let mut p = create_pipeline();
 
-        // Testing: {{ tasks.foo(bar="baz") }}
-        let module = create_module(
-            &[
-                ("echo_prop", "{{ props.dynamic }}"),
-                ("caller", "{{ tasks.echo_prop(dynamic='Success') }}"),
-            ],
-            &[("dynamic", "Fail")], // Default should be overridden
-        );
+        // Level 3: Base Template
+        let base_mod = create_module(&[("run", "Value: {{ props.val }}")], &[("val", "base")]);
+        let base_hash = 100;
+        register_module(&mut p, "base", base_mod.clone(), base_hash);
 
-        register_module(&mut p, "root", module, 50);
+        // Level 2: Middleware (inherits base, overrides val)
+        let mut middle_mod = create_module(&[], &[("val", "middle")]);
+        middle_mod.uses = Some(UseRef::Hash(base_hash));
+        let middle_hash = 101;
+        register_module(&mut p, "middle", middle_mod.clone(), middle_hash);
 
-        let result = p.render("root", "caller").unwrap();
-        assert_eq!(result.cmd, "Success");
+        // Level 1: App (inherits middleware, overrides val)
+        let mut app_mod = create_module(&[], &[("val", "app")]);
+        app_mod.uses = Some(UseRef::Hash(middle_hash));
+        let app_hash = 102;
+        register_module(&mut p, "app", app_mod, app_hash);
+
+        // Resolve "run" (inherited all the way from base) starting at app
+        let result = p.render("app", "run").unwrap();
+        assert_eq!(result.cmd, "Value: app");
+    }
+
+    #[test]
+    fn test_cross_module_dependency_tracking() {
+        let mut p = create_pipeline();
+
+        // Module B
+        let mod_b = create_module(&[("task_b", "Output B")], &[]);
+        let hash_b = 201;
+        register_module(&mut p, "b", mod_b.clone(), hash_b);
+
+        // Module A (calls B)
+        let mut mod_a = create_module(&[("task_a", "{{ b.tasks.task_b() }}")], &[]);
+        mod_a.modules.insert("b".to_string(), mod_b);
+        let hash_a = 200;
+        register_module(&mut p, "a", mod_a, hash_a);
+
+        let result = p.render("a", "task_a").unwrap();
+        assert_eq!(result.cmd, "Output B");
+
+        // Verify that the hash of task_b is in the dependencies of task_a
+        // (Assuming your hashing logic is deterministic for these tests)
+        assert!(!result.deps.is_empty(), "Dependencies should be tracked");
     }
 }

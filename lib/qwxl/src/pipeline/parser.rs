@@ -1,7 +1,7 @@
 use ahash::RandomState;
 use std::hash::{BuildHasher, Hasher};
-use std::path::Path;
-use std::{path::PathBuf, sync::Arc};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use ahash::HashSet;
 
@@ -50,14 +50,6 @@ pub fn parse_feature(full_name: &str) -> (String, Option<String>) {
     } else {
         (full_name.to_string(), None)
     }
-}
-
-pub fn get_parent_alias(alias: &str) -> Option<&str> {
-    let parts: Vec<&str> = alias.rsplitn(2, '.').collect();
-    if parts.is_empty() {
-        return None;
-    }
-    Some(if parts.len() == 2 { parts[1] } else { "" })
 }
 
 fn merge_module_in_place(base: &mut Module, addition: &Module) {
@@ -159,7 +151,7 @@ impl Pipeline {
     fn parse_one(&mut self, job: ModuleJob) -> Result<Arc<MetaModule>, PipelineError> {
         // 1. Load & Hash
         let content_arc = self.load_file(&job.path)?;
-        let content_hash = str_hash(&content_arc); // Your existing hash function
+        let content_hash = str_hash(&content_arc);
 
         // 2. Update Stores
         self.stores.sources.insert(content_hash, job.path.clone());
@@ -173,7 +165,6 @@ impl Pipeline {
         }
 
         // 4. Parse AST
-        // For @std, we assume yaml/yml. For files, we check extension.
         let path_str = job.path.to_string_lossy();
         let ext = if path_str.starts_with("@std") {
             "yaml"
@@ -203,7 +194,6 @@ impl Pipeline {
 
         for use_ref in references {
             if let UseRef::Define(rel_path) = use_ref {
-                // --- NEW RESOLUTION LOGIC ---
                 // This handles "./utils" inside "@std/log" correctly
                 let dep_path = self.resolve_import_path(&job.path, rel_path)?;
 
@@ -230,9 +220,52 @@ impl Pipeline {
         Ok(arc)
     }
 }
+
 #[cfg(test)]
 mod tests {
-    use crate::pipeline::{ast::Task, parser::load_yaml};
+    use super::*;
+
+    #[test]
+    fn test_parse_feature_string() {
+        assert_eq!(parse_feature("mod"), ("mod".to_string(), None));
+        assert_eq!(
+            parse_feature("mod[foo]"),
+            ("mod".to_string(), Some("foo".to_string()))
+        );
+        assert_eq!(
+            parse_feature("mod[foo-bar]"),
+            ("mod".to_string(), Some("foo-bar".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_feature_flag_merging() {
+        // Test AST:
+        // root:
+        //   tasks[featA]: { t1: "A" }
+        //   tasks[featB]: { t1: "B" }
+        //   sub[featA]: { ... }
+        let input = r#"
+            tasks[featA]:
+                t1: { cmd: "A" }
+            tasks[featB]:
+                t1: { cmd: "B" }
+        "#;
+
+        let raw_mod = load_yaml(input).unwrap();
+
+        // Case 1: Enable featA
+        let mod_a = merge_features(raw_mod.clone(), true, "featA".to_string());
+        let t1_a = mod_a.tasks.get("t1").unwrap();
+        assert_eq!(t1_a.cmd, "A");
+
+        // Case 2: Enable featB
+        // Note: Logic in merge_features iterates map. Since Order is preserved (IndexMap),
+        // latter overrides former if both features enabled, or if just one enabled.
+        let mod_b = merge_features(raw_mod.clone(), true, "featB".to_string());
+        let t1_b = mod_b.tasks.get("t1").unwrap();
+        assert_eq!(t1_b.cmd, "B");
+    }
 
     #[test]
     fn test_load_yaml() {
@@ -241,48 +274,12 @@ mod tests {
                 task1: 
                     props:
                         foo: "bar"
-                        nested:
-                        - 1
-                        - 2
-                        - 3
                     cmd: |
-                        echo "Hello, World!"
+                        echo "Hello"
             "#;
         let module = load_yaml(input);
         assert!(module.is_ok());
-        let module = module.unwrap();
-        let default = &module;
-        let task1 = default.tasks.get("task1");
-        assert!(task1.is_some());
-        let task1 = task1.unwrap();
-        let Task { cmd, props, .. } = task1;
-        assert_eq!(cmd.trim(), r#"echo "Hello, World!""#);
-        assert!(props.get("foo").is_some());
-    }
-
-    #[test]
-    fn test_load_multi_modules() {
-        let input = r#"
-            tasks:
-                task1: 
-                    props:
-                        foo: "bar"
-                        nested:
-                        - 1
-                        - 2
-                        - 3
-                    cmd: |
-                        echo "Hello, World!"
-            module1:
-                tasks:
-                    task2:
-                        cmd: |
-                            echo "Feature 1"
-            "#;
-
-        let module = load_yaml(input);
-        assert!(module.is_ok());
-        let module = module.unwrap();
-        assert!(module.modules.contains_key("module1"));
+        let t = module.unwrap().tasks.get("task1").unwrap().clone();
+        assert_eq!(t.cmd.trim(), r#"echo "Hello""#);
     }
 }

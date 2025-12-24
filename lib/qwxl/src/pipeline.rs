@@ -1,8 +1,6 @@
-use std::{fs::OpenOptions, path::PathBuf, sync::Arc};
-
-use serde::Serialize;
-
 use crate::pipeline::{ast::MetaModule, cache::Store, error::PipelineError, renderer::TaskNode};
+use serde::Serialize;
+use std::{fs::OpenOptions, path::PathBuf, sync::Arc};
 
 mod ast;
 mod cache;
@@ -42,25 +40,16 @@ impl Default for Config {
     }
 }
 
-/// Aggregate stores used by the pipeline. Keeps related stores together
-/// so they are easier to reason about and maintain.
+/// Aggregate stores used by the pipeline.
 #[derive(Debug, Serialize, Default)]
 pub struct PipelineStore {
-    /// File Path -> Raw Content
     pub content: Store<PathBuf, String>,
-
-    /// Content Hash -> Canonical Parsed Module
     pub metamodules: Store<u64, MetaModule>,
-
-    /// Global Alias ("root.sub") -> Content Hash
     pub aliases: Store<String, u64>,
-
-    /// Content Hash -> File Path (Reverse lookup for debugging)
     pub sources: Store<u64, PathBuf>,
-
-    /// Task Instance Hash -> Compiled Artifact
     pub tasks: Store<u64, TaskNode>,
 }
+
 pub struct Pipeline {
     config: Config,
     stores: PipelineStore,
@@ -81,24 +70,25 @@ impl Pipeline {
         Ok(())
     }
 
+    pub fn generate_script(&mut self) -> Result<String, PipelineError> {
+        let generator = emitter::ShellGenerator::new();
+        generator.generate(self)
+    }
+
     pub fn compile(&mut self) -> Result<String, PipelineError> {
         let _ = self.parse()?;
 
+        // Example Cache Serialization (optional)
         if self.config.enable_cache {
             let artifacts =
                 ron::ser::to_string_pretty(&self.stores, ron::ser::PrettyConfig::default())?;
-
             let content: Vec<(&PathBuf, &Arc<String>)> = self.stores.content.0.iter().collect();
-
             let hash = ahash::RandomState::with_seed(0).hash_one(content);
-
             let cache_file_name = format!("{:x}.ron", hash);
-
             let cache_dir = self.config.build_dir.join("cache");
             let cache_path = cache_dir.join(cache_file_name);
 
             std::fs::create_dir_all(&cache_dir)?;
-
             OpenOptions::new()
                 .create(true)
                 .write(true)
@@ -110,6 +100,6 @@ impl Pipeline {
                 })?;
         }
 
-        Ok("script".to_string())
+        self.generate_script()
     }
 }
