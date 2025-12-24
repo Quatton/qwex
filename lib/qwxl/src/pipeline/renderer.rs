@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::pipeline::{
     Pipeline, PipelineStore,
-    ast::{Module, Props, UseRef},
+    ast::{Module, Props, Task, UseRef},
     error::PipelineError,
 };
 
@@ -43,6 +43,34 @@ impl ModuleContext {
             visited: parent.visited.clone(),
         }
     }
+}
+
+// Helper to recursively find a task definition in the current module or its 'uses' chain
+fn find_task_recursive(ctx: &ModuleContext, task_name: &str) -> Option<Task> {
+    // 1. Check immediate module
+    if let Some(t) = ctx.module.tasks.get(task_name) {
+        return Some(t.clone());
+    }
+
+    // 2. Check 'uses' inheritance chain
+    let mut current_uses = ctx.module.uses.as_ref();
+    let mut depth = 0;
+    // Limit depth to avoid infinite loops if cycle detection failed elsewhere
+    while let Some(UseRef::Hash(h)) = current_uses {
+        if depth > 100 {
+            return None;
+        }
+
+        let meta = ctx.store.metamodules.get(h)?;
+        if let Some(t) = meta.module.tasks.get(task_name) {
+            return Some(t.clone());
+        }
+
+        current_uses = meta.module.uses.as_ref();
+        depth += 1;
+    }
+
+    None
 }
 
 impl Object for ModuleContext {
@@ -86,25 +114,14 @@ impl Object for TaskScopeProxy {
     fn get_value(self: &Arc<Self>, key: &Value) -> Option<Value> {
         let task_name = key.as_str()?.to_string();
         let store = self.ctx.store.clone();
-
-        let task_def = if let Some(t) = self.ctx.module.tasks.get(&task_name) {
-            Some(t.clone())
-        } else if let Some(UseRef::Hash(h)) = self.ctx.module.uses {
-            store
-                .metamodules
-                .get(&h)
-                .and_then(|m| m.module.tasks.get(&task_name))
-                .cloned()
-        } else {
-            None
-        }?;
-
         let ctx = self.ctx.clone();
+
+        // Use the recursive lookup
+        let task_def = find_task_recursive(&self.ctx, &task_name)?;
 
         Some(Value::from_function(
             move |_: &State, args: &[Value]| -> Result<Value, Error> {
                 let call_args = if let Some(first) = args.first() {
-                    // Optimization TODO: Use minijinja Value directly to avoid JSON roundtrip
                     let v = serde_json::to_value(first).map_err(to_jinja_err)?;
                     serde_json::from_value(v).unwrap_or_default()
                 } else {
@@ -112,7 +129,7 @@ impl Object for TaskScopeProxy {
                 };
 
                 // Syntactic Sugar for 'uses'
-                if let Some(UseRef::Hash(target_hash)) = &task_def.uses {
+                let node = if let Some(UseRef::Hash(target_hash)) = &task_def.uses {
                     let mut merged_props = task_def.props.clone();
                     merged_props.extend(call_args);
 
@@ -124,13 +141,16 @@ impl Object for TaskScopeProxy {
                     let virtual_ctx =
                         ModuleContext::new(virtual_module, store.clone(), ctx.visited.clone());
 
-                    let node = compile_task_internal(virtual_ctx, "main".into(), Props::default())
-                        .map_err(to_jinja_err)?;
-                    return Ok(Value::from(node.cmd.clone()));
-                }
+                    compile_task_internal(virtual_ctx, "main".into(), Props::default())
+                        .map_err(to_jinja_err)?
+                } else {
+                    compile_task_internal(ctx.clone(), task_name.clone(), call_args)
+                        .map_err(to_jinja_err)?
+                };
 
-                let node = compile_task_internal(ctx.clone(), task_name.clone(), call_args)
-                    .map_err(to_jinja_err)?;
+                // Track dependency: Ensure the caller knows about this task node
+                ctx.visited.lock().unwrap().insert(node.hash);
+
                 Ok(Value::from(node.cmd.clone()))
             },
         ))
@@ -178,23 +198,10 @@ fn compile_task_internal(
     call_props: Props,
 ) -> Result<Arc<TaskNode>, PipelineError> {
     // 1. Resolve Definition
-    let task_def = if let Some(t) = ctx.module.tasks.get(&task_name) {
-        t.clone()
-    } else if let Some(UseRef::Hash(h)) = ctx.module.uses {
-        ctx.store
-            .metamodules
-            .get(&h)
-            .and_then(|m| m.module.tasks.get(&task_name))
-            .cloned()
-            .ok_or_else(|| PipelineError::Internal(format!("Task {} not found", task_name)))?
-    } else {
-        return Err(PipelineError::Internal(format!(
-            "Task {} not found",
-            task_name
-        )));
-    };
+    let task_def = find_task_recursive(&ctx, &task_name)
+        .ok_or_else(|| PipelineError::Internal(format!("Task {} not found", task_name)))?;
 
-    // Handle "uses" Sugar for Entry Points
+    // Handle "uses" Sugar for Entry Points (when resolving directly from pipeline)
     if let Some(UseRef::Hash(target_hash)) = &task_def.uses {
         let mut merged_props = task_def.props.clone();
         merged_props.extend(call_props);
@@ -211,7 +218,6 @@ fn compile_task_internal(
     }
 
     // 2. Normal Compilation
-    // Optimization TODO: Use ChainMap or Copy-on-Write to avoid cloning maps
     let mut effective_props = Props::default();
     if let Some(UseRef::Hash(h)) = ctx.module.uses {
         if let Some(m) = ctx.store.metamodules.get(&h) {
@@ -226,7 +232,6 @@ fn compile_task_internal(
     let mut hasher = ahash::AHasher::default();
     use std::hash::{Hash, Hasher};
     task_def.cmd.hash(&mut hasher);
-    // Optimization: JSON serialization for hashing is slow but robust for Value types
     serde_json::to_string(&effective_props)
         .unwrap()
         .hash(&mut hasher);

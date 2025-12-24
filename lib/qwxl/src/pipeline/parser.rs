@@ -109,6 +109,7 @@ pub struct ModuleJob {
     /// The alias of the module that imported this one (for relative path resolution).
     pub parent_alias: Option<String>,
 }
+
 impl Pipeline {
     fn resolve_import_path(&self, parent: &Path, import: &str) -> Result<PathBuf, PipelineError> {
         // 1. Virtual Import (e.g., "uses: @std/log")
@@ -242,14 +243,17 @@ mod tests {
     fn test_feature_flag_merging() {
         // Test AST:
         // root:
-        //   tasks[featA]: { t1: "A" }
-        //   tasks[featB]: { t1: "B" }
-        //   sub[featA]: { ... }
+        //   tasks[featA]:
+        //      tasks: { t1: { cmd: "A" } }
+        //   tasks[featB]:
+        //      tasks: { t1: { cmd: "B" } }
         let input = r#"
             tasks[featA]:
-                t1: { cmd: "A" }
+                tasks:
+                    t1: { cmd: "A" }
             tasks[featB]:
-                t1: { cmd: "B" }
+                tasks:
+                    t1: { cmd: "B" }
         "#;
 
         let raw_mod = load_yaml(input).unwrap();
@@ -260,8 +264,6 @@ mod tests {
         assert_eq!(t1_a.cmd, "A");
 
         // Case 2: Enable featB
-        // Note: Logic in merge_features iterates map. Since Order is preserved (IndexMap),
-        // latter overrides former if both features enabled, or if just one enabled.
         let mod_b = merge_features(raw_mod.clone(), true, "featB".to_string());
         let t1_b = mod_b.tasks.get("t1").unwrap();
         assert_eq!(t1_b.cmd, "B");
