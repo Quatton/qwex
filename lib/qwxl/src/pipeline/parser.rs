@@ -1,10 +1,11 @@
 use ahash::RandomState;
 use std::hash::{BuildHasher, Hasher};
+use std::path::Path;
 use std::{path::PathBuf, sync::Arc};
 
-use ahash::{HashMap, HashMapExt as _, HashSet};
+use ahash::HashSet;
 
-use crate::pipeline::ast::{MetaModule, UseRef};
+use crate::pipeline::ast::{IHashMap, MetaModule, UseRef};
 use crate::pipeline::{
     Pipeline,
     ast::{Module, PROP_PREFIX, TASK_PREFIX},
@@ -74,7 +75,7 @@ fn merge_features(mf: Module, is_src: bool, features: String) -> Module {
         uses: mf.uses.clone(),
         props: mf.props.clone(),
         tasks: mf.tasks.clone(),
-        modules: HashMap::new(),
+        modules: IHashMap::with_hasher(RandomState::with_seed(0)),
     };
 
     let included_features = features.split(',').collect::<HashSet<_>>();
@@ -109,176 +110,126 @@ fn merge_features(mf: Module, is_src: bool, features: String) -> Module {
 
 /// A nicer job type for the module/file queue.
 pub struct ModuleJob {
-    pub path: String,
-    pub from: Option<String>,
-    pub alias: String,
+    pub path: PathBuf,
+    /// The alias to register this module under (e.g., "root.backend").
+    /// If None, the module is parsed and hashed but not aliased (anonymous dependency).
+    pub alias: Option<String>,
+    /// The alias of the module that imported this one (for relative path resolution).
+    pub parent_alias: Option<String>,
 }
-
 impl Pipeline {
-    pub fn load_source(&mut self, content: &str, path_str: &str) -> Result<Module, PipelineError> {
-        let path_string = PathBuf::from(path_str);
-        let ext = path_string
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-        let module = load_source(content, ext)?;
-
-        Ok(module)
-    }
-
-    pub fn resolve_path_and_alias(
-        &mut self,
-        job: &ModuleJob,
-    ) -> Result<(String, String), PipelineError> {
-        if job.from.is_none() && job.alias != self.config.root_alias {
-            return Err(PipelineError::InvalidAliasFormat(
-                "my fault bro this should not happen".to_string(),
-            ));
+    fn resolve_import_path(&self, parent: &Path, import: &str) -> Result<PathBuf, PipelineError> {
+        // 1. Virtual Import (e.g., "uses: @std/log")
+        if import.starts_with("@std/") {
+            return Ok(PathBuf::from(import));
         }
 
-        if job.alias.contains('.') {
-            return Err(PipelineError::InvalidAliasFormat(format!(
-                "Alias '{}' cannot contain '.' characters",
-                job.alias
-            )));
-        }
+        // 2. Parent is Physical (File System)
+        let parent_dir = parent.parent().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "Parent path has no directory")
+        })?;
 
-        let joined_alias = if let Some(from_alias) = &job.from {
-            format!("{}.{}", from_alias, job.alias)
-        } else {
-            job.alias.clone()
-        };
+        let joined = parent_dir.join(import);
 
-        if job.path.starts_with("@std") {
-            return Ok((job.path.clone(), joined_alias));
-        }
-
-        let from_path = if let Some(from_alias) = &job.from {
-            let source_path = self.stores.source_paths.get(from_alias).ok_or(
-                PipelineError::ImportAliasNotFound(
-                    "this is probably my fault. please report".to_string(),
+        // Canonicalize only physical paths to resolve symlinks and ".."
+        std::fs::canonicalize(&joined).map_err(|e| {
+            PipelineError::Io(std::io::Error::new(
+                e.kind(),
+                format!(
+                    "Failed to resolve import '{}' from '{:?}': {}",
+                    import, parent, e
                 ),
-            )?;
-            (*source_path).clone()
-        } else {
-            job.path.clone()
-        };
-
-        let parent_path = PathBuf::from(from_path)
-            .parent()
-            .ok_or(PipelineError::Io(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "parent path not found",
-            )))?
-            .to_path_buf();
-
-        let resolved_path = parent_path.join(&job.path);
-
-        let alias = joined_alias.clone();
-        let path = resolved_path.to_string_lossy().to_string();
-
-        self.stores.source_paths.insert(alias.clone(), path.clone());
-
-        Ok((path, joined_alias))
+            ))
+        })
     }
 
-    pub fn parse_root(&mut self) -> Result<Arc<MetaModule>, PipelineError> {
-        let source_path = self.config.source_path.clone();
+    /// Entry point for the root file
+    pub fn parse(&mut self) -> Result<Arc<MetaModule>, PipelineError> {
+        let path = std::fs::canonicalize(&self.config.source_path)?;
 
         let job = ModuleJob {
-            path: std::fs::canonicalize(&source_path)
-                .map_err(PipelineError::from)?
-                .to_string_lossy()
-                .to_string(),
-            from: None,
-            alias: self.config.root_alias.clone(),
+            path,
+            alias: Some(self.config.root_alias.clone()),
+            parent_alias: None,
         };
 
-        let metamodule = self.parse(&job)?;
-
-        Ok(metamodule)
+        self.parse_one(job)
     }
 
-    pub fn parse(&mut self, job: &ModuleJob) -> Result<Arc<MetaModule>, PipelineError> {
-        let (path, alias) = self.resolve_path_and_alias(job)?;
+    fn parse_one(&mut self, job: ModuleJob) -> Result<Arc<MetaModule>, PipelineError> {
+        // 1. Load & Hash
+        let content_arc = self.load_file(&job.path)?;
+        let content_hash = str_hash(&content_arc); // Your existing hash function
 
-        let content_arc = self.load_file(&path)?;
-
-        let content_hash = str_hash(&content_arc);
-
-        if let Some(module) = self.stores.metamodules.get(&content_hash) {
-            return Ok(module);
+        // 2. Update Stores
+        self.stores.sources.insert(content_hash, job.path.clone());
+        if let Some(alias) = &job.alias {
+            self.stores.aliases.insert(alias.clone(), content_hash);
         }
 
-        let mut module = self.load_source(&content_arc, &path)?;
+        // 3. Cache Hit
+        if let Some(module) = self.stores.metamodules.get(&content_hash) {
+            return Ok(module.clone());
+        }
 
-        let is_src = job.from.is_none();
+        // 4. Parse AST
+        // For @std, we assume yaml/yml. For files, we check extension.
+        let path_str = job.path.to_string_lossy();
+        let ext = if path_str.starts_with("@std") {
+            "yaml"
+        } else {
+            job.path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("yaml")
+        };
 
+        let mut module = load_source(&content_arc, ext)?;
+
+        // 5. Merge Features
+        let is_src = job.parent_alias.is_none();
         module = merge_features(module, is_src, self.config.features.clone());
 
-        if let Some(use_entry) = &mut module.uses {
-            match use_entry {
-                UseRef::Define(path) => {
-                    let use_job = ModuleJob {
-                        alias: alias.clone(),
-                        from: job.from.clone(),
-                        path: path.clone(),
-                    };
-
-                    // will scream if it is already visited before, signaling cyclic dependencies
-                    let module = self.parse(&use_job)?;
-
-                    *use_entry = UseRef::Hash(module.hash);
-                }
-                UseRef::Hash(_) => {
-                    unreachable!("Module seen for the first time already has its `uses` hashed?")
-                }
+        // 6. Resolve Dependencies
+        let mut references: Vec<&mut UseRef> = vec![];
+        if let Some(u) = module.uses.as_mut() {
+            references.push(u);
+        }
+        for sub in module.modules.values_mut() {
+            if let Some(u) = sub.uses.as_mut() {
+                references.push(u);
             }
         }
 
-        for (_, submodule) in module.modules.iter_mut() {
-            if let Some(use_entry) = &mut submodule.uses {
-                match use_entry {
-                    UseRef::Define(path) => {
-                        let use_job = ModuleJob {
-                            alias: alias.clone(),
-                            from: job.from.clone(),
-                            path: path.clone(),
-                        };
+        for use_ref in references {
+            if let UseRef::Define(rel_path) = use_ref {
+                // --- NEW RESOLUTION LOGIC ---
+                // This handles "./utils" inside "@std/log" correctly
+                let dep_path = self.resolve_import_path(&job.path, rel_path)?;
 
-                        // will scream if it is already visited before, signaling cyclic dependencies
-                        let module = self.parse(&use_job)?;
+                let dep_module = self.parse_one(ModuleJob {
+                    path: dep_path,
+                    alias: None, // Implicit imports are anonymous
+                    parent_alias: job.alias.clone(),
+                })?;
 
-                        *use_entry = UseRef::Hash(module.hash);
-                    }
-                    UseRef::Hash(_) => {
-                        unreachable!(
-                            "Module seen for the first time already has its `uses` hashed?"
-                        )
-                    }
-                }
+                *use_ref = UseRef::Hash(dep_module.hash);
             }
         }
 
+        // 7. Store
         let metamodule = MetaModule {
             module,
             hash: content_hash,
         };
-
-        let metamodule_arc = Arc::new(metamodule);
-
+        let arc = Arc::new(metamodule);
         self.stores
             .metamodules
-            .insert_as_arc(content_hash, metamodule_arc.clone());
+            .insert_as_arc(content_hash, arc.clone());
 
-        self.stores
-            .aliases
-            .insert_as_arc(alias.clone(), metamodule_arc.clone());
-
-        Ok(metamodule_arc)
+        Ok(arc)
     }
 }
-
 #[cfg(test)]
 mod tests {
     use crate::pipeline::{ast::Task, parser::load_yaml};

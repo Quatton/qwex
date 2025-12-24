@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use ahash::HashSet;
 use minijinja::Environment;
 
 pub const SCRIPT_TEMPLATE_NAME: &str = "templates/script.sh.j2";

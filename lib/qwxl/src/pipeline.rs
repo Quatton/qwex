@@ -2,16 +2,10 @@ use std::{fs::OpenOptions, path::PathBuf, sync::Arc};
 
 use serde::Serialize;
 
-use crate::pipeline::{
-    ast::{MetaModule, Module},
-    cache::Store,
-    error::PipelineError,
-    resolver::TaskNode,
-};
+use crate::pipeline::{ast::MetaModule, cache::Store, error::PipelineError, resolver::TaskNode};
 
 mod ast;
 mod cache;
-mod context;
 mod error;
 mod loader;
 mod parser;
@@ -52,28 +46,21 @@ impl Default for Config {
 /// so they are easier to reason about and maintain.
 #[derive(Debug, Serialize, Default)]
 pub struct PipelineStore {
-    /// path -> content
-    pub content: Store<String, String>,
+    /// File Path -> Raw Content
+    pub content: Store<PathBuf, String>,
 
-    /// alias -> source_path
-    pub source_paths: Store<String, String>,
-
-    /// resolved_path -> Module
+    /// Content Hash -> Canonical Parsed Module
     pub metamodules: Store<u64, MetaModule>,
 
-    /// alias -> Module instance
-    pub aliases: Store<String, MetaModule>,
+    /// Global Alias ("root.sub") -> Content Hash
+    pub aliases: Store<String, u64>,
 
-    /// task_alias -> resolved_source
-    pub task_sources: Store<String, String>,
+    /// Content Hash -> File Path (Reverse lookup for debugging)
+    pub sources: Store<u64, PathBuf>,
 
-    /// task_alias -> rendered_content
-    pub tasks: Store<String, TaskNode>,
-
-    /// alias -> Value
-    pub props: Store<String, minijinja::Value>,
+    /// Task Instance Hash -> Compiled Artifact
+    pub tasks: Store<u64, TaskNode>,
 }
-
 pub struct Pipeline {
     config: Config,
     stores: PipelineStore,
@@ -95,13 +82,13 @@ impl Pipeline {
     }
 
     pub fn compile(&mut self) -> Result<String, PipelineError> {
-        let _ = self.parse_root()?;
+        let _ = self.parse()?;
 
         if self.config.enable_cache {
             let artifacts =
                 ron::ser::to_string_pretty(&self.stores, ron::ser::PrettyConfig::default())?;
 
-            let content: Vec<(&String, &Arc<String>)> = self.stores.content.0.iter().collect();
+            let content: Vec<(&PathBuf, &Arc<String>)> = self.stores.content.0.iter().collect();
 
             let hash = ahash::RandomState::with_seed(0).hash_one(content);
 

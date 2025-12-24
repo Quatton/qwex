@@ -1,11 +1,11 @@
 use ahash::AHashMap;
-use derive_more::IntoIterator;
+use derive_more::{Deref, DerefMut, IntoIterator};
 use serde::Serialize;
 use std::{hash::Hash, sync::Arc};
 
 use crate::pipeline::error::PipelineError;
 /// A simple, high-performance memory store for pipeline artifacts.
-#[derive(Default, Debug, Serialize, IntoIterator)]
+#[derive(Default, Debug, Serialize, IntoIterator, Deref, DerefMut)]
 #[into_iterator(owned, ref, ref_mut)]
 pub struct Store<K, V>(pub AHashMap<K, Arc<V>>)
 where
@@ -29,10 +29,14 @@ where
         self.0.insert(key, value)
     }
 
-    /// Get a cloned `Arc` to a value if it exists.
-    pub fn get(&self, key: &K) -> Option<Arc<V>> {
-        self.0.get(key).cloned()
-    }
+    // Get a cloned `Arc` to a value if it exists.
+    // pub fn get<Q>(&self, key: &Q) -> Option<Arc<V>>
+    // where
+    //     K: std::borrow::Borrow<Q>,
+    //     Q: Hash + Eq + ?Sized,
+    // {
+    //     self.0.get(key).cloned()
+    // }
 
     /// The primary interface: Query memory, or run the producer function on a miss.
     /// Returns an `Arc` to the value and propagates any error that can be converted into a PipelineError.

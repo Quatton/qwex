@@ -1,7 +1,18 @@
 use thiserror::Error;
 
+use crate::pipeline::ast::IHashSet;
+
 #[derive(Debug, Error)]
 pub enum PipelineError {
+    #[error("Internal error: {0}")]
+    Internal(String),
+
+    #[error("Unimplemented feature: {0}")]
+    Unimplemented(String),
+
+    #[error("Cyclic dependency detected for alias: {0:?}")]
+    CyclicDependency(IHashSet<String>),
+
     #[error("Invalid alias format: {0}")]
     InvalidAliasFormat(String),
 

@@ -9,6 +9,7 @@ name = "qwxl"
 [dependencies]
 ahash = { version = "0.8", features = ["serde"] }
 derive_more = { version = "2.1", features = ["full"] }
+indexmap = { version = "2.0", features = ["serde"] }
 minijinja = "2.14"
 ron = "0.12"
 saphyr = "0.0.6"

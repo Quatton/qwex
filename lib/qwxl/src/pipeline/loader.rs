@@ -1,5 +1,5 @@
-use std::fs::OpenOptions;
 use std::sync::Arc;
+use std::{fs::OpenOptions, path::Path};
 
 use crate::pipeline::{Pipeline, error::PipelineError};
 
@@ -46,9 +46,15 @@ fn read_to_string(path: &str) -> Result<String, PipelineError> {
 }
 
 impl Pipeline {
-    pub fn load_file(&mut self, path: &str) -> Result<Arc<String>, PipelineError> {
+    /// Helper to read file and cache raw content
+    pub fn load_file(&mut self, path: &Path) -> Result<Arc<String>, PipelineError> {
         self.stores
             .content
-            .query_or_compute_with(path.to_string(), || read_to_string(path))
+            .query_or_compute_with(path.to_path_buf(), || {
+                read_to_string(path.to_str().ok_or(PipelineError::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Invalid path: {:?}", path),
+                )))?)
+            })
     }
 }

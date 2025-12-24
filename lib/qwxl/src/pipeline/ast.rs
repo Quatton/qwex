@@ -1,16 +1,20 @@
-use std::sync::Arc;
+use ahash::RandomState;
 
-use ahash::{HashMap, HashMapExt as _};
 use serde::{Deserialize, Serialize};
 
-use crate::pipeline::context::Props;
+pub type IHashMap<K, V> = indexmap::IndexMap<K, V, ahash::RandomState>;
+pub type IHashSet<V> = indexmap::IndexSet<V, ahash::RandomState>;
+pub type Props = IHashMap<String, minijinja::Value>;
 
 pub const TASK_PREFIX: &str = "tasks";
 pub const PROP_PREFIX: &str = "props";
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct MetaModule {
+    #[serde(flatten)]
     pub module: Module,
+
+    #[serde(skip)]
     pub hash: u64,
 }
 
@@ -28,10 +32,10 @@ pub struct Module {
     #[serde(default)]
     pub props: Props,
     #[serde(default)]
-    pub tasks: HashMap<String, Task>,
+    pub tasks: IHashMap<String, Task>,
 
     #[serde(flatten, default)]
-    pub modules: HashMap<String, Module>,
+    pub modules: IHashMap<String, Module>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,7 +50,7 @@ pub struct Task {
 impl Default for Task {
     fn default() -> Self {
         Task {
-            props: Props::new(),
+            props: Props::with_hasher(RandomState::with_seed(0)),
             cmd: "".to_string(),
             uses: None,
         }
