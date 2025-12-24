@@ -1,12 +1,40 @@
-{% macro render_task(task) -%}
-{{ task.name }}() {
-    {{ task.body }}
-}
-{%- endmacro %}
-
 #!/usr/bin/env bash
 set -euo pipefail
+
+{% macro render_task(task) -%}
+{{ task.name }}() {
+{{ task.body }}
+}
+{%- endmacro %}
 
 {% for task in tasks %}
 {{ render_task(task) }}
 {% endfor %}
+
+
+help() {
+echo "Available commands:"
+{% for cmd in commands %}
+echo "  {{ cmd }}"
+{% endfor %}
+}
+
+if [[ "${1:-}" != "" ]]; then
+CMD=$1
+shift
+
+FN="{{ root_alias }}:$CMD"
+
+if declare -f "$FN" > /dev/null; then
+    "$FN" "$@"
+else
+    log_error "Command '$CMD' not found."
+    echo ""
+    help
+    exit 1
+fi
+
+
+else
+help
+fi

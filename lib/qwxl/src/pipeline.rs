@@ -2,15 +2,15 @@ use std::{fs::OpenOptions, path::PathBuf, sync::Arc};
 
 use serde::Serialize;
 
-use crate::pipeline::{ast::MetaModule, cache::Store, error::PipelineError, resolver::TaskNode};
+use crate::pipeline::{ast::MetaModule, cache::Store, error::PipelineError, renderer::TaskNode};
 
 mod ast;
 mod cache;
+mod emitter;
 mod error;
 mod loader;
 mod parser;
 mod renderer;
-mod resolver;
 
 /// Shared pipeline configuration.
 #[derive(Clone)]
