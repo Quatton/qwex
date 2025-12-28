@@ -1,13 +1,9 @@
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
-use minijinja::Environment;
 use serde::Serialize;
 
-use crate::pipeline::{Pipeline, error::PipelineError, renderer::TaskNode};
-
-pub const SCRIPT_TEMPLATE_NAME: &str = "script.sh.j2";
-const SCRIPT_TEMPLATE_SOURCE: &str = include_str!("templates/script.sh.j2");
+use crate::pipeline::{Pipeline, error::PipelineError};
 
 #[derive(Serialize)]
 struct TemplateTask {
@@ -22,14 +18,6 @@ pub struct ShellGenerator;
 impl ShellGenerator {
     pub fn new() -> Self {
         Self
-    }
-
-    fn setup_env() -> Environment<'static> {
-        let mut env = Environment::new();
-        env.add_template(SCRIPT_TEMPLATE_NAME, SCRIPT_TEMPLATE_SOURCE)
-            .expect("Failed to load embedded script template");
-        // Indentation filter removed as requested to support heredocs safely
-        env
     }
 
     pub fn generate(&self, pipeline: &mut Pipeline) -> Result<String, PipelineError> {
@@ -79,9 +67,26 @@ impl ShellGenerator {
             for dep_hash in &node.deps {
                 if visited_hashes.insert(*dep_hash) {
                     if let Some(dep_node) = pipeline.stores.tasks.get(dep_hash) {
+                        // Replace placeholder refs in dep_node.cmd with readable aliases.
+                        let mut body = dep_node.cmd.clone();
+                        // Placeholder format: __TASK_REF__{hex}
+                        let placeholder = format!("__TASK_REF__{:x}", dep_hash);
+                        if body.contains(&placeholder) {
+                            // If the dep node has an alias (readable path), try to reconstruct it
+                            // by using the TaskNode.alias field if present. Otherwise fall back to hash.
+                            let readable = if !dep_node.alias.is_empty() {
+                                // The alias stored is the task name within its module; construct full
+                                // name as root_alias:alias for now (emitter can be enhanced later).
+                                format!("{}:{}", root_alias, dep_node.alias)
+                            } else {
+                                format!("task_{:x}", dep_hash)
+                            };
+                            body = body.replace(&placeholder, &readable);
+                        }
+
                         tasks_to_render.push(TemplateTask {
-                            name: format!("task_{:x}", dep_hash),
-                            body: dep_node.cmd.clone(),
+                            name: format!("{}:{}", root_alias, dep_node.alias),
+                            body,
                             source: format!("Hash: {:x}", dep_hash),
                         });
 
@@ -179,8 +184,12 @@ mod tests {
         let script = generator.generate(&mut p).expect("Generate failed");
 
         assert!(script.contains("root:main() {"));
-        // Dependency should be rendered as hash task
-        assert!(script.contains("task_"));
+        // Dependency should be rendered as readable alias (root_alias:taskname)
+        assert!(
+            script.contains("root:helper")
+                || script.contains("lib:helper")
+                || script.contains("root:lib:helper")
+        );
         assert!(script.contains("echo help"));
     }
 }

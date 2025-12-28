@@ -5,7 +5,7 @@ use std::{hash::Hash, sync::Arc};
 
 use crate::pipeline::error::PipelineError;
 /// A simple, high-performance memory store for pipeline artifacts.
-#[derive(Default, Debug, Serialize, IntoIterator, Deref, DerefMut)]
+#[derive(Debug, Serialize, IntoIterator, Deref, DerefMut, Clone)]
 #[into_iterator(owned, ref, ref_mut)]
 pub struct Store<K, V>(pub AHashMap<K, Arc<V>>)
 where
@@ -75,5 +75,11 @@ where
         // 3. Store (but no need to create a new Arc) and return Arc
         self.0.insert(key.clone(), arc.clone());
         Ok(arc)
+    }
+}
+
+impl Default for Store<(), ()> {
+    fn default() -> Self {
+        Self::new()
     }
 }

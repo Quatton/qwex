@@ -59,8 +59,11 @@ fn merge_module_in_place(base: &mut Module, addition: &Module) {
     for (task_name, task) in &addition.tasks {
         base.tasks.insert(task_name.clone(), task.clone());
     }
-    for (prop_key, prop_value) in &addition.props {
-        base.props.insert(prop_key.clone(), prop_value.clone());
+    if let Some(add_props) = &addition.props {
+        if base.props.is_none() {
+            base.props = Some(IHashMap::default());
+            base.props.as_mut().unwrap().extend(add_props.clone());
+        }
     }
 }
 
@@ -70,7 +73,7 @@ pub fn merge_features(mf: Module, is_src: bool, features: String) -> Module {
         uses: mf.uses.clone(),
         props: mf.props.clone(),
         tasks: mf.tasks.clone(),
-        modules: IHashMap::with_hasher(RandomState::with_seed(0)),
+        modules: IHashMap::default(),
     };
 
     let active_features: HashSet<&str> = features.split(',').collect();
@@ -140,7 +143,7 @@ impl Pipeline {
     }
 
     pub fn parse(&mut self) -> Result<Arc<MetaModule>, PipelineError> {
-        let path = std::fs::canonicalize(&self.config.source_path)?;
+        let path = std::fs::canonicalize(self.config.get_source_path())?;
         let job = ModuleJob {
             path,
             alias: Some(self.config.root_alias.clone()),
@@ -153,7 +156,6 @@ impl Pipeline {
         let content_arc = self.load_file(&job.path)?;
         let content_hash = str_hash(&content_arc);
 
-        self.stores.sources.insert(content_hash, job.path.clone());
         if let Some(alias) = &job.alias {
             self.stores.aliases.insert(alias.clone(), content_hash);
         }
@@ -204,6 +206,7 @@ impl Pipeline {
         let metamodule = MetaModule {
             module,
             hash: content_hash,
+            path_buf: job.path.clone(),
         };
         let arc = Arc::new(metamodule);
         self.stores
@@ -242,7 +245,10 @@ mod tests {
         let dev_mod = merge_features(raw.clone(), true, "default".to_string());
         assert_eq!(get_cmd(&dev_mod, "build").unwrap(), "cargo build");
         assert!(dev_mod.tasks.get("sign").is_none());
-        assert_eq!(dev_mod.props.get("env").unwrap().as_str().unwrap(), "dev");
+        assert_eq!(
+            dev_mod.props.unwrap().get("env").unwrap().as_str().unwrap(),
+            "dev"
+        );
 
         // 2. Prod
         let prod_mod = merge_features(raw, true, "prod".to_string());
@@ -251,7 +257,16 @@ mod tests {
             "cargo build --release"
         );
         assert!(prod_mod.tasks.get("sign").is_some());
-        assert_eq!(prod_mod.props.get("env").unwrap().as_str().unwrap(), "prod");
+        assert_eq!(
+            prod_mod
+                .props
+                .unwrap()
+                .get("env")
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "prod"
+        );
     }
 
     #[test]

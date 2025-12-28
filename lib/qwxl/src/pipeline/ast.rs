@@ -1,5 +1,3 @@
-use ahash::RandomState;
-
 use serde::{Deserialize, Serialize};
 
 pub type IHashMap<K, V> = indexmap::IndexMap<K, V, ahash::RandomState>;
@@ -16,6 +14,9 @@ pub struct MetaModule {
 
     #[serde(skip)]
     pub hash: u64,
+
+    #[serde(skip)]
+    pub path_buf: std::path::PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,7 +31,7 @@ pub struct Module {
     pub uses: Option<UseRef>,
 
     #[serde(default)]
-    pub props: Props,
+    pub props: Option<Props>,
     #[serde(default)]
     pub tasks: IHashMap<String, Task>,
 
@@ -42,7 +43,7 @@ pub struct Module {
 pub struct Task {
     pub uses: Option<UseRef>,
     #[serde(default, alias = "with")]
-    pub props: Props,
+    pub props: Option<Props>,
     #[serde(default, alias = "command", alias = "run")]
     pub cmd: String,
 }
@@ -50,24 +51,9 @@ pub struct Task {
 impl Default for Task {
     fn default() -> Self {
         Task {
-            props: Props::with_hasher(RandomState::with_seed(0)),
+            props: Some(Props::default()),
             cmd: "".to_string(),
             uses: None,
         }
     }
 }
-
-/*
-module1:
-    uses: "builtin://log.yaml"
-    features:
-        - "featureA"
-
-props:
-    prop1: "value1"
-
-tasks:
-    task1:
-        props: "pp"
-        cmd: "echo Hello"
-*/

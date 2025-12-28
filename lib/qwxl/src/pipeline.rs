@@ -1,10 +1,16 @@
-use crate::pipeline::{ast::MetaModule, cache::Store, error::PipelineError, renderer::TaskNode};
+use crate::pipeline::{
+    ast::MetaModule,
+    cache::Store,
+    error::PipelineError,
+    renderer::{RenderTarget, Resource, SCRIPT_TEMPLATE_NAME, SCRIPT_TEMPLATE_SOURCE},
+};
+use ahash::HashSet;
+use minijinja::Environment;
 use serde::Serialize;
 use std::{fs::OpenOptions, path::PathBuf, sync::Arc};
 
 mod ast;
 mod cache;
-mod emitter;
 mod error;
 mod loader;
 mod parser;
@@ -13,6 +19,7 @@ mod renderer;
 /// Shared pipeline configuration.
 #[derive(Clone)]
 pub struct Config {
+    pub cwd: PathBuf,
     pub home_dir: PathBuf,
     pub build_dir: PathBuf,
     pub target_path: PathBuf,
@@ -22,10 +29,44 @@ pub struct Config {
     pub root_alias: String,
 }
 
+impl Config {
+    pub fn get_source_path(&self) -> PathBuf {
+        if self.source_path.is_absolute() {
+            self.source_path.clone()
+        } else {
+            self.cwd.join(&self.source_path)
+        }
+    }
+
+    pub fn get_build_dir(&self) -> PathBuf {
+        if self.build_dir.is_absolute() {
+            self.build_dir.clone()
+        } else {
+            self.cwd.join(&self.build_dir)
+        }
+    }
+
+    pub fn get_home_dir(&self) -> PathBuf {
+        if self.home_dir.is_absolute() {
+            self.home_dir.clone()
+        } else {
+            self.cwd.join(&self.home_dir)
+        }
+    }
+
+    pub fn get_target_path(&self) -> PathBuf {
+        if self.target_path.is_absolute() {
+            self.target_path.clone()
+        } else {
+            self.get_build_dir().join(&self.target_path)
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         let cwd = std::env::current_dir().expect("Failed to get current dir");
-        let home_dir = cwd.join(".qwex");
+        let home_dir = PathBuf::from(".qwex");
         let features = "default".to_string().replace(",", "-");
         let build_dir = home_dir.join("target").join(&features);
         Config {
@@ -33,33 +74,59 @@ impl Default for Config {
             build_dir,
             home_dir,
             features,
-            source_path: cwd.join("qwex.yaml"),
+            source_path: PathBuf::from("qwex.yaml"),
             enable_cache: true,
             root_alias: "root".to_string(),
+            cwd,
         }
     }
 }
 
 /// Aggregate stores used by the pipeline.
-#[derive(Debug, Serialize, Default)]
+#[derive(Debug, Serialize)]
 pub struct PipelineStore {
     pub content: Store<PathBuf, String>,
     pub metamodules: Store<u64, MetaModule>,
     pub aliases: Store<String, u64>,
-    pub sources: Store<u64, PathBuf>,
-    pub tasks: Store<u64, TaskNode>,
+    pub rendered: Store<RenderTarget, Resource>,
+    pub 
+}
+
+impl Default for PipelineStore {
+    fn default() -> Self {
+        PipelineStore {
+            content: Store::new(),
+            metamodules: Store::new(),
+            aliases: Store::new(),
+            rendered: Store::new(),
+        }
+    }
+}
+
+impl PipelineStore {
+    pub fn get_module_by_alias(&self, alias: &str) -> Option<&Arc<MetaModule>> {
+        self.aliases
+            .get(alias)
+            .and_then(|hash| self.metamodules.get(hash))
+    }
 }
 
 pub struct Pipeline {
     config: Config,
     stores: PipelineStore,
+    env: minijinja::Environment<'static>,
 }
 
 impl Pipeline {
     pub fn new(config: Config) -> Self {
+        let mut env = Environment::new();
+        env.add_template(SCRIPT_TEMPLATE_NAME, SCRIPT_TEMPLATE_SOURCE)
+            .expect("Failed to load embedded script template");
+
         Pipeline {
             config,
             stores: PipelineStore::default(),
+            env,
         }
     }
 
@@ -70,11 +137,6 @@ impl Pipeline {
         Ok(())
     }
 
-    pub fn generate_script(&mut self) -> Result<String, PipelineError> {
-        let generator = emitter::ShellGenerator::new();
-        generator.generate(self)
-    }
-
     pub fn compile(&mut self) -> Result<String, PipelineError> {
         let _ = self.parse()?;
 
@@ -83,7 +145,7 @@ impl Pipeline {
             let artifacts =
                 ron::ser::to_string_pretty(&self.stores, ron::ser::PrettyConfig::default())?;
             let content: Vec<(&PathBuf, &Arc<String>)> = self.stores.content.0.iter().collect();
-            let hash = ahash::RandomState::with_seed(0).hash_one(content);
+            let hash = ahash::RandomState::default().hash_one(content);
             let cache_file_name = format!("{:x}.ron", hash);
             let cache_dir = self.config.build_dir.join("cache");
             let cache_path = cache_dir.join(cache_file_name);
@@ -100,38 +162,6 @@ impl Pipeline {
                 })?;
         }
 
-        self.generate_script()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::pipeline::ast::{MetaModule, Module, Task};
-
-    #[test]
-    fn test_e2e_compile_cycle() {
-        // This is a high-level integration test of the stores + renderer + emitter
-        let mut p = Pipeline::new(Config::default());
-
-        // Setup a module graph manually to simulate "parsed" state
-        let mut module = Module::default();
-        module.tasks.insert(
-            "deploy".to_string(),
-            Task {
-                cmd: "echo deploying".to_string(),
-                ..Default::default()
-            },
-        );
-
-        let meta = MetaModule { module, hash: 123 };
-        p.stores.metamodules.insert(123, meta);
-        p.stores.aliases.insert("root".to_string(), 123);
-
-        // Compile
-        let script = p.generate_script().expect("Failed to generate script");
-
-        assert!(script.contains("root:deploy"));
-        assert!(script.contains("echo deploying"));
+        Ok(("script").to_string())
     }
 }
