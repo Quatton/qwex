@@ -4,16 +4,12 @@
       "path": ".qwex"
     },
     {
-      "path": "apps/qwex",
-      "name": "qwex"
-    },
-    {
-      "path": "lib/qwxl",
-      "name": "qwxl"
-    },
-    {
       "path": "apps/qwexcli",
       "name": "qwexcli"
+    },
+    {
+      "path": "lib/qwl",
+      "name": "qwl"
     },
     {
       "path": "playground",
@@ -23,5 +19,8 @@
       "path": ".",
       "name": "root"
     }
-  ]
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder:root}/.venv/bin/python"
+  }
 }

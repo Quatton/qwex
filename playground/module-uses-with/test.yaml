@@ -1,8 +1,0 @@
-name: module-uses-with-test
-
-tasks:
-  run-tests:
-    run: |
-      qwex compile qwex.yaml -o compiled.sh
-      bash compiled.sh composite | grep -q "First" && echo "✓ composite passed"
-      bash compiled.sh multi_step | grep -q "Building" && echo "✓ multi_step passed"

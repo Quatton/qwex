@@ -1,0 +1,8 @@
+vars:
+  variable: "value"
+
+tasks:
+  hello:
+    cmd:
+      - echo "Hello, Qwex!"
+    desc: "Prints a hello message"

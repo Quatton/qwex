@@ -20,13 +20,9 @@ from __future__ import annotations
 from typing import Optional, List
 from pathlib import Path
 import subprocess
-
-import click
+import typer
 
 from ._version import __version__
-from qwl.ast.parser import Parser
-from qwl.compiler.compiler import Compiler
-from qwl.compiler.renderer import Renderer
 
 
 def find_qwex_file() -> Optional[Path]:
@@ -51,54 +47,55 @@ def is_yaml_file(arg: str) -> bool:
     return arg.endswith(".yaml") or arg.endswith(".yml")
 
 
-@click.command(
-    context_settings={
-        "ignore_unknown_options": True,
-        "allow_extra_args": True,
-        "allow_interspersed_args": False,
-    }
-)
-@click.option("-v", "--version", is_flag=True, help="Show version and exit.")
-@click.option(
-    "-h", "--help", "show_help", is_flag=True, help="Show this help and exit."
-)
-@click.option(
-    "-p",
-    "--preset",
-    "--presets",
-    "presets",
-    help="Comma-separated list of presets to apply.",
-)
-@click.option(
-    "-o",
-    "--output",
-    type=click.Path(path_type=Path),
-    help="Output compiled bash to file instead of executing.",
-)
-@click.option(
-    "-f",
-    "--file",
-    "file_path",
-    type=click.Path(exists=True, path_type=Path),
-    help="Path to qwex.yaml file.",
-)
-@click.option(
-    "--dry-run",
-    is_flag=True,
-    help="Print compiled bash without executing.",
-)
-@click.argument("args", nargs=-1, type=click.UNPROCESSED)
-@click.pass_context
+typer_app = typer.Typer()
+
+
+@typer_app.command()
 def cli(
-    ctx: click.Context,
-    version: bool,
-    show_help: bool,
-    presets: Optional[str],
-    output: Optional[Path],
-    file_path: Optional[Path],
-    dry_run: bool,
-    args: tuple,
+    version: bool = typer.Option(
+        False, "-v", "--version", help="Show version and exit."
+    ),
+    presets: Optional[str] = typer.Option(
+        None,
+        "-p",
+        "--preset",
+        "--presets",
+        help="Comma-separated list of presets to apply.",
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "-o",
+        "--output",
+        help="Output compiled bash to file instead of executing.",
+    ),
+    file_path: Optional[Path] = typer.Option(
+        None, "-f", "--file", help="Path to qwex.yaml file."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print compiled bash without executing."
+    ),
+    args: Optional[List[str]] = typer.Argument(None),
 ) -> None:
+    """Queued Workspace-aware Execution - task runner that compiles to bash.
+
+    Examples:
+        qwex                        Run 'help' task (lists available tasks)
+        qwex greet                  Run 'greet' task
+        qwex greet "hello"          Run 'greet' with argument
+        qwex -p qwex eval-all       Run 'eval-all' with 'qwex' preset
+        qwex -o out.sh              Compile to out.sh
+        qwex path/to/qwex.yaml      Use specific file
+    """
+    # normalize
+    if version:
+        typer.echo(f"qwex {__version__}")
+        raise typer.Exit()
+
+    output = output
+    file_path = file_path
+    dry_run = dry_run
+    args_list: List[str] = list(args) if args is not None else []
+
     """Queued Workspace-aware Execution - task runner that compiles to bash.
 
     \b
@@ -110,16 +107,7 @@ def cli(
         qwex -o out.sh              Compile to out.sh
         qwex path/to/qwex.yaml      Use specific yaml file
     """
-    if version:
-        click.echo(f"qwex {__version__}")
-        raise SystemExit(0)
-
-    if show_help:
-        click.echo(ctx.get_help())
-        raise SystemExit(0)
-
     # Parse args: first arg could be a yaml file or a task name
-    args_list = list(args)
     filepath: Optional[Path] = file_path
     task_name: str = "help"
     task_args: List[str] = []
@@ -130,8 +118,10 @@ def cli(
             # First arg is a yaml file
             filepath = Path(first_arg)
             if not filepath.exists():
-                click.echo(f"Error: File not found: {filepath}", err=True)
-                raise SystemExit(1)
+                typer.secho(
+                    f"Error: File not found: {filepath}", err=True, fg=typer.colors.RED
+                )
+                raise typer.Exit(code=1)
             args_list = args_list[1:]
 
     if args_list:
@@ -142,28 +132,43 @@ def cli(
     if filepath is None:
         filepath = find_qwex_file()
         if filepath is None:
-            click.echo(
-                "Error: No qwex.yaml found in current directory or parents.", err=True
+            typer.secho(
+                "Error: No qwex.yaml found in current directory or parents.",
+                err=True,
+                fg=typer.colors.RED,
             )
-            raise SystemExit(1)
+            raise typer.Exit(code=1)
 
     try:
-        # Parse and compile
-        module = Parser().parse_file(str(filepath))
-        base_dir = filepath.parent
-        compiler = Compiler(base_dir=base_dir)
-        preset_list = parse_presets(presets)
-        script = compiler.compile(module, presets=preset_list)
-        bash = Renderer().render(script)
+        # NOTE: QWL compiler has been removed. For now emit a simple stub script
+        # that informs the user that compilation/execution is not implemented.
+        bash = f"""#!/usr/bin/env bash
+# Qwex compiled stub — QWL compiler removed.
+# Source file: {filepath}
+TASK_NAME="$1"
+shift || true
+case "$TASK_NAME" in
+  help|"")
+    echo "No compiler available — QWL removed. Define tasks in {filepath.name} and implement the compiler."
+    exit 0
+    ;;
+  *)
+    echo "Task execution not implemented (requested $TASK_NAME)" >&2
+    exit 1
+    ;;
+esac
+"""
 
         if output is not None:
             # Write to file
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(bash, encoding="utf-8")
-            click.echo(f"Wrote compiled bash to {output}")
+            typer.echo(f"Wrote compiled bash to {output}")
+            raise typer.Exit()
         elif dry_run:
             # Print compiled bash
-            click.echo(bash)
+            typer.echo(bash)
+            raise typer.Exit()
         else:
             # Execute via bash
             cmd = ["bash", "-s", "--", task_name] + task_args
@@ -172,18 +177,21 @@ def cli(
                 input=bash,
                 text=True,
             )
-            raise SystemExit(result.returncode)
+            raise typer.Exit(code=result.returncode)
 
-    except SystemExit:
-        raise
     except Exception as exc:
-        click.echo(f"Error: {exc}", err=True)
-        raise SystemExit(1)
+        typer.secho(f"Error: {exc}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=1)
 
 
-def app():
-    """Entry point for the CLI."""
-    cli()
+def app(argv: Optional[List[str]] = None) -> None:
+    """Entry point for the CLI.
+
+    When called as a module or installed entrypoint this function launches the Typer app.
+    The optional `argv` parameter is currently ignored (kept for backward compatibility).
+    """
+    # NOTE: Typer runs via Click under the hood and handles sys.exit codes for us.
+    typer_app()
 
 
 if __name__ == "__main__":

@@ -1,8 +1,0 @@
-utils:
-  uses: "@std/utils"
-
-tasks:
-  with_color:
-    run: |
-      {{ utils.once }} "{{ utils.color }}"
-      echo "This is blue text"

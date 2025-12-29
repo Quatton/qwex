@@ -1,8 +1,0 @@
-name: module-run-test
-
-tasks:
-  run-tests:
-    run: |
-      qwex compile qwex.yaml -o compiled.sh
-      bash compiled.sh greet | grep -q "Hello" && echo "✓ greet passed"
-      DEBUG=1 bash compiled.sh debug_message 2>&1 | grep -q "Debug" && echo "✓ debug_message passed"
