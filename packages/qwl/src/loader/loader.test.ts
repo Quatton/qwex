@@ -36,14 +36,12 @@ describe("loader", () => {
     await fs.writeFile(target, content, "utf8");
     await fs.symlink(target, link);
 
-    // use a relative path to the link to exercise resolution
     const relLink = path.relative(process.cwd(), link);
     const real = await canonicalize(relLink);
 
     const expected = await fs.realpath(target);
     expect(real).toBe(expected);
 
-    // ensure load works via the symlink (i.e., canonicalization used internally)
     const loaded = await load(relLink);
     expect(loaded).toBe(content);
   });

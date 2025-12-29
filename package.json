@@ -5,10 +5,5 @@
   "workspaces": [
     "packages/*"
   ],
-  "devDependencies": {
-    "@types/bun": "^1.2.23"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
+  "module": "index.ts"
 }

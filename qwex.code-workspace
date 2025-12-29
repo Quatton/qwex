@@ -4,11 +4,11 @@
       "path": ".qwex"
     },
     {
-      "path": "apps/qwexcli",
+      "path": "apps/cli",
       "name": "qwexcli"
     },
     {
-      "path": "lib/qwl",
+      "path": "packages/qwl",
       "name": "qwl"
     },
     {
