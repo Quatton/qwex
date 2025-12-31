@@ -2,13 +2,23 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 export async function canonicalize(filePath: string): Promise<string> {
-  const abs = path.resolve(filePath);
-  return await fs.realpath(abs);
+  return await fs.realpath(path.resolve(filePath));
 }
 
 export async function load(filePath: string): Promise<string> {
-  const real = await canonicalize(filePath);
+  return await fs.readFile(filePath, "utf8");
+}
 
-  const content = await fs.readFile(real, "utf8");
-  return content;
+export class Loader {
+  cache: Map<string, string> = new Map();
+
+  async load(filePath: string): Promise<string> {
+    const realPath = await canonicalize(filePath);
+    let cached = this.cache.get(realPath);
+    if (!cached) {
+      cached = await load(realPath);
+      this.cache.set(realPath, cached);
+    }
+    return cached;
+  }
 }

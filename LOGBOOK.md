@@ -2877,3 +2877,69 @@ $root:
 - command-line tools -> other computers
 
 ---
+
+## Dec 30, 2025: Here we go again
+
+kitchen sink
+
+```yaml
+
+vars:
+  color: blue
+
+utils:
+  uses: "@std/utils"
+ssh:
+  uses: "mods/ssh.yaml"
+  vars:
+    host: {{ env.SSH_HOST }}
+    user: {{ env.SSH_USER }}
+k8s:
+  tasks:
+    submit:
+      cmd:
+        kubectl apply -f - {% raw %}
+          {{ k8s.job }}
+        {% endraw %}
+
+lifecycle:
+  init:
+    cmd: |
+        echo "Initializing..."
+  main:
+    vars:
+      cmd: echo "Placeholder command"
+    cmd: |
+      echo "Running main task: {{ vars.cmd }}"
+      {{ vars.cmd }}
+  cleanup:
+    cmd: |
+      echo "Cleaning up..."
+
+
+tasks:
+  greet:
+    run: |
+      echo "Hello"
+      echo "Color: {{ vars.color }}"
+  farewell:
+    cmd: |
+      echo "Goodbye"
+      echo "Color: {{ vars.color }}"
+  run:
+    vars:
+      cmd: "$@"
+    cmd: {{ cmd }}
+
+tasks[ssh]:
+  run:
+    vars:
+      steps:
+        - name: Init
+          cmd: "{{ lifecycle.init }}"
+        - name: Main
+          cmd: "{{ lifecycle.main }}"
+        - name: Cleanup
+          cmd: "{{ lifecycle.cleanup }}"
+    cmd: {{ vars.steps | steps.compose | ssh.run }}
+```

@@ -1,23 +1,30 @@
-import { type } from "arktype";
+import { scope } from "arktype";
 
-export const Variable = type("string | Record<string, string>");
-
-export type Variable = typeof Variable.infer;
-
-export const Task = type({
-  "desc?": "string",
-  cmd: "string",
+const $ = scope({
+  VariableDef:
+    "string | string[] | Record<string, string> | Record<string, string>[]",
+  TaskDef: {
+    cmd: "string",
+    "desc?": "string",
+    "vars?": "Record<string, VariableDef>",
+  },
+  PartialModuleDef: {
+    "uses?": "string",
+    "vars?": "Record<string, VariableDef>",
+    "tasks?": "Record<string, TaskDef>",
+  },
+  ModuleDef: {
+    "...": "PartialModuleDef",
+    "modules?": "Record<string, PartialModuleDef>",
+  },
 });
 
-export type Task = typeof Task.infer;
+const types = $.export();
 
-export const Config = type({
-  vars: {
-    "[string]": Variable,
-  },
-  tasks: {
-    "[string]": Task,
-  },
-});
+export const TaskDef = types.TaskDef;
+export const VariableDef = types.VariableDef;
+export const ModuleDef = types.ModuleDef;
 
-export type Config = typeof Config.infer;
+export type TaskDef = typeof TaskDef.infer;
+export type VariableDef = typeof VariableDef.infer;
+export type ModuleDef = typeof ModuleDef.infer;

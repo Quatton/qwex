@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { parseConfig } from "./index";
-import { ArkErrors } from "arktype";
 import { strict as assert } from "node:assert";
+import { QwlError } from "../errors";
 
 const yamlText = `vars:
   variable: "value"
@@ -15,9 +15,36 @@ tasks:
 describe("parseYaml", () => {
   it("parses vars and tasks", () => {
     const out = parseConfig(yamlText);
-    assert(!(out instanceof ArkErrors), "Expected valid config");
+    if (out instanceof QwlError) {
+      console.error("Parsing failed with error:", out);
+      throw out;
+    }
+    expect(out.vars).toBeDefined();
+    expect(out.tasks).toBeDefined();
+    assert(out.vars, "Expected vars to be defined");
+    assert(out.tasks, "Expected tasks to be defined");
     expect(out.vars.variable).toBe("value");
     expect(out.tasks.hello?.cmd).toEqual(`echo "Hello, Qwex!"`);
     expect(out.tasks.hello?.desc).toBe("Prints a hello message");
+  });
+
+  it("variables are ordered correctly", () => {
+    const yaml = `
+vars:
+  first: "1"
+  second: 
+    mapped: "2"
+    mapped2: "3"
+  third:
+    - "a"
+    - "b"
+`;
+    const out = parseConfig(yaml);
+    assert(!(out instanceof QwlError), "Expected valid config");
+    assert(out.vars, "Expected vars to be defined");
+    const keys = Object.keys(out.vars!);
+    expect(keys).toEqual(["first", "second", "third"]);
+    expect(out.vars.second).toEqual({ mapped: "2", mapped2: "3" });
+    expect(out.vars.third).toEqual(["a", "b"]);
   });
 });
