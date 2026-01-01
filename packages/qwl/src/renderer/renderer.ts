@@ -3,8 +3,8 @@ import { Template } from "nunjucks";
 import type { ModuleTemplate, TaskTemplate, VariableTemplate, VariableTemplateValue } from "../ast";
 
 import { QwlError } from "../errors";
-import { getCwd, getDirFromSourcePath, resolvePath as resolvePathUtil } from "../utils/path";
 import { hash } from "../utils/hash";
+import { getCwd, getDirFromSourcePath, resolvePath as resolvePathUtil } from "../utils/path";
 import { RenderContext, RenderProxyFactory, type TaskRef } from "./proxy";
 
 export interface TaskNode {

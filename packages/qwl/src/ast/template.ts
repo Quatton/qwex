@@ -12,8 +12,7 @@ export function createTemplate(str: string): Template {
 export function createTemplateRecord(value: VariableDef): VariableTemplateValue {
   if (typeof value === "string") return createTemplate(value);
   if (typeof value === "number" || typeof value === "boolean") return value;
-  if (Array.isArray(value))
-    return value.map((item) => createTemplateRecord(item as VariableDef));
+  if (Array.isArray(value)) return value.map((item) => createTemplateRecord(item as VariableDef));
   if (typeof value === "object" && value !== null) {
     const record: Record<string, VariableTemplateValue> = {};
     for (const [key, v] of Object.entries(value)) {
