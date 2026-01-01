@@ -4,7 +4,7 @@
 {% endif %}
 # Hash: {{ task.hash }}
 {{ task.name | replace(".", ":") }}() {
-  {{ task.cmd }}
+  {{ task.cmd | trim }}
 }
 {% endfor %}
 {% for task in main %}
@@ -13,6 +13,6 @@
 {% endif %}
 # Hash: {{ task.hash }}
 {{ task.name | replace(".", ":") }}() {
-  {{ task.cmd }}
+  {{ task.cmd | trim }}
 }
 {% endfor %}
