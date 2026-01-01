@@ -12,14 +12,17 @@ eval QWEX_PREAMBLE
   echo "  main"
 }
 
-# Hash: 0xcedf45010064ca04
+# Hash: 0x7e7ce317d7fd2d24
 helper() {
-  echo "Hello from helper"
+  echo "I am helper"
+
 }
 
-# Hash: 0xf5abfe83a4480c4a
+# Hash: 0xce7ddf67ab4ad20e
 main() {
-  echo "Inlined: echo "Hello from helper""
+  docker run python:3.12 -it --rm -- "eval "$(declare -f helper)"
+  helper
+"
 
 }
 
@@ -45,3 +48,4 @@ main() {
 }
 
 @main "$@"
+

@@ -5,7 +5,7 @@ import type { ModuleTemplate, TaskTemplate, VariableTemplate } from "../ast";
 import { QwlError } from "../errors";
 import { hash } from "../utils/hash";
 import { setCurrentModulePath } from "../utils/templating";
-import { RenderContext, RenderProxyFactory } from "./proxy";
+import { RenderContext, RenderProxyFactory, type TaskRef } from "./proxy";
 
 export interface TaskNode {
   name: string;
@@ -73,10 +73,19 @@ export class Renderer {
     return { main, deps, graph: this.ctx.graph };
   }
 
-  private renderTask(module: ModuleTemplate, taskName: string, prefix: string): string {
+  private renderTask(module: ModuleTemplate, taskName: string, prefix: string): TaskRef {
     const canonicalName = prefix ? `${prefix}.${taskName}` : taskName;
+    const bashName = canonicalName.replace(/\./g, ":");
 
-    if (this.ctx.renderedTasks.has(canonicalName)) return canonicalName;
+    // If already rendered, return the cached ref
+    if (this.ctx.renderedTasks.has(canonicalName)) {
+      const rendered = this.ctx.renderedTasks.get(canonicalName)!;
+      return {
+        canonicalName,
+        bashName,
+        hash: `0x${hash(rendered.cmd).toString(16)}`,
+      };
+    }
 
     if (this.ctx.pendingTasks.has(canonicalName)) {
       throw new QwlError({
@@ -164,7 +173,11 @@ export class Renderer {
       this.ctx.renderedTasks.set(canonicalName, { cmd, desc: task.desc });
       this.ctx.graph.set(canonicalName, new Set(this.ctx.currentDeps));
 
-      return canonicalName;
+      return {
+        canonicalName,
+        bashName,
+        hash: `0x${hash(cmd).toString(16)}`,
+      };
     } finally {
       this.ctx.pendingTasks.delete(canonicalName);
       this.ctx.currentDeps = savedDeps;
@@ -319,7 +332,20 @@ export class Renderer {
     ctx: Record<string, unknown>,
   ): VariableTemplate {
     if (typeof template === "string") return template;
-    if (template instanceof Template) return template.render(ctx) as string;
+    if (template instanceof Template) {
+      // Render the template - task refs will add to currentDeps when toString() is called
+      // Use a temp set to capture deps without polluting the current task's deps
+      const savedDeps = this.ctx.currentDeps;
+      this.ctx.currentDeps = new Set<string>();
+      const rendered = template.render(ctx) as string;
+      // Store captured deps keyed by the rendered value
+      // When this value is accessed inside {% context %}, replay these deps
+      if (this.ctx.currentDeps.size > 0) {
+        this.ctx.varCapturedDeps.set(rendered, new Set(this.ctx.currentDeps));
+      }
+      this.ctx.currentDeps = savedDeps;
+      return rendered;
+    }
     if (Array.isArray(template))
       return template.map((item) => this.preRenderVariableTemplate(item, ctx));
     if (typeof template === "object" && template !== null) {

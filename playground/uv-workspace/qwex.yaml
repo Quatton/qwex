@@ -19,7 +19,6 @@ tasks:
           cmd: |
             uv init {{ vars.demo_dir }}
         - desc: "Run hello.py"
-          # i wanna try multi-line commands here so make it pass
           cmd: |
             cd {{ vars.demo_dir }}
             uv run hello.py
@@ -32,3 +31,19 @@ tasks:
       else
         {{ log.tasks.warn }} "No temp directory info found for cleanup."
       fi
+  all:
+    desc: "Test from clean state"
+    uses: modules.steps.tasks.compose
+    vars:
+      steps:
+        - desc: "Clean up"
+          cmd: "{{ tasks.clean }}"
+        - desc: "Run tests"
+          cmd: "{{ tasks.test }}"
+        - desc: "All done"
+          cmd: "{{ log.tasks.info }} 'UV workspace test completed.'"
+        - desc: "Intentional failure step"
+          cmd: "{{ log.tasks.error }} 'This is a simulated failure.'; return 1"
+        - desc: "Final cleanup"
+          cmd: "{{ tasks.clean }}"
+          always: true

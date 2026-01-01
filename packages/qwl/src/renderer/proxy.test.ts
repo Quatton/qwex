@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { resolveTaskDefs, resolveVariableDefs, type ModuleTemplate } from "../ast";
-import { RenderContext, RenderProxyFactory, type ProxyCallbacks } from "./proxy";
+import { RenderContext, RenderProxyFactory, type ProxyCallbacks, type TaskRef } from "./proxy";
 
 function createTestModule(): ModuleTemplate {
   return {
@@ -41,9 +41,13 @@ function createMockCallbacks(): ProxyCallbacks {
       const key = prefix ? `${prefix}.${varName}` : varName;
       return `[VAR:${key}]`;
     },
-    renderTask: (_ctx, _module, taskName, prefix) => {
-      const key = prefix ? `${prefix}.${taskName}` : taskName;
-      return key;
+    renderTask: (_ctx, _module, taskName, prefix): TaskRef => {
+      const canonicalName = prefix ? `${prefix}.${taskName}` : taskName;
+      return {
+        canonicalName,
+        bashName: canonicalName.replace(/\./g, ":"),
+        hash: `0xmock_${canonicalName}`,
+      };
     },
     renderTaskInline: (_ctx, _module, taskName, prefix, overrideVars) => {
       const key = prefix ? `${prefix}.${taskName}` : taskName;

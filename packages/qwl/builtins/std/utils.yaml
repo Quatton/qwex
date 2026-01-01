@@ -9,16 +9,3 @@ tasks:
         UTILS_ONCE_HASHSET[{{ vars.key }}]=1
         eval "{{ vars.fn }}"
       fi
-
-  color:
-    cmd: |
-      if [ -t 1 ]; then
-        Q_RED=$'\033[0;31m'
-        Q_GREEN=$'\033[0;32m'
-        Q_YELLOW=$'\033[0;33m'
-        Q_BLUE=$'\033[0;34m'
-        Q_GRAY=$'\033[0;90m'
-        Q_RESET=$'\033[0m'
-      else
-        Q_RED="" Q_GREEN="" Q_YELLOW="" Q_BLUE="" Q_GRAY="" Q_RESET=""
-      fi

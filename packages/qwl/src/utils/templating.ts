@@ -131,6 +131,20 @@ class ContextExtension implements nunjucks.Extension {
       }
     }
 
+    // Also check for deps captured during variable pre-rendering
+    // These are stored in varCapturedDeps keyed by the rendered string value
+    for (const [renderedValue, capturedDeps] of renderContext.varCapturedDeps || []) {
+      // If the rendered content contains this pre-rendered value, add its deps
+      if (content.includes(renderedValue)) {
+        for (const dep of capturedDeps) {
+          if (!depsBefore.has(dep) && !newDeps.includes(dep)) {
+            newDeps.push(dep);
+            renderContext.currentDeps.add(dep);
+          }
+        }
+      }
+    }
+
     // Generate eval "$(declare -f)" statements for new dependencies
     if (newDeps.length === 0) {
       return new nunjucks.runtime.SafeString(content);
@@ -146,6 +160,10 @@ const nj = new nunjucks.Environment(null, {
   autoescape: false,
   trimBlocks: true,
   lstripBlocks: true,
+  tags: {
+    commentStart: "<#",
+    commentEnd: "#>",
+  },
 });
 
 // Register extensions
@@ -201,6 +219,7 @@ nj.addFilter("brightBlack", (text: string) => color(text, "brightBlack"));
 nj.addFilter("escape", (text: string) =>
   text.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$/g, "\\$").replace(/`/g, "\\`"),
 );
+// do not add bash_escape! just use escape. also you likely not need it trim already exists
 nj.addFilter("multiline", (text: string) => text.trim().replace(/(?<!\\)\n/g, " \\\n"));
 nj.addFilter("red", (text: string) => color(text, "red"));
 nj.addFilter("green", (text: string) => color(text, "green"));

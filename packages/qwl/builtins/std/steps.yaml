@@ -16,14 +16,23 @@ tasks:
 
       printf '%s\n' "{{ "┌──" | color("#808080") }} {{ "Step:" | color("blue") }} $description" >&2
 
-      local truncated_command=$(echo "$command" | head -c 60)
+      local truncated_command="${command:0:60}"
+
+      if [ "${#command}" -gt 60 ]; then
+        truncated_command="${truncated_command}..."
+      fi
+
       {{ log.tasks.debug }} "{{ "│ Executing:" | color("#808080") }} $truncated_command"
 
       local start_time=$(date +%s)
 
-      bash -c "$command"
-
       local exit_code=$?
+      if eval "$command"; then
+        exit_code=0
+      else
+        exit_code=$?
+      fi
+
       local end_time=$(date +%s)
       local duration=$((end_time - start_time))
 
@@ -37,14 +46,21 @@ tasks:
   compose:
     vars:
       steps: []
-    # This should not inline the steps!
     cmd: |
+      local failed=false
+      local failed_desc=""
+
       {% for step in vars.steps %}
       # Step: {{ step.desc }}
-      {% if step.as %}
-      local {{ step.as }}
-      {{ step.as }}=$({{ tasks.step }} "{{ step.desc }}" '{{ step.cmd }}')
-      {% else %}
-      {{ tasks.step }} "{{ step.desc }}" "{{ step.cmd }}"
-      {% endif %}
+      if [ "$failed" = false ] || [ "{{ step.always | default(false) }}" = "true" ]; then
+        if ! {{ tasks.step }} "{{ step.desc }} {{ "(always)" if step.always }}" "{{ step.cmd | escape | trim }}"; then
+          failed=true
+          failed_desc="{{ step.desc }}"
+        fi
+      fi
       {% endfor %}
+
+      if [ "$failed" = true ]; then
+        {{ modules.log.tasks.error }} "Step \"${failed_desc}\" failed. Exiting with error."
+        return 1
+      fi

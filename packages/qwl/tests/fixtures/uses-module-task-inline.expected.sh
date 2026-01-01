@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
+QWEX_PREAMBLE="#!/usr/bin/env bash
 set -euo pipefail
+shopt -s expand_aliases
+"
+
+eval QWEX_PREAMBLE
 
 @help() {
   echo "Available tasks:"

@@ -10,6 +10,13 @@ export interface RenderedTask {
   desc?: string;
 }
 
+/** Result of rendering a task reference */
+export interface TaskRef {
+  canonicalName: string; // e.g., "log.tasks.info"
+  bashName: string; // e.g., "log:tasks:info"
+  hash: string;
+}
+
 export class RenderContext {
   readonly renderedTasks = new Map<string, RenderedTask>();
   readonly renderedVars = new Map<string, unknown>();
@@ -18,6 +25,8 @@ export class RenderContext {
   readonly graph = new Map<string, Set<string>>();
   readonly mainTasks = new Set<string>();
   currentDeps = new Set<string>();
+  /** Maps pre-rendered var values back to the deps captured during their rendering */
+  readonly varCapturedDeps = new Map<string, Set<string>>();
 }
 
 export interface ProxyCallbacks {
@@ -27,12 +36,13 @@ export interface ProxyCallbacks {
     varName: string,
     prefix: string,
   ) => unknown;
+  /** Renders a task and returns its reference info */
   renderTask: (
     ctx: RenderContext,
     module: ModuleTemplate,
     taskName: string,
     prefix: string,
-  ) => string;
+  ) => TaskRef;
   renderTaskInline: (
     ctx: RenderContext,
     module: ModuleTemplate,
@@ -75,7 +85,7 @@ export class RenderProxyFactory {
           const subModule = module.modules[key];
           if (subModule) {
             const newPrefix = prefix ? `${prefix}.${key}` : key;
-            return this.createAliasProxy(subModule, newPrefix);
+            return this.create(subModule, null, newPrefix);
           }
           return undefined;
         },
@@ -177,9 +187,11 @@ export class RenderProxyFactory {
   private createTaskRef(module: ModuleTemplate, taskName: string, prefix: string) {
     return {
       toString: () => {
-        const depName = this.callbacks.renderTask(this.ctx, module, taskName, prefix);
-        this.ctx.currentDeps.add(depName);
-        return depName.replace(/\./g, ":");
+        // Render the task and get its reference info
+        const ref = this.callbacks.renderTask(this.ctx, module, taskName, prefix);
+        // Add to deps - this happens at access time, not pre-render time
+        this.ctx.currentDeps.add(ref.canonicalName);
+        return ref.bashName;
       },
       inline: (overrideVars: Record<string, unknown> = {}) => {
         return this.callbacks.renderTaskInline(this.ctx, module, taskName, prefix, overrideVars);
@@ -187,10 +199,50 @@ export class RenderProxyFactory {
     };
   }
 
-  private createAliasProxy(module: ModuleTemplate, prefix: string): Record<string, unknown> {
-    // Use the full create() method to get a proper proxy with ownKeys support
-    // This ensures nunjucks can properly access nested properties like log.tasks.info
-    return this.create(module, null, prefix);
+  /**
+   * Traverses a dotted path to find a module and task.
+   * e.g., "tasks.myTask" or "modules.sub.tasks.subTask"
+   */
+  private resolveModulePath(
+    startModule: ModuleTemplate,
+    path: string,
+    startPrefix: string,
+  ): { module: ModuleTemplate; taskName: string; prefix: string } {
+    const parts = path.split(".");
+    let currentModule = startModule;
+    let currentPrefix = startPrefix;
+    let i = 0;
+
+    // Skip leading "modules" keyword
+    if (parts[i] === "modules") i++;
+
+    // Navigate through module hierarchy until we hit "tasks" or run out of parts
+    while (i < parts.length && parts[i] !== "tasks") {
+      const part = parts[i]!;
+      const subModule = currentModule.modules[part];
+      if (!subModule) {
+        throw new QwlError({
+          code: "RENDERER_ERROR",
+          message: `Module not found: ${part} in path ${path}`,
+        });
+      }
+      currentModule = subModule;
+      currentPrefix = currentPrefix ? `${currentPrefix}.${part}` : part;
+      i++;
+    }
+
+    // Skip "tasks" keyword
+    if (parts[i] === "tasks") i++;
+
+    const taskName = parts[i];
+    if (!taskName || !currentModule.tasks[taskName]) {
+      throw new QwlError({
+        code: "RENDERER_ERROR",
+        message: `Task not found: ${taskName} in path ${path}`,
+      });
+    }
+
+    return { module: currentModule, taskName, prefix: currentPrefix };
   }
 
   /**
@@ -204,70 +256,19 @@ export class RenderProxyFactory {
   ): (path: string, overrideVars?: Record<string, unknown>) => string {
     return (path: string, overrideVars: Record<string, unknown> = {}): string => {
       if (path.startsWith("tasks.") || path.startsWith("modules.")) {
-        return this.resolveTaskPath(module, path, prefix, overrideVars);
+        const resolved = this.resolveModulePath(module, path, prefix);
+        return this.callbacks.renderTaskInline(
+          this.ctx,
+          resolved.module,
+          resolved.taskName,
+          resolved.prefix,
+          overrideVars,
+        );
       }
 
       const globalUses = nj.getGlobal("uses");
       return globalUses(path);
     };
-  }
-
-  /**
-   * Resolves a dotted task path and inlines the task
-   * e.g., "tasks.myTask" or "modules.sub.tasks.subTask"
-   */
-  private resolveTaskPath(
-    module: ModuleTemplate,
-    path: string,
-    prefix: string,
-    overrideVars: Record<string, unknown>,
-  ): string {
-    const parts = path.split(".");
-    let currentModule = module;
-    let currentPrefix = prefix;
-    let i = 0;
-
-    while (i < parts.length - 2) {
-      const part = parts[i];
-      if (!part) {
-        i++;
-        continue;
-      }
-      if (part === "modules") {
-        i++;
-        continue;
-      }
-      const subModule = currentModule.modules[part];
-      if (!subModule) {
-        throw new QwlError({
-          code: "RENDERER_ERROR",
-          message: `uses(): Module not found: ${part} in path ${path}`,
-        });
-      }
-      currentModule = subModule;
-      currentPrefix = currentPrefix ? `${currentPrefix}.${part}` : part;
-      i++;
-    }
-
-    if (parts[i] === "tasks") {
-      i++;
-    }
-    const taskName = parts[i];
-
-    if (!taskName || !currentModule.tasks[taskName]) {
-      throw new QwlError({
-        code: "RENDERER_ERROR",
-        message: `uses(): Task not found: ${taskName} in path ${path}`,
-      });
-    }
-
-    return this.callbacks.renderTaskInline(
-      this.ctx,
-      currentModule,
-      taskName,
-      currentPrefix,
-      overrideVars,
-    );
   }
 
   private renderVariableTemplate(
