@@ -1,10 +1,8 @@
-vars:
-  variable: "value"
+modules:
+  uv-workspace:
+    uses: ./uv-workspace/qwex.yaml
 
 tasks:
-  hello:
-    vars:
-      message: Qwex
-    cmd:
-      - echo "Hello, ${@:-{{ vars.message }}}!"
-    desc: "Prints a hello message"
+  clean-all:
+    cmd: |
+      {{ uv-workspace.tasks.clean }}

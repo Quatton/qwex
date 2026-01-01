@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { Pipeline } from "../src/pipeline";
 import innerEmitterTemplate from "../src/emitter/inner.sh.njk" with { type: "text" };
+import { Pipeline } from "../src/pipeline";
 
 const FIXTURES_DIR = path.join(import.meta.dir, "fixtures");
 

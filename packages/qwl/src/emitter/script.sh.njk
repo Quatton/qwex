@@ -7,7 +7,7 @@ source <(echo "$QWEX_PREAMBLE")
 
 @source() {
   declare -p QWEX_PREAMBLE
-  echo "source <(echo \"\$QWEX_PREAMBLE\")"
+  echo "source <(echo \"$QWEX_PREAMBLE\")"
   declare -f {% for task in deps %}{{ task.name | replace(".", ":") }} {% endfor %} {% for task in main %}{{ task.name | replace(".", ":") }} {% endfor %} @main @help @source
   echo "@main \$@"
 }
@@ -27,7 +27,6 @@ source <(echo "$QWEX_PREAMBLE")
 {{ task.name | replace(".", ":") }}() {
   {{ task.cmd }}
 }
-
 {% endfor %}
 {% for task in main %}
 {% if task.desc %}

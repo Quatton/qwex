@@ -1,1 +1,3 @@
-cat $BASH_SOURCE
+clean-all() {
+  hi
+}

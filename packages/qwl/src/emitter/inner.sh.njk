@@ -6,7 +6,6 @@
 {{ task.name | replace(".", ":") }}() {
   {{ task.cmd }}
 }
-
 {% endfor %}
 {% for task in main %}
 {% if task.desc %}

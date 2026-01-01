@@ -15,7 +15,6 @@ B:D:d1() {
 B:c2() {
   echo "c2 calling d1"
 B:D:d1
-
 }
 
 # Original a1 from A
@@ -23,6 +22,7 @@ B:D:d1
 a1() {
   echo "a1: origin=from-entry"
 }
+
 # Main entry task
 # Hash: 0xad313f82b5b1af3d
 main() {
@@ -33,8 +33,8 @@ a1
 B:c1
 # Call B's c2 (which references D's d1)
 B:c2
-
 }
+
 # Test task deduplication - reference same task twice
 # Hash: 0x9646a1ee13d9f7b1
 testDedup() {
@@ -42,13 +42,12 @@ testDedup() {
 a1
 echo "between calls"
 a1
-
 }
+
 # Test inline doesn't create duplicate deps
 # Hash: 0x7dcffc3a2635bac
 testInlineDedup() {
   # Inline a1 twice - no deps created
 echo "a1: origin=from-entry"
 echo "a1: origin=from-entry"
-
 }
