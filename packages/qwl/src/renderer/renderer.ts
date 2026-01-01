@@ -1,10 +1,10 @@
 import { Template } from "nunjucks";
 
-import type { ModuleTemplate, TaskTemplate, VariableTemplate } from "../ast";
+import type { ModuleTemplate, TaskTemplate, VariableTemplate, VariableTemplateValue } from "../ast";
 
 import { QwlError } from "../errors";
+import { getCwd, getDirFromSourcePath, resolvePath as resolvePathUtil } from "../utils/path";
 import { hash } from "../utils/hash";
-import { setCurrentModulePath } from "../utils/templating";
 import { RenderContext, RenderProxyFactory, type TaskRef } from "./proxy";
 
 export interface TaskNode {
@@ -115,9 +115,6 @@ export class Renderer {
         });
       }
 
-      // Set module path for uses() function
-      setCurrentModulePath(module.__meta__.sourcePath ?? null);
-
       // If task has 'uses' field, resolve the referenced task
       let resolvedTask: TaskTemplate = task;
       let _resolvedModule = module;
@@ -202,7 +199,6 @@ export class Renderer {
     } finally {
       this.ctx.pendingTasks.delete(canonicalName);
       this.ctx.currentDeps = savedDeps;
-      setCurrentModulePath(null);
     }
   }
 
@@ -219,9 +215,6 @@ export class Renderer {
         message: `Task not found for inline: ${taskName}`,
       });
     }
-
-    // Set module path for uses() function
-    setCurrentModulePath(module.__meta__.sourcePath ?? null);
 
     try {
       // If task has 'uses' field, resolve the referenced task
@@ -292,7 +285,6 @@ export class Renderer {
 
       return resolvedTask.cmd.render(proxyWithOverrides);
     } finally {
-      setCurrentModulePath(null);
     }
   }
 
@@ -313,16 +305,27 @@ export class Renderer {
     this.ctx.pendingVars.add(cacheKey);
 
     try {
-      const template = module.vars[varName];
-      if (!template) return undefined;
+      const varTemplate = module.vars[varName];
+      if (!varTemplate) return undefined;
+
+      const __src__ = varTemplate.__meta__.sourcePath ?? module.__meta__.sourcePath;
+      const __srcdir__ = getDirFromSourcePath(__src__);
+      const __cwd__ = getCwd();
+      const __dir__ = __srcdir__;
+      const resolvePath = (filePath: string) => resolvePathUtil(__srcdir__, filePath);
 
       const proxy = {
         vars: new Proxy({}, { get: (_, key: string) => this.renderVar(module, key, prefix) }),
         tasks: {},
         modules: {},
+        __cwd__,
+        __src__,
+        __srcdir__,
+        __dir__,
+        resolvePath,
       };
 
-      const value = this.renderVariableTemplate(template, proxy);
+      const value = this.renderVariableTemplateValue(varTemplate.value, proxy);
       this.ctx.renderedVars.set(cacheKey, value);
       return value;
     } finally {
@@ -330,8 +333,8 @@ export class Renderer {
     }
   }
 
-  private renderVariableTemplate(
-    template: VariableTemplate,
+  private renderVariableTemplateValue(
+    template: VariableTemplateValue,
     ctx: Record<string, unknown>,
   ): unknown {
     if (typeof template === "string") return template;
@@ -339,11 +342,11 @@ export class Renderer {
       return template.render(ctx);
     }
     if (Array.isArray(template))
-      return template.map((item) => this.renderVariableTemplate(item, ctx));
+      return template.map((item) => this.renderVariableTemplateValue(item, ctx));
     if (typeof template === "object" && template !== null) {
       const result: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(template)) {
-        result[key] = this.renderVariableTemplate(value as VariableTemplate, ctx);
+        result[key] = this.renderVariableTemplateValue(value as VariableTemplateValue, ctx);
       }
       return result;
     }
@@ -354,27 +357,30 @@ export class Renderer {
     template: VariableTemplate,
     ctx: Record<string, unknown>,
   ): VariableTemplate {
+    return {
+      value: this.preRenderVariableTemplateValue(template.value, ctx),
+      __meta__: template.__meta__,
+    };
+  }
+
+  private preRenderVariableTemplateValue(
+    template: VariableTemplateValue,
+    ctx: Record<string, unknown>,
+  ): VariableTemplateValue {
     if (typeof template === "string") return template;
     if (template instanceof Template) {
-      // Render the template - task refs will add to currentDeps when toString() is called
-      // Use a temp set to capture deps without polluting the current task's deps
       const savedDeps = this.ctx.currentDeps;
       this.ctx.currentDeps = new Set<string>();
       const rendered = template.render(ctx) as string;
-      // Store captured deps keyed by the rendered value
-      // When this value is accessed inside {% context %}, replay these deps
-      if (this.ctx.currentDeps.size > 0) {
-        this.ctx.varCapturedDeps.set(rendered, new Set(this.ctx.currentDeps));
-      }
       this.ctx.currentDeps = savedDeps;
       return rendered;
     }
     if (Array.isArray(template))
-      return template.map((item) => this.preRenderVariableTemplate(item, ctx));
+      return template.map((item) => this.preRenderVariableTemplateValue(item, ctx));
     if (typeof template === "object" && template !== null) {
-      const result: Record<string, VariableTemplate> = {};
+      const result: Record<string, VariableTemplateValue> = {};
       for (const [key, value] of Object.entries(template)) {
-        result[key] = this.preRenderVariableTemplate(value as VariableTemplate, ctx);
+        result[key] = this.preRenderVariableTemplateValue(value as VariableTemplateValue, ctx);
       }
       return result;
     }

@@ -65,13 +65,11 @@ export class Resolver {
     // Set source path for uses() function
     template.__meta__.sourcePath = currentPath;
 
-    // Filter vars by features
     const vars = filterByFeatures(def.vars as Record<string, unknown> | undefined, this.features);
-    Object.assign(template.vars, resolveVariableDefs(vars));
+    Object.assign(template.vars, resolveVariableDefs(vars, currentPath));
 
-    // Filter tasks by features
     const tasks = filterByFeatures(def.tasks as Record<string, TaskDef> | undefined, this.features);
-    Object.assign(template.tasks, resolveTaskDefs(tasks));
+    Object.assign(template.tasks, resolveTaskDefs(tasks, currentPath));
 
     // Filter modules by features
     const modules = filterByFeatures(

@@ -179,67 +179,39 @@ tasks:
 
 ### Special Functions
 
-**`uses()` Function** - include external files or inline tasks:
+### Special Tags
 
-Include a shell script file:
+**Include File Tag** - `{% uses "./path" %}` inlines external file content:
+
 ```yaml
 tasks:
   deploy:
     cmd: |
-      {{ uses("./deploy-script.sh") }}
+      {% uses "./deploy-script.sh" %}
 ```
 
-### Special Tags
+Paths are resolved relative to the current module source file (i.e. the YAML file containing the template).
 
-**Heredoc Tag** - `{% eof %}` creates bash heredoc with unique delimiters:
+### Templating Path Helpers
 
+These values are available during rendering:
+- `__cwd__`: the process working directory
+- `__src__`: absolute path to the current module source file (when available)
+- `__dir__`: directory of `__src__` (preferred)
+- `__srcdir__`: directory of `__src__` (alias)
+
+And filters:
+- `resolvePath`: resolve a path relative to a base directory
+
+Example:
 ```yaml
 tasks:
-  writeConfig:
+  showPaths:
     cmd: |
-      cat << {% eof %}
-      {
-        "name": "{{ vars.appName }}",
-        "version": "1.0.0"
-      }
-      {% endeof %} > config.json
-```
-
-Compiles to:
-```bash
-writeConfig() {
-cat << 'EOF_A1B2C3D4'
-{
-  "name": "MyApp",
-  "version": "1.0.0"
-}
-EOF_A1B2C3D4 > config.json
-}
-```
-
-**Context Tag** - `{% context %}` exports function definitions for container contexts:
-
-```yaml
-tasks:
-  helper:
-    cmd: echo "Helper"
-  
-  runInDocker:
-    cmd: |
-      docker run --rm alpine sh -c '
-      {% context %}
-      {{ tasks.helper }}
-      {% endcontext %}
-      helper
-      '
-```
-
-Compiles to:
-```bash
-docker run --rm alpine sh -c '
-$(declare -f helper)
-helper
-'
+      echo "cwd={{ __cwd__ }}"
+      echo "src={{ __src__ }}"
+      echo "dir={{ __dir__ }}"
+      echo "abs={{ "./deploy.sh" | resolvePath(__dir__) }}"
 ```
 
 ### Output
@@ -326,5 +298,5 @@ tasks:
       deployScript: ./deploy.sh
     cmd: |
       {{ tasks.build }}
-      {{ uses(vars.deployScript) }}
+      {% uses vars.deployScript %}
 ```

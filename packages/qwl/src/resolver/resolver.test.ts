@@ -30,7 +30,7 @@ describe("Resolver", () => {
 
     expect(result.vars.v1).toBeDefined();
     // @ts-ignore
-    expect(result.vars.v1.tmplStr).toBe("val1");
+    expect(result.vars.v1.value.tmplStr).toBe("val1");
     expect(result.tasks.t1).toBeDefined();
     // @ts-ignore
     expect(result.tasks.t1?.cmd.tmplStr).toBe("echo {{ vars.v1 }}");
@@ -50,10 +50,10 @@ describe("Resolver", () => {
 
     expect(result.modules.child1).toBeDefined();
     // @ts-ignore
-    expect(result.modules.child1.vars.c1.tmplStr).toBe("childVal1");
+    expect(result.modules.child1.vars.c1.value.tmplStr).toBe("childVal1");
     expect(result.modules.child2).toBeDefined();
     // @ts-ignore
-    expect(result.modules.child2.vars.c2.tmplStr).toBe("childVal2");
+    expect(result.modules.child2.vars.c2.value.tmplStr).toBe("childVal2");
   });
 
   test("3. resolve uses (inheritance)", async () => {
@@ -70,9 +70,9 @@ describe("Resolver", () => {
     const result = await resolver.resolve("root");
 
     // @ts-ignore
-    expect(result.vars.shared.tmplStr).toBe("baseVal");
+    expect(result.vars.shared.value.tmplStr).toBe("baseVal");
     // @ts-ignore
-    expect(result.vars.overrideMe.tmplStr).toBe("root");
+    expect(result.vars.overrideMe.value.tmplStr).toBe("root");
     expect(result.__meta__.used.has("base")).toBe(true);
   });
 
@@ -96,9 +96,9 @@ describe("Resolver", () => {
     const sub = result.modules.sub;
     assert(sub, "Expected sub module to be defined");
     // @ts-ignore
-    expect(sub.vars.key.tmplStr).toBe("commonKey");
+    expect(sub.vars.key.value.tmplStr).toBe("commonKey");
     // @ts-ignore
-    expect(sub.vars.subKey.tmplStr).toBe("subVal");
+    expect(sub.vars.subKey.value.tmplStr).toBe("subVal");
     expect(sub.__meta__.used.has("common")).toBe(true);
   });
 

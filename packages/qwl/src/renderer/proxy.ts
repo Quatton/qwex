@@ -1,9 +1,10 @@
+import fs from "node:fs";
 import { Template } from "nunjucks";
 
-import type { ModuleTemplate, TaskTemplate, VariableTemplate } from "../ast";
+import type { ModuleTemplate, TaskTemplate, VariableTemplateValue } from "../ast";
 
 import { QwlError } from "../errors";
-import { nj } from "../utils/templating";
+import { getCwd, getDirFromSourcePath, resolvePath as resolvePathUtil } from "../utils/path";
 
 export interface RenderedTask {
   cmd: string;
@@ -25,8 +26,6 @@ export class RenderContext {
   readonly graph = new Map<string, Set<string>>();
   readonly mainTasks = new Set<string>();
   currentDeps = new Set<string>();
-  /** Maps pre-rendered var values back to the deps captured during their rendering */
-  readonly varCapturedDeps = new Map<string, Set<string>>();
   /** Maps content hash -> first task name with that hash (for deduplication) */
   readonly hashToName = new Map<bigint, string>();
   /** Maps canonical task name -> deduplicated bash name */
@@ -67,10 +66,14 @@ export class RenderProxyFactory {
     task: TaskTemplate | null,
     prefix: string,
   ): Record<string, unknown> {
+    const { __src__, __srcdir__ } = this.getSourceInfo(module, task);
     const varsProxy = this.createVarsProxy(module, task, prefix);
     const tasksProxy = this.createTasksProxy(module, prefix);
     const modulesProxy = this.createModulesProxy(module, prefix);
-    const usesFunction = this.createUsesFunction(module, prefix);
+    const usesFunction = this.createUsesFunction(module, prefix, __srcdir__);
+    const resolvePathFunction = this.createResolvePathFunction(__srcdir__);
+    const __cwd__ = getCwd();
+    const __dir__ = __srcdir__;
     const __renderContext = this.ctx;
 
     return new Proxy(
@@ -79,6 +82,11 @@ export class RenderProxyFactory {
         tasks: tasksProxy,
         modules: modulesProxy,
         uses: usesFunction,
+        resolvePath: resolvePathFunction,
+        __cwd__,
+        __src__,
+        __srcdir__,
+        __dir__,
         __renderContext,
       },
       {
@@ -129,16 +137,26 @@ export class RenderProxyFactory {
     task: TaskTemplate | null,
     prefix: string,
   ): object {
+    const { __src__, __srcdir__ } = this.getSourceInfo(module, task);
+    const __cwd__ = getCwd();
+
     return new Proxy(
       {},
       {
         get: (_, key: string) => {
           const taskVarTemplate = task?.vars[key];
           if (taskVarTemplate !== undefined) {
-            return this.renderVariableTemplate(taskVarTemplate, {
+            const varSrc = taskVarTemplate.__meta__.sourcePath ?? __src__;
+            const varDir = getDirFromSourcePath(varSrc);
+            return this.renderVariableTemplateValue(taskVarTemplate.value, {
               vars: this.createVarsProxy(module, task, prefix),
               tasks: {},
               modules: {},
+              __cwd__,
+              __src__: varSrc,
+              __srcdir__: varDir,
+              __dir__: varDir,
+              resolvePath: this.createResolvePathFunction(varDir),
             });
           }
           const moduleVarTemplate = module.vars[key];
@@ -257,6 +275,7 @@ export class RenderProxyFactory {
   private createUsesFunction(
     module: ModuleTemplate,
     prefix: string,
+    baseDir: string,
   ): (path: string, overrideVars?: Record<string, unknown>) => string {
     return (path: string, overrideVars: Record<string, unknown> = {}): string => {
       if (path.startsWith("tasks.") || path.startsWith("modules.")) {
@@ -270,23 +289,46 @@ export class RenderProxyFactory {
         );
       }
 
-      const globalUses = nj.getGlobal("uses");
-      return globalUses(path);
+      const resolvedPath = this.resolveFromBaseDir(baseDir, path);
+      try {
+        return fs.readFileSync(resolvedPath, "utf8");
+      } catch (e) {
+        throw new QwlError({
+          code: "RENDERER_ERROR",
+          message: `uses(): Failed to read file '${path}' resolved to '${resolvedPath}': ${(e as Error).message}`,
+        });
+      }
     };
   }
 
-  private renderVariableTemplate(
-    template: VariableTemplate,
+  private getSourceInfo(
+    module: ModuleTemplate,
+    task: TaskTemplate | null,
+  ): { __src__: string | null; __srcdir__: string } {
+    const src = task?.__meta__?.sourcePath ?? module.__meta__.sourcePath;
+    return { __src__: src ?? null, __srcdir__: getDirFromSourcePath(src) };
+  }
+
+  private resolveFromBaseDir(baseDir: string, filePath: string): string {
+    return resolvePathUtil(baseDir, filePath);
+  }
+
+  private createResolvePathFunction(baseDir: string): (filePath: string) => string {
+    return (filePath: string): string => this.resolveFromBaseDir(baseDir, filePath);
+  }
+
+  private renderVariableTemplateValue(
+    template: VariableTemplateValue,
     ctx: Record<string, unknown>,
   ): unknown {
     if (typeof template === "string") return template;
     if (template instanceof Template) return template.render(ctx);
     if (Array.isArray(template))
-      return template.map((item) => this.renderVariableTemplate(item, ctx));
+      return template.map((item) => this.renderVariableTemplateValue(item, ctx));
     if (typeof template === "object" && template !== null) {
       const result: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(template)) {
-        result[key] = this.renderVariableTemplate(value as VariableTemplate, ctx);
+        result[key] = this.renderVariableTemplateValue(value as VariableTemplateValue, ctx);
       }
       return result;
     }

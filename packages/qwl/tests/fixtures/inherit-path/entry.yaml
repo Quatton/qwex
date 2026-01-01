@@ -1,0 +1,13 @@
+uses: ./another_folder/module-b.yaml
+
+vars:
+  module_a_path: "{{ './local.sh' | resolvePath(__dir__) }}"
+
+tasks:
+  fromA:
+    cmd: |
+      echo "A cwd={{ __cwd__ }}"
+      echo "A src={{ __src__ }}"
+      echo "A dir={{ __dir__ }}"
+      echo "A resolved={{ vars.module_a_path }}"
+      {% uses "./local.sh" %}

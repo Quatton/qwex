@@ -1,158 +1,58 @@
 import fs from "node:fs";
-import path from "node:path";
 import nunjucks from "nunjucks";
 
-import { hash } from "./hash";
+import { getCwd, resolvePath as resolvePathUtil } from "./path";
 
 export function escapeQuotes(str: string): string {
   return str.replace(/"/g, '\\"').replace(/'/g, "\\'");
 }
 
 /**
- * Generate a unique EOF delimiter based on content hash
- * Returns uppercase hex string prefixed with EOF_
+ * Custom extension for {% uses "./path" %}
+ *
+ * Includes file content directly into the rendered task.
+ *
+ * Resolution rules:
+ * - Absolute paths are used as-is.
+ * - Relative paths resolve against __srcdir__ (directory of the current module source).
  */
-function generateEofDelimiter(content: string): string {
-  const h = hash(content);
-  return `EOF_${h.toString(16).toUpperCase().slice(0, 8)}`;
-}
-
-/**
- * Custom extension for {% eof %} heredoc tag
- *
- * Usage:
- *   {% eof %}content{% endeof %}
- *   => 'EOF_A1B2C3D4'\ncontent\nEOF_A1B2C3D4
- *
- *   {% eof "CUSTOM" %}content{% endeof %}
- *   => 'CUSTOM'\ncontent\nCUSTOM
- *
- * The delimiter is auto-generated from content hash unless explicitly provided.
- * Does NOT include `cat <<` - user can add that themselves if needed.
- */
-class EofExtension implements nunjucks.Extension {
-  tags = ["eof"];
-
-  parse(parser: any, nodes: any, _lexer: any): any {
-    const tok = parser.nextToken();
-    const args = parser.parseSignature(null, true);
-    parser.advanceAfterBlockEnd(tok.value);
-
-    const body = parser.parseUntilBlocks("endeof");
-    parser.advanceAfterBlockEnd();
-
-    return new nodes.CallExtension(this, "run", args, [body]);
-  }
-
-  run(_context: unknown, ...args: unknown[]): nunjucks.runtime.SafeString {
-    const body = args.pop() as () => string;
-    const explicitDelimiter = args[0] as string | undefined;
-
-    const content = body();
-    const delimiter = explicitDelimiter || generateEofDelimiter(content);
-
-    return new nunjucks.runtime.SafeString(`'${delimiter}'\n${content}\n${delimiter}`);
-  }
-}
-
-/**
- * Custom extension for {% context %} tag
- *
- * This extension renders its body content and tracks dependencies referenced
- * within the block. It outputs eval "$(declare -f)" statements for all dependencies
- * before the rendered content, which properly defines functions in the current shell.
- *
- * Usage:
- *   {% context %}
- *     {{ tasks.myTask }}
- *   {% endcontext %}
- *   => eval "$(declare -f myTask)"\nmyTask
- *
- *   {% context escape=true %}
- *     echo $VAR
- *   {% endcontext %}
- *   => echo \$VAR  (escapes $ to \$)
- *
- * Options:
- * - escape: if true, escapes $ as \$ in the body content
- *
- * The __renderContext is passed from the proxy and contains:
- * - currentDeps: Set of task names referenced during rendering
- * - renderedTasks: Map of task name -> { cmd, desc }
- * - graph: Map of task name -> Set of dependencies
- */
-class ContextExtension implements nunjucks.Extension {
-  tags = ["context"];
+class UsesExtension implements nunjucks.Extension {
+  tags = ["uses"];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   parse(parser: any, nodes: any, _lexer: any): any {
     const tok = parser.nextToken();
     const args = parser.parseSignature(null, true);
     parser.advanceAfterBlockEnd(tok.value);
-
-    const body = parser.parseUntilBlocks("endcontext");
-    parser.advanceAfterBlockEnd();
-
-    return new nodes.CallExtension(this, "run", args, [body]);
+    return new nodes.CallExtension(this, "run", args);
   }
 
   run(context: any, ...args: unknown[]): nunjucks.runtime.SafeString {
-    const body = args.pop() as () => string;
-    const options = (args[0] as { escape?: boolean }) || {};
+    const filePath = args[0];
+    if (typeof filePath !== "string") {
+      throw new Error("{% uses %} requires a string path argument");
+    }
 
-    // Get the render context from the template context
-    const renderContext = context.ctx?.__renderContext;
+    const ctxDir =
+      context?.ctx?.__dir__ && typeof context.ctx.__dir__ === "string"
+        ? context.ctx.__dir__
+        : context?.ctx?.__srcdir__ && typeof context.ctx.__srcdir__ === "string"
+          ? context.ctx.__srcdir__
+          : undefined;
 
-    if (!renderContext) {
-      // If no render context, just render the body normally
-      let content = body();
-      if (options.escape) {
-        content = content.replace(/\$/g, "\\$");
-      }
+    const baseDir = typeof ctxDir === "string" ? ctxDir : getCwd();
+    const resolvedPath = resolvePathUtil(baseDir, filePath);
+
+    try {
+      const content = fs.readFileSync(resolvedPath, "utf8");
       return new nunjucks.runtime.SafeString(content);
+    } catch (e) {
+      const src = context?.ctx?.__src__;
+      const srcHint = typeof src === "string" ? ` (from ${src})` : "";
+      throw new Error(
+        `{% uses %}: Failed to read file '${filePath}' resolved to '${resolvedPath}'${srcHint}: ${(e as Error).message}`,
+      );
     }
-
-    // Capture dependencies before rendering
-    const depsBefore = new Set(renderContext.currentDeps);
-
-    // Render the body content (this will accumulate deps in currentDeps)
-    let content = body();
-
-    // Apply escape if requested
-    if (options.escape) {
-      content = content.replace(/\$/g, "\\$");
-    }
-
-    // Find new dependencies added during body rendering
-    const newDeps: string[] = [];
-    for (const dep of renderContext.currentDeps) {
-      if (!depsBefore.has(dep)) {
-        newDeps.push(dep);
-      }
-    }
-
-    // Also check for deps captured during variable pre-rendering
-    // These are stored in varCapturedDeps keyed by the rendered string value
-    for (const [renderedValue, capturedDeps] of renderContext.varCapturedDeps || []) {
-      // If the rendered content contains this pre-rendered value, add its deps
-      if (content.includes(renderedValue)) {
-        for (const dep of capturedDeps) {
-          if (!depsBefore.has(dep) && !newDeps.includes(dep)) {
-            newDeps.push(dep);
-            renderContext.currentDeps.add(dep);
-          }
-        }
-      }
-    }
-
-    // Generate eval "$(declare -f)" statements for new dependencies
-    if (newDeps.length === 0) {
-      return new nunjucks.runtime.SafeString(content);
-    }
-
-    const declares = newDeps.map((dep) => `$(declare -f ${dep})`).join("\n");
-
-    return new nunjucks.runtime.SafeString(`${declares}\n${content}`);
   }
 }
 
@@ -168,41 +68,14 @@ const nj = new nunjucks.Environment(null, {
 });
 
 // Register extensions
-nj.addExtension("EofExtension", new EofExtension());
-nj.addExtension("ContextExtension", new ContextExtension());
-
-// Global state for current module path (set during rendering)
-let currentModulePath: string | null = null;
-
-export function setCurrentModulePath(modulePath: string | null): void {
-  currentModulePath = modulePath;
-}
-
-export function getCurrentModulePath(): string | null {
-  return currentModulePath;
-}
-
-/**
- * Global `uses()` function - reads file content synchronously
- * Available in templates as {{ uses("./path/to/file.sh") }}
- */
-nj.addGlobal("uses", (filePath: string): string => {
-  if (!currentModulePath) {
-    throw new Error("uses() called outside of module rendering context");
-  }
-
-  const resolvedPath = path.isAbsolute(filePath)
-    ? filePath
-    : path.resolve(path.dirname(currentModulePath), filePath);
-
-  try {
-    return fs.readFileSync(resolvedPath, "utf8");
-  } catch (e) {
-    throw new Error(`uses(): Failed to read file '${filePath}': ${(e as Error).message}`);
-  }
-});
+nj.addExtension("UsesExtension", new UsesExtension());
 
 nj.addGlobal("env", process.env);
+nj.addFilter("resolvePath", (input: string, baseDir?: string) => {
+  if (typeof input !== "string") return input;
+  const base = typeof baseDir === "string" ? baseDir : getCwd();
+  return resolvePathUtil(base, input);
+});
 
 const color = (text: string, colorInput: string): string => {
   const colorCode = Bun.color(colorInput, "ansi");

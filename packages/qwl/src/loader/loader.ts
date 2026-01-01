@@ -6,6 +6,7 @@ import stdSteps from "../../builtins/std/steps.yaml" with { type: "text" };
 import stdTest from "../../builtins/std/test.yaml" with { type: "text" };
 import stdUtils from "../../builtins/std/utils.yaml" with { type: "text" };
 import { QwlError } from "../errors";
+import { getCwd, resolveFromParentOrCwd } from "../utils/path";
 
 const BUILTINS: Record<string, string> = {
   "std/utils": stdUtils,
@@ -79,14 +80,10 @@ export async function resolveModulePath(specifier: string, parentPath?: string):
 
   const hasExtension = YAML_EXTENSIONS.some((ext) => specifier.endsWith(ext));
 
-  let basePath: string;
-  if (path.isAbsolute(specifier)) {
-    basePath = specifier;
-  } else if (parentPath && !isBuiltin(parentPath)) {
-    basePath = path.resolve(path.dirname(parentPath), specifier);
-  } else {
-    basePath = path.resolve(process.cwd(), specifier);
-  }
+  const basePath = resolveFromParentOrCwd(
+    specifier,
+    parentPath && !isBuiltin(parentPath) ? parentPath : undefined,
+  );
 
   if (hasExtension) {
     return await canonicalize(basePath);
@@ -96,7 +93,7 @@ export async function resolveModulePath(specifier: string, parentPath?: string):
   if (found instanceof QwlError) {
     throw new QwlError({
       code: "LOADER_ERROR",
-      message: `Module not found: ${specifier} (searched from ${parentPath ?? "cwd"})`,
+      message: `Module not found: ${specifier} (searched from ${parentPath ?? getCwd()})`,
     });
   }
   return found;

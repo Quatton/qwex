@@ -207,41 +207,33 @@ describe("Pipeline Integration", () => {
     });
   });
 
-  describe("eof tag", () => {
-    it("generates heredoc syntax with unique hash-based delimiter", async () => {
-      const pipeline = createPipeline("eof-tag.yaml");
+  describe("{% uses %} tag", () => {
+    it("resolves relative paths from each task's defining source file", async () => {
+      const pipeline = createPipeline("inherit-path/entry.yaml");
 
       const result = await pipeline.run();
 
-      // Check that heredoc syntax is present with unique delimiter
-      expect(result.script).toMatch(/'EOF_[A-F0-9]+'/); // Opening delimiter with quotes
-      expect(result.script).toContain("Hello World!");
-      expect(result.script).toContain("This is a heredoc.");
-      expect(result.script).toMatch(/^EOF_[A-F0-9]+$/m); // Closing delimiter without quotes
-    });
-  });
+      const cwd = process.cwd();
+      const entrySrc = path.join(FIXTURES_DIR, "inherit-path/entry.yaml");
+      const bSrc = path.join(FIXTURES_DIR, "inherit-path/another_folder/module-b.yaml");
+      const entryDir = path.join(FIXTURES_DIR, "inherit-path");
+      const bDir = path.join(FIXTURES_DIR, "inherit-path/another_folder");
 
-  describe("context tag", () => {
-    it("generates declare -f for tasks referenced in context blocks", async () => {
-      const pipeline = createPipeline("context-tag.yaml");
+      // fromA is defined in entry.yaml, so ./local.sh resolves in inherit-path/
+      expect(result.script).toContain('echo "FROM A: local.sh"');
 
-      const result = await pipeline.run();
+      expect(result.script).toContain(`echo "A cwd=${cwd}"`);
+      expect(result.script).toContain(`echo "A src=${entrySrc}"`);
+      expect(result.script).toContain(`echo "A dir=${entryDir}"`);
+      expect(result.script).toContain(`echo "A resolved=${path.join(entryDir, "local.sh")}"`);
 
-      // Check that $(declare -f) is output for referenced tasks
-      expect(result.script).toContain("$(declare -f helper)");
-      // And the task call is still present
-      expect(result.script).toContain("helper");
-    });
+      // fromB is defined in another_folder/module-b.yaml, so ./b.sh resolves in another_folder/
+      expect(result.script).toContain('echo "FROM B: b.sh"');
 
-    it("escapes dollar signs when escape=true option is used", async () => {
-      const pipeline = createPipeline("context-escape.yaml");
-
-      const result = await pipeline.run();
-
-      // Check that $(declare -f) is still output
-      expect(result.script).toContain("$(declare -f helper)");
-      // Check that $ is escaped to \$ in the body content
-      expect(result.script).toContain("\\$VALUE");
+      expect(result.script).toContain(`echo "B cwd=${cwd}"`);
+      expect(result.script).toContain(`echo "B src=${bSrc}"`);
+      expect(result.script).toContain(`echo "B dir=${bDir}"`);
+      expect(result.script).toContain(`echo "B resolved=${path.join(bDir, "b.sh")}"`);
     });
   });
 

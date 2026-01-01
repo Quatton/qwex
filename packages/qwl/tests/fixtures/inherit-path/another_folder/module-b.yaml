@@ -1,0 +1,11 @@
+vars:
+  module_b_path: "{{ './b.sh' | resolvePath(__dir__) }}"
+
+tasks:
+  fromB:
+    cmd: |
+      echo "B cwd={{ __cwd__ }}"
+      echo "B src={{ __src__ }}"
+      echo "B dir={{ __dir__ }}"
+      echo "B resolved={{ vars.module_b_path }}"
+      {% uses "./b.sh" %}
