@@ -2942,4 +2942,188 @@ tasks[ssh]:
         - name: Cleanup
           cmd: "{{ lifecycle.cleanup }}"
     cmd: {{ vars.steps | steps.compose | ssh.run }}
+
+---
+
+## Jan 1, 2026: QWL Pipeline Implementation Summary
+
+### Architecture Overview
+
+QWL (Qwex Workflow Language) is a YAML-based task runner that compiles module definitions into executable bash scripts. The pipeline consists of 5 stages:
+
+```
+Loader → Parser → Resolver → Renderer → Emitter
+```
+
+### Pipeline Stages
+
+**1. Loader** (`src/loader/`)
+- Loads YAML content from filesystem or builtins
+- Resolves module paths (with `.yaml`/`.yml` extension probing)
+- Single cache for all modules (builtins and files)
+- Uses `{ type: "text" }` imports for builtins
+
+**2. Parser** (`src/parser/`)
+- Parses YAML to `ModuleDef` using arktype schema
+- Returns `{ module: ModuleDef, hash: bigint }` for caching
+- Validates structure: `vars`, `tasks`, `modules`, `uses`
+
+**3. Resolver** (`src/resolver/`)
+- Resolves module inheritance (`uses:`)
+- Flattens module tree into `ModuleTemplate`
+- Detects circular module dependencies
+- Merges vars/tasks from parent modules
+
+**4. Renderer** (`src/renderer/`)
+- Renders nunjucks templates in task commands
+- Tracks task dependencies via proxy pattern
+- Deduplicates tasks referenced multiple times
+- Handles `.inline()` for embedding task content
+- Uses `RenderContext` class for state and `RenderProxyFactory` for proxy creation
+
+**5. Emitter** (`src/emitter/`)
+- Generates bash script from `RenderResult`
+- Uses nunjucks template (`script.sh.njk`)
+- Internal functions use `@` prefix (`@help`, `@main`)
+- Submodule tasks use `:` separator (`B:c1`, `B:D:d1`)
+
+### Key Types
+
+```typescript
+// AST (parsed)
+type VariableDef = string | number | boolean | VariableDef[] | { [key: string]: VariableDef };
+type TaskDef = { cmd: string; desc?: string; vars?: Record<string, VariableDef> };
+type ModuleDef = { uses?: string; vars?: ...; tasks?: ...; modules?: ... };
+
+// Template (resolved, with nunjucks Templates)
+type VariableTemplate = Template | number | boolean | VariableTemplate[] | { [key: string]: VariableTemplate };
+type TaskTemplate = { cmd: Template; vars: Record<string, VariableTemplate>; desc?: string };
+type ModuleTemplate = { vars: ...; tasks: ...; modules: ...; __meta__: { used: Set<string> } };
+
+// Render output
+type TaskNode = { name: string; cmd: string; hash: string; desc?: string };
+type RenderResult = { main: TaskNode[]; deps: TaskNode[]; graph: Map<string, Set<string>> };
+```
+
+### Nunjucks Proxy System
+
+The renderer uses JavaScript Proxies to intercept template variable access:
+
+- `{{ vars.x }}` → renders variable, caches result
+- `{{ tasks.foo }}` → adds dependency, returns `foo` (or `B:foo` for submodules)
+- `{{ tasks.foo.inline() }}` → embeds task content directly, no dependency
+- `{{ modules.sub.tasks.bar }}` → handles submodule access
+- `{{ sub.bar }}` → alias for `{{ modules.sub.tasks.bar }}`
+
+### Test Coverage
+
+57 tests across 7 files covering:
+- Loader: file loading, canonicalization, error handling
+- Parser: YAML parsing, variable ordering
+- Resolver: inheritance, inline modules, cycle detection
+- Renderer: variable/task rendering, deduplication, cycles
+- Proxy: all proxy behaviors and aliases
+- Pipeline: end-to-end integration
+- Integration: complex inheritance scenarios
+
+---
+
+## Planned Features
+
+### 1. Feature Flags
+
+Conditional inclusion based on `[featurename]` suffix syntax. Only checked at root module level.
+
+**Syntax:**
+```yaml
+vars[ssh]:
+  host: "user@server"
+
+tasks[docker]:
+  build:
+    cmd: docker build .
+
+modules[kubernetes]:
+  k8s:
+    uses: ./k8s.yaml
+```
+
+**Implementation Plan:**
+1. Create `src/resolver/features.ts` with feature filtering utilities
+2. Add `features: Set<string>` to pipeline config
+3. Filter vars/tasks/modules in resolver based on `[feature]` suffix
+4. Only apply at root module level (not recursive)
+5. Key matching: `key[feature]` → extract `key` and `feature`
+
+**Not Supported:**
+- Nested feature flags: `vars.key.nested[feature]`
+- Feature flags inside task definitions
+
+### 2. Context Blocks
+
+Shell environment preservation across nested execution contexts (SSH, Slurm, etc.).
+
+**Problem:** When nesting SSH or Slurm commands, functions and variables are lost in the new shell.
+
+**Proposed Syntax:**
+```yaml
+tasks:
+  remote:
+    cmd: |
+      ssh user@host bash -c '
+        {% context %}
+          {{ tasks.helper }}
+          echo "done"
+        {% endcontext %}
+      '
+```
+
+**Implementation Plan:**
+1. Create `declare` nunjucks filter that outputs `declare -f funcname` for a task
+2. The filter also includes all dependencies of that task
+3. Implement `{% context %}` block that:
+   - Scans inner content for task references
+   - Injects `declare -f` and `declare -p` statements for all referenced tasks/vars
+   - Handles heredoc escaping challenges
+
+**Challenges:**
+- Heredoc nesting with proper escaping
+- Detecting which tasks are referenced inside context block
+- May need custom nunjucks extension to inspect block content
+
+### 3. Inline File Includes
+
+Include file content directly in templates using `$uses()`.
+
+**Syntax:**
+```yaml
+vars:
+  script: $uses(./helper.sh)
+
+tasks:
+  run:
+    cmd: |
+      {{ vars.script }}
+      main_logic
+```
+
+**Implementation Plan:**
+1. Use same resolver as loader for path resolution
+2. `$uses(path)` returns file content as string
+3. Support in: `vars`, `tasks.*.vars`, `cmd` templates
+4. Special syntax `$uses` differentiates from module `uses:`
+
+**Future Enhancement:**
+- Parse included file as YAML and use as structured data
+- Would require type annotation: `$uses(file.yaml, type: module)`
+
+---
+
+### Design Principles
+
+1. **Composition over configuration**: Templates compose via nesting
+2. **Explicit over implicit**: Feature flags use explicit `[name]` syntax
+3. **Bash-native output**: Generated scripts are readable, debuggable bash
+4. **Zero runtime**: QWL is a compiler, not a runtime
+5. **Progressive complexity**: Simple use cases stay simple
 ```
