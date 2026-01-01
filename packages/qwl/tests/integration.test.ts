@@ -160,19 +160,6 @@ describe("Pipeline Integration", () => {
     });
   });
 
-  describe("declare filter", () => {
-    it("outputs declare -f for task reference", async () => {
-      const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "declare-filter.yaml"),
-      });
-
-      const result = await pipeline.run();
-
-      // Check that the declare statement is present
-      expect(result.script).toContain("declare -f helper");
-    });
-  });
-
   describe("eof tag", () => {
     it("wraps content in heredoc syntax with unique delimiter", async () => {
       const pipeline = new Pipeline({
@@ -190,16 +177,18 @@ describe("Pipeline Integration", () => {
     });
   });
 
-  describe("declare tag", () => {
-    it("outputs declare -f for multiple task references", async () => {
+  describe("context tag", () => {
+    it("outputs declare -f for task references in context block", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "declare-tag.yaml"),
+        entryPath: path.join(FIXTURES_DIR, "context-tag.yaml"),
       });
 
       const result = await pipeline.run();
 
-      // Check that the declare statement with multiple functions is present
-      expect(result.script).toContain("declare -f helper1 helper2");
+      // Check that declare -f is output for referenced tasks
+      expect(result.script).toContain("declare -f helper");
+      // And the task call is still there
+      expect(result.script).toContain("helper");
     });
   });
 });

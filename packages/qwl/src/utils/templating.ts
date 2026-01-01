@@ -55,17 +55,25 @@ class EofExtension implements nunjucks.Extension {
 }
 
 /**
- * Custom extension for {% declare %} tag
+ * Custom extension for {% context %} tag
+ *
+ * This extension renders its body content and tracks dependencies referenced
+ * within the block. It outputs declare -f statements for all dependencies
+ * before the rendered content.
  *
  * Usage:
- *   {% declare tasks.myTask %}
- *   => declare -f myTask
+ *   {% context %}
+ *     {{ tasks.myTask }}
+ *   {% endcontext %}
+ *   => declare -f myTask\nmyTask
  *
- *   {% declare tasks.a, tasks.b %}
- *   => declare -f a b
+ * The __renderContext is passed from the proxy and contains:
+ * - currentDeps: Set of task names referenced during rendering
+ * - renderedTasks: Map of task name -> { cmd, desc }
+ * - graph: Map of task name -> Set of dependencies
  */
-class DeclareExtension implements nunjucks.Extension {
-  tags = ["declare"];
+class ContextExtension implements nunjucks.Extension {
+  tags = ["context"];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   parse(parser: any, nodes: any, lexer: any): any {
@@ -73,27 +81,45 @@ class DeclareExtension implements nunjucks.Extension {
     const args = parser.parseSignature(null, true);
     parser.advanceAfterBlockEnd(tok.value);
 
-    return new nodes.CallExtension(this, "run", args, []);
+    const body = parser.parseUntilBlocks("endcontext");
+    parser.advanceAfterBlockEnd();
+
+    return new nodes.CallExtension(this, "run", args, [body]);
   }
 
-  run(context: unknown, ...args: unknown[]): nunjucks.runtime.SafeString {
-    const declarations: string[] = [];
+  run(context: any, ...args: unknown[]): nunjucks.runtime.SafeString {
+    const body = args.pop() as () => string;
 
-    for (const arg of args) {
-      if (arg && typeof arg === "object" && "toString" in arg) {
-        // TaskRef object - call toString to get the canonical name
-        const name = String(arg);
-        declarations.push(name);
-      } else if (typeof arg === "string") {
-        declarations.push(arg.replace(/\./g, ":"));
+    // Get the render context from the template context
+    const renderContext = context.ctx?.__renderContext;
+
+    if (!renderContext) {
+      // If no render context, just render the body normally
+      const content = body();
+      return new nunjucks.runtime.SafeString(content);
+    }
+
+    // Capture dependencies before rendering
+    const depsBefore = new Set(renderContext.currentDeps);
+
+    // Render the body content (this will accumulate deps in currentDeps)
+    const content = body();
+
+    // Find new dependencies added during body rendering
+    const newDeps: string[] = [];
+    for (const dep of renderContext.currentDeps) {
+      if (!depsBefore.has(dep)) {
+        newDeps.push(dep);
       }
     }
 
-    if (declarations.length === 0) {
-      return new nunjucks.runtime.SafeString("");
+    // Generate declare -f statements for new dependencies
+    if (newDeps.length === 0) {
+      return new nunjucks.runtime.SafeString(content);
     }
 
-    return new nunjucks.runtime.SafeString(`declare -f ${declarations.join(" ")}`);
+    const declares = newDeps.map((dep) => `declare -f ${dep}`).join("\n");
+    return new nunjucks.runtime.SafeString(`${declares}\n${content}`);
   }
 }
 
@@ -106,7 +132,7 @@ const nj = new nunjucks.Environment(null, {
 
 // Register extensions
 nj.addExtension("EofExtension", new EofExtension());
-nj.addExtension("DeclareExtension", new DeclareExtension());
+nj.addExtension("ContextExtension", new ContextExtension());
 
 // Global state for current module path (set during rendering)
 let currentModulePath: string | null = null;
@@ -139,22 +165,36 @@ nj.addGlobal("uses", (filePath: string): string => {
   }
 });
 
-/**
- * `declare` filter - outputs `declare -f funcname` for a task reference
- *
- * Usage:
- *   {{ tasks.myTask | declare }}  => "declare -f myTask"
- *   {{ "funcName" | declare }}    => "declare -f funcName"
- */
-nj.addFilter("declare", (value: unknown): string => {
-  if (typeof value === "string") {
-    return `declare -f ${value.replace(/\./g, ":")}`;
-  }
-  if (value && typeof value === "object" && "toString" in value) {
-    const name = String(value);
-    return `declare -f ${name}`;
-  }
-  throw new Error(`declare filter: expected task reference or string, got ${typeof value}`);
-});
-
 export { nj };
+
+if (import.meta.main) {
+  // Test 1: Simple context without render context (should just pass through)
+  console.log("=== Test 1: No render context ===");
+  const template1 = nj.renderString(`{% context %}Hello {{ name }}{% endcontext %}`, {
+    name: "World",
+  });
+  console.log("Output:", template1);
+
+  // Test 2: With mock render context
+  console.log("\n=== Test 2: With mock render context ===");
+  const mockRenderContext = {
+    currentDeps: new Set<string>(),
+    renderedTasks: new Map(),
+    graph: new Map(),
+  };
+
+  // Mock a task ref that adds to currentDeps when toString is called
+  const mockTaskRef = {
+    toString() {
+      mockRenderContext.currentDeps.add("myTask");
+      return "myTask";
+    },
+  };
+
+  const template2 = nj.renderString(`{% context %}Task: {{ task }}{% endcontext %}`, {
+    __renderContext: mockRenderContext,
+    task: mockTaskRef,
+  });
+  console.log("Output:", template2);
+  console.log("Deps after:", [...mockRenderContext.currentDeps]);
+}

@@ -1,0 +1,9 @@
+tasks:
+  helper:
+    cmd: echo "Helper task"
+
+  main:
+    cmd: |
+      {% context %}
+      {{ tasks.helper }}
+      {% endcontext %}

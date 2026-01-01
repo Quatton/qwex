@@ -59,12 +59,16 @@ export class RenderProxyFactory {
     // Create uses() function for this context
     const usesFunction = this.createUsesFunction(module, prefix);
 
+    // Expose render context for {% context %} extension
+    const __renderContext = this.ctx;
+
     return new Proxy(
       {
         vars: varsProxy,
         tasks: tasksProxy,
         modules: modulesProxy,
         uses: usesFunction,
+        __renderContext,
       },
       {
         get: (target, key: string) => {
