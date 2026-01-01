@@ -6,17 +6,11 @@ import {
   type ModuleTemplate,
 } from "../ast";
 import { QwlError } from "../errors";
-import { hash } from "../utils/hash";
 
-// Loader must return the resolved absolute path to serve as the 'parent' for subsequent loads
 export type ModuleLoader = (
   path: string,
   parentPath?: string
-) => {
-  module: ModuleDef;
-  hash: bigint;
-  resolvedPath: string;
-};
+) => Promise<{ module: ModuleDef; hash: bigint; resolvedPath: string }>;
 
 export class Resolver {
   private cache = new Map<bigint, ModuleTemplate>();
@@ -24,8 +18,8 @@ export class Resolver {
 
   constructor(private loader: ModuleLoader) {}
 
-  public resolve(path: string, parentPath?: string): ModuleTemplate {
-    const { module, hash, resolvedPath } = this.loader(path, parentPath);
+  async resolve(path: string, parentPath?: string): Promise<ModuleTemplate> {
+    const { module, hash, resolvedPath } = await this.loader(path, parentPath);
 
     if (this.cache.has(hash)) return this.cache.get(hash)!;
     if (this.stack.has(hash))
@@ -37,7 +31,7 @@ export class Resolver {
     this.stack.add(hash);
 
     try {
-      const template = this.createTemplateFromDef(module, resolvedPath);
+      const template = await this.createTemplateFromDef(module, resolvedPath);
       this.cache.set(hash, template);
       return template;
     } finally {
@@ -45,24 +39,24 @@ export class Resolver {
     }
   }
 
-  private createTemplateFromDef(
+  private async createTemplateFromDef(
     def: ModuleDef,
     currentPath: string
-  ): ModuleTemplate {
+  ): Promise<ModuleTemplate> {
     const template = def.uses
-      ? this.resolveBase(def.uses, currentPath)
+      ? await this.resolveBase(def.uses, currentPath)
       : createEmptyModuleTemplate();
 
     if (def.vars) Object.assign(template.vars, resolveVariableDefs(def.vars));
     if (def.tasks) Object.assign(template.tasks, resolveTaskDefs(def.tasks));
     if (def.modules)
-      this.resolveInlineModules(template.modules, def.modules, currentPath);
+      await this.resolveInlineModules(template.modules, def.modules, currentPath);
 
     return template;
   }
 
-  private resolveBase(uses: string, currentPath: string): ModuleTemplate {
-    const parent = this.resolve(uses, currentPath);
+  private async resolveBase(uses: string, currentPath: string): Promise<ModuleTemplate> {
+    const parent = await this.resolve(uses, currentPath);
     return {
       vars: { ...parent.vars },
       tasks: { ...parent.tasks },
@@ -71,18 +65,20 @@ export class Resolver {
     };
   }
 
-  private resolveInlineModules(
+  private async resolveInlineModules(
     target: Record<string, ModuleTemplate>,
     modules: Record<string, ModuleDef>,
     currentPath: string
-  ) {
+  ): Promise<void> {
     for (const [name, def] of Object.entries(modules)) {
-      target[name] = this.createTemplateFromDef(def, currentPath);
+      target[name] = await this.createTemplateFromDef(def, currentPath);
     }
   }
 }
 
 if (import.meta.main) {
+  const { hash } = await import("../utils/hash");
+  
   const module: ModuleDef = {
     uses: "base",
     vars: {
@@ -115,7 +111,7 @@ if (import.meta.main) {
       },
     },
   };
-  const getModuleFromPath = (path: string, parent?: string) => {
+  const getModuleFromPath = async (path: string, _parent?: string) => {
     switch (path) {
       case "root":
         return {
@@ -135,7 +131,7 @@ if (import.meta.main) {
   };
   const resolver = new Resolver(getModuleFromPath);
 
-  const resolved = resolver.resolve("root");
+  const resolved = await resolver.resolve("root");
 
   console.dir(
     // @ts-ignore

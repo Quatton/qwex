@@ -1,16 +1,17 @@
-name: utils
-
 tasks:
   once:
-    run: |
+    vars:
+      key: $1
+      fn: $2
+    cmd: |
       declare -gA UTILS_ONCE_HASHSET
-      if [[ -z "${UTILS_ONCE_HASHSET[$1]+x}" ]]; then
-        UTILS_ONCE_HASHSET[$1]=1
-        eval "$2"
+      if [[ -z "${UTILS_ONCE_HASHSET[{{ vars.key }}]+x}" ]]; then
+        UTILS_ONCE_HASHSET[{{ vars.key }}]=1
+        eval "{{ vars.fn }}"
       fi
 
   color:
-    run: |
+    cmd: |
       if [ -t 1 ]; then
         Q_RED=$'\033[0;31m'
         Q_GREEN=$'\033[0;32m'

@@ -1,0 +1,11 @@
+vars:
+  greeting: Hello
+  target: "{{ vars.greeting }}, World!"
+
+tasks:
+  sayHello:
+    cmd: 'echo "{{ vars.target }}"'
+  build:
+    cmd: npm run build
+  test:
+    cmd: npm test

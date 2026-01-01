@@ -1,4 +1,3 @@
-import { match } from "arktype";
 import { Template } from "nunjucks";
 import type { TaskDef, VariableDef } from "./ast";
 import { nj } from "../utils/templating";
@@ -8,29 +7,40 @@ export function createTemplate(str: string): Template {
   return t;
 }
 
-export const createTemplateRecord = match({
-  string: (v) => createTemplate(v),
-  "string[]": (v) => v.map((item) => createTemplate(item)),
-  "Record<string, string>": (v) => {
-    const record: Record<string, Template> = {};
-    for (const [key, value] of Object.entries(v)) {
-      record[key] = createTemplate(value);
+// Recursively convert VariableDef to VariableTemplate
+// - strings become Templates
+// - numbers/booleans stay as-is
+// - arrays are recursively processed
+// - objects are recursively processed
+export function createTemplateRecord(value: VariableDef): VariableTemplate {
+  if (typeof value === "string") {
+    return createTemplate(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => createTemplateRecord(item as VariableDef));
+  }
+  if (typeof value === "object" && value !== null) {
+    const record: Record<string, VariableTemplate> = {};
+    for (const [key, v] of Object.entries(value)) {
+      record[key] = createTemplateRecord(v as VariableDef);
     }
     return record;
-  },
-  "Record<string, string>[]": (v) => {
-    return v.map((item) => {
-      const record: Record<string, Template> = {};
-      for (const [key, value] of Object.entries(item)) {
-        record[key] = createTemplateRecord(value);
-      }
-      return record;
-    });
-  },
-  default: "assert",
-});
+  }
+  // Fallback for null/undefined - just return as-is
+  return value as VariableTemplate;
+}
 
-export type VariableTemplate = ReturnType<typeof createTemplateRecord>;
+// VariableTemplate mirrors VariableDef but with strings converted to Templates
+export type VariableTemplate = 
+  | Template
+  | number
+  | boolean
+  | VariableTemplate[]
+  | { [key: string]: VariableTemplate };
+
 export type TaskTemplate = Omit<TaskDef, "cmd" | "vars"> & {
   cmd: Template;
   vars: Record<string, VariableTemplate>;

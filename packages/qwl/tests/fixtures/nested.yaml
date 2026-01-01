@@ -1,0 +1,21 @@
+vars:
+  greeting: Hello
+
+modules:
+  log:
+    vars:
+      prefix: "[LOG]"
+      level: INFO
+    tasks:
+      info:
+        cmd: 'echo "{{ vars.prefix }} {{ vars.level }}: $1"'
+      error:
+        cmd: 'echo "{{ vars.prefix }} ERROR: $1" >&2'
+
+tasks:
+  greet:
+    cmd: 'echo "{{ vars.greeting }}"'
+  logAndGreet:
+    cmd: |
+      {{ modules.log.tasks.info.inline() }}
+      {{ tasks.greet.inline() }}

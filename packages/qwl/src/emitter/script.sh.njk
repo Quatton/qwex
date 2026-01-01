@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+__qwl_help() {
+  echo "Available tasks:"
+{% for task in main %}
+  echo "  {{ task.name }}{% if task.desc %} - {{ task.desc }}{% endif %}"
+{% endfor %}
+}
+
+{% for task in deps %}
+{% if task.desc %}
+# {{ task.desc }}
+{% endif %}
+# Hash: {{ task.hash }}
+{{ task.name | replace(".", "__") }}() {
+  {{ task.cmd }}
+}
+
+{% endfor %}
+{% for task in main %}
+{% if task.desc %}
+# {{ task.desc }}
+{% endif %}
+# Hash: {{ task.hash }}
+{{ task.name | replace(".", "__") }}() {
+  {{ task.cmd }}
+}
+
+{% endfor %}
+__qwl_main() {
+  case "${1:-}" in
+    ""|"-h"|"--help"|"help")
+      __qwl_help
+      ;;
+{% for task in main %}
+    "{{ task.name }}")
+      shift
+      {{ task.name | replace(".", "__") }} "$@"
+      ;;
+{% endfor %}
+    *)
+      echo "Unknown task: $1" >&2
+      __qwl_help
+      exit 1
+      ;;
+  esac
+}
+
+__qwl_main "$@"

@@ -148,12 +148,28 @@ describe("createRenderProxy", () => {
 
       const proxy = createRenderProxy(ctx, module, task, "", callbacks);
       const taskRef = (proxy.tasks as Record<string, unknown>).greet as {
-        inline: (vars: Record<string, unknown>) => string;
+        inline: (vars?: Record<string, unknown>) => string;
       };
 
       const result = taskRef.inline({ foo: "bar" });
 
       expect(result).toBe('[INLINE:greet:{"foo":"bar"}]');
+    });
+
+    it("inline method with no args", () => {
+      const module = createTestModule();
+      const ctx = createRenderContext();
+      const callbacks = createMockCallbacks();
+      const task = module.tasks.sayHello!;
+
+      const proxy = createRenderProxy(ctx, module, task, "", callbacks);
+      const taskRef = (proxy.tasks as Record<string, unknown>).greet as {
+        inline: (vars?: Record<string, unknown>) => string;
+      };
+
+      const result = taskRef.inline();
+
+      expect(result).toBe('[INLINE:greet:{}]');
     });
 
     it("returns undefined for non-existent tasks", () => {
@@ -259,6 +275,59 @@ describe("createRenderProxy", () => {
       };
 
       expect(taskRef.toString()).toBe("myprefix.greet");
+    });
+  });
+
+  describe("alias fallback", () => {
+    it("{{ foo }} resolves to {{ tasks.foo }}", () => {
+      const module = createTestModule();
+      const ctx = createRenderContext();
+      const callbacks = createMockCallbacks();
+      const task = module.tasks.sayHello!;
+
+      const proxy = createRenderProxy(ctx, module, task, "", callbacks) as Record<string, unknown>;
+      const taskFn = proxy.greet as { toString: () => string };
+
+      expect(taskFn.toString()).toBe("greet");
+      expect(ctx.currentDeps.has("greet")).toBe(true);
+    });
+
+    it("{{ sub }} resolves to submodule alias proxy", () => {
+      const module = createTestModule();
+      const ctx = createRenderContext();
+      const callbacks = createMockCallbacks();
+      const task = module.tasks.sayHello!;
+
+      const proxy = createRenderProxy(ctx, module, task, "", callbacks) as Record<string, unknown>;
+      const subProxy = proxy.sub as Record<string, unknown>;
+
+      expect(subProxy).toBeDefined();
+    });
+
+    it("{{ sub.subTask }} resolves to {{ modules.sub.tasks.subTask }}", () => {
+      const module = createTestModule();
+      const ctx = createRenderContext();
+      const callbacks = createMockCallbacks();
+      const task = module.tasks.sayHello!;
+
+      const proxy = createRenderProxy(ctx, module, task, "", callbacks) as Record<string, unknown>;
+      const subProxy = proxy.sub as Record<string, unknown>;
+      const taskFn = subProxy.subTask as { toString: () => string };
+
+      expect(taskFn.toString()).toBe("sub.subTask");
+    });
+
+    it("{{ sub.subTask.inline() }} inlines the task", () => {
+      const module = createTestModule();
+      const ctx = createRenderContext();
+      const callbacks = createMockCallbacks();
+      const task = module.tasks.sayHello!;
+
+      const proxy = createRenderProxy(ctx, module, task, "", callbacks) as Record<string, unknown>;
+      const subProxy = proxy.sub as Record<string, unknown>;
+      const taskRef = subProxy.subTask as { inline: (vars?: Record<string, unknown>) => string };
+
+      expect(taskRef.inline()).toBe('[INLINE:sub.subTask:{}]');
     });
   });
 });

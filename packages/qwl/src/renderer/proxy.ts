@@ -1,27 +1,18 @@
-import type { ModuleTemplate, TaskTemplate } from "../ast";
+import { Template } from "nunjucks";
+import type { ModuleTemplate, TaskTemplate, VariableTemplate } from "../ast";
 
-/**
- * RenderContext tracks state during template rendering.
- * - Caches rendered vars and tasks
- * - Detects circular dependencies
- * - Collects task dependencies
- */
+export interface RenderedTask {
+  cmd: string;
+  desc?: string;
+}
+
 export interface RenderContext {
-  // Caching
-  renderedTasks: Map<string, string>; // canonicalName → rendered cmd
-  renderedVars: Map<string, unknown>; // canonicalVarPath → value
-
-  // Cycle detection
+  renderedTasks: Map<string, RenderedTask>;
+  renderedVars: Map<string, unknown>;
   pendingTasks: Set<string>;
   pendingVars: Set<string>;
-
-  // Current render state (stack-based for nested renders)
   currentDeps: Set<string>;
-
-  // Dependency graph: taskName → Set of task names it depends on
   graph: Map<string, Set<string>>;
-
-  // Track which tasks are "main" (top-level in root module)
   mainTasks: Set<string>;
 }
 
@@ -65,15 +56,54 @@ export interface ProxyCallbacks {
   renderTaskInline: RenderTaskInlineFn;
 }
 
-/**
- * Creates a proxy object for nunjucks template rendering.
- *
- * Intercepts:
- * - vars.X → renders variable inline
- * - tasks.X → returns canonical name, registers as dependency
- * - tasks.X.inline({}) → renders task inline with overrides
- * - modules.X → returns nested proxy for submodule
- */
+function renderVariableTemplate(
+  template: VariableTemplate,
+  ctx: Record<string, unknown>
+): unknown {
+  if (template instanceof Template) {
+    return template.render(ctx);
+  }
+  if (Array.isArray(template)) {
+    return template.map((item) => renderVariableTemplate(item, ctx));
+  }
+  if (typeof template === "object" && template !== null) {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(template)) {
+      result[key] = renderVariableTemplate(value as VariableTemplate, ctx);
+    }
+    return result;
+  }
+  return template;
+}
+
+function createTaskCallable(
+  ctx: RenderContext,
+  module: ModuleTemplate,
+  taskName: string,
+  prefix: string,
+  callbacks: ProxyCallbacks
+) {
+  const { renderTask, renderTaskInline } = callbacks;
+
+  const inlineMethod = (overrideVars: Record<string, unknown> = {}) => {
+    return renderTaskInline(ctx, module, taskName, prefix, overrideVars);
+  };
+
+  // HACK: nunjucks wraps functions in memberLookup(), breaking custom toString.
+  // Use an object with toString() and inline() method instead of a callable.
+  return {
+    toString() {
+      const depName = renderTask(ctx, module, taskName, prefix);
+      ctx.currentDeps.add(depName);
+      return depName;
+    },
+    inline: inlineMethod,
+    // DISCUSS: what about these instead?
+    // $inline: inlineMethod,
+    // $: inlineMethod,
+  };
+}
+
 export function createRenderProxy(
   ctx: RenderContext,
   module: ModuleTemplate,
@@ -81,17 +111,24 @@ export function createRenderProxy(
   prefix: string,
   callbacks: ProxyCallbacks
 ): Record<string, unknown> {
-  const { renderVar, renderTask, renderTaskInline } = callbacks;
+  const { renderVar } = callbacks;
 
   const varsProxy = new Proxy(
     {},
     {
       get(_, key: string) {
         // Task vars override module vars
-        const template = task?.vars[key] ?? module.vars[key];
-        if (!template) {
-          return undefined;
+        const taskVarTemplate = task?.vars[key];
+        if (taskVarTemplate !== undefined) {
+          // Task vars are rendered directly without caching (they're task-scoped)
+          return renderVariableTemplate(taskVarTemplate, {
+            vars: varsProxy,
+            tasks: {},
+            modules: {},
+          });
         }
+        const moduleVarTemplate = module.vars[key];
+        if (!moduleVarTemplate) return undefined;
         return renderVar(ctx, module, key, prefix);
       },
     }
@@ -101,27 +138,8 @@ export function createRenderProxy(
     {},
     {
       get(_, key: string) {
-        if (!(key in module.tasks)) {
-          return undefined;
-        }
-
-        // Return an object that:
-        // 1. When coerced to string ({{ tasks.foo }}), returns the canonical name
-        // 2. Has an inline() method for {{ tasks.foo.inline({...}) }}
-        const taskRef = {
-          toString: () => {
-            // Register dependency when used as reference
-            const depName = renderTask(ctx, module, key, prefix);
-            ctx.currentDeps.add(depName);
-            return depName;
-          },
-          inline: (overrideVars: Record<string, unknown> = {}) => {
-            // Render inline without registering as dependency
-            return renderTaskInline(ctx, module, key, prefix, overrideVars);
-          },
-        };
-
-        return taskRef;
+        if (!(key in module.tasks)) return undefined;
+        return createTaskCallable(ctx, module, key, prefix, callbacks);
       },
     }
   );
@@ -131,26 +149,66 @@ export function createRenderProxy(
     {
       get(_, modName: string) {
         const subModule = module.modules[modName];
-        if (!subModule) {
-          return undefined;
-        }
+        if (!subModule) return undefined;
         const newPrefix = prefix ? `${prefix}.${modName}` : modName;
         return createRenderProxy(ctx, subModule, null, newPrefix, callbacks);
       },
     }
   );
 
-  return {
-    vars: varsProxy,
-    tasks: tasksProxy,
-    modules: modulesProxy,
-  };
+  // Root proxy with alias fallback: {{ foo }} → {{ tasks.foo }} or {{ modules.foo.tasks.* }}
+  return new Proxy(
+    { vars: varsProxy, tasks: tasksProxy, modules: modulesProxy },
+    {
+      get(target, key: string) {
+        if (key in target) {
+          return target[key as keyof typeof target];
+        }
+
+        // Alias: {{ foo }} → {{ tasks.foo }}
+        if (key in module.tasks) {
+          return createTaskCallable(ctx, module, key, prefix, callbacks);
+        }
+
+        // Alias: {{ sub }} → {{ modules.sub }} (for {{ sub.taskName }})
+        const subModule = module.modules[key];
+        if (subModule) {
+          const newPrefix = prefix ? `${prefix}.${key}` : key;
+          return createModuleAliasProxy(ctx, subModule, newPrefix, callbacks);
+        }
+
+        return undefined;
+      },
+    }
+  );
 }
 
-/**
- * Creates a proxy specifically for rendering a task's context.
- * This includes task-local vars merged with module vars.
- */
+function createModuleAliasProxy(
+  ctx: RenderContext,
+  module: ModuleTemplate,
+  prefix: string,
+  callbacks: ProxyCallbacks
+): Record<string, unknown> {
+  // {{ sub.foo }} → {{ modules.sub.tasks.foo }}
+  // {{ sub.nested.bar }} → {{ modules.sub.modules.nested.tasks.bar }}
+  return new Proxy(
+    {},
+    {
+      get(_, key: string) {
+        if (key in module.tasks) {
+          return createTaskCallable(ctx, module, key, prefix, callbacks);
+        }
+        const subModule = module.modules[key];
+        if (subModule) {
+          const newPrefix = prefix ? `${prefix}.${key}` : key;
+          return createModuleAliasProxy(ctx, subModule, newPrefix, callbacks);
+        }
+        return undefined;
+      },
+    }
+  );
+}
+
 export function createTaskRenderProxy(
   ctx: RenderContext,
   module: ModuleTemplate,

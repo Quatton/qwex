@@ -1,3 +1,4 @@
+import { Template } from "nunjucks";
 import type { ModuleTemplate, TaskTemplate, VariableTemplate } from "../ast";
 import { QwlError } from "../errors";
 import { hash } from "../utils/hash";
@@ -8,62 +9,36 @@ import {
   type ProxyCallbacks,
 } from "./proxy";
 
-/**
- * TaskNode represents a rendered task without dependency info.
- * Dependencies are tracked separately in the graph.
- */
 export interface TaskNode {
-  name: string; // canonical unique name (e.g., "myModule.sayHello")
-  cmd: string; // rendered body
-  hash: string; // hash of cmd for caching/testing
+  name: string;
+  cmd: string;
+  hash: string;
+  desc?: string;
 }
 
-/**
- * RenderResult contains the rendered tasks split into main and deps,
- * plus the dependency graph.
- */
 export interface RenderResult {
-  main: TaskNode[]; // top-level tasks from the root module
-  deps: TaskNode[]; // tasks that are dependencies (from submodules or referenced)
-  graph: Map<string, Set<string>>; // taskName → Set of dependency names
+  main: TaskNode[];
+  deps: TaskNode[];
+  graph: Map<string, Set<string>>;
 }
-
-export type TemplateGetter = (
-  path: string,
-  parentPath?: string
-) => ModuleTemplate;
 
 export class Renderer {
-  constructor(private getTemplate: TemplateGetter) {}
-
-  /**
-   * Main entry point: renders all tasks from a module.
-   */
-  renderAllTasks(modulePath: string): RenderResult {
-    const module = this.getTemplate(modulePath);
+  renderAllTasks(module: ModuleTemplate): RenderResult {
     const ctx = createRenderContext();
 
-    // Mark top-level tasks as "main"
     for (const taskName of Object.keys(module.tasks)) {
       ctx.mainTasks.add(taskName);
     }
 
-    // Render all top-level tasks
     for (const taskName of Object.keys(module.tasks)) {
       this.renderTask(ctx, module, taskName, "");
     }
 
-    // Split into main and deps
     const main: TaskNode[] = [];
     const deps: TaskNode[] = [];
 
-    for (const [name, cmd] of ctx.renderedTasks) {
-      const node: TaskNode = {
-        name,
-        cmd,
-        hash: hash(cmd).toString(),
-      };
-
+    for (const [name, { cmd, desc }] of ctx.renderedTasks) {
+      const node: TaskNode = { name, cmd, hash: hash(cmd).toString(), desc };
       if (ctx.mainTasks.has(name)) {
         main.push(node);
       } else {
@@ -74,10 +49,6 @@ export class Renderer {
     return { main, deps, graph: ctx.graph };
   }
 
-  /**
-   * Renders a single task and returns its canonical name.
-   * Caches results and detects cycles.
-   */
   private renderTask(
     ctx: RenderContext,
     module: ModuleTemplate,
@@ -86,12 +57,10 @@ export class Renderer {
   ): string {
     const canonicalName = prefix ? `${prefix}.${taskName}` : taskName;
 
-    // Already rendered?
     if (ctx.renderedTasks.has(canonicalName)) {
       return canonicalName;
     }
 
-    // Cycle detection
     if (ctx.pendingTasks.has(canonicalName)) {
       throw new QwlError({
         code: "RENDERER_ERROR",
@@ -100,8 +69,6 @@ export class Renderer {
     }
 
     ctx.pendingTasks.add(canonicalName);
-
-    // Save current deps and create new set for this task
     const savedDeps = ctx.currentDeps;
     ctx.currentDeps = new Set();
 
@@ -114,20 +81,10 @@ export class Renderer {
         });
       }
 
-      const proxy = createTaskRenderProxy(
-        ctx,
-        module,
-        task,
-        prefix,
-        this.createCallbacks()
-      );
-
+      const proxy = createTaskRenderProxy(ctx, module, task, prefix, this.createCallbacks());
       const cmd = task.cmd.render(proxy);
 
-      // Store the rendered command
-      ctx.renderedTasks.set(canonicalName, cmd);
-
-      // Store dependencies in graph
+      ctx.renderedTasks.set(canonicalName, { cmd, desc: task.desc });
       ctx.graph.set(canonicalName, new Set(ctx.currentDeps));
 
       return canonicalName;
@@ -137,10 +94,7 @@ export class Renderer {
     }
   }
 
-  /**
-   * Renders a task inline with optional override vars.
-   * Does NOT register as a separate task node.
-   */
+  // Inline render: does NOT register as separate task node
   private renderTaskInline(
     ctx: RenderContext,
     module: ModuleTemplate,
@@ -156,29 +110,14 @@ export class Renderer {
       });
     }
 
-    // Create a modified task with override vars
-    const modifiedTask: TaskTemplate = {
-      ...task,
-      vars: { ...task.vars },
-    };
+    const modifiedTask: TaskTemplate = { ...task, vars: { ...task.vars } };
+    const proxy = createTaskRenderProxy(ctx, module, modifiedTask, prefix, this.createCallbacks());
 
-    // Create proxy with override vars injected
-    const proxy = createTaskRenderProxy(
-      ctx,
-      module,
-      modifiedTask,
-      prefix,
-      this.createCallbacks()
-    );
-
-    // Inject override vars directly into the proxy context
     const proxyWithOverrides = {
       ...proxy,
       vars: new Proxy(proxy.vars as object, {
         get(target, key: string) {
-          if (key in overrideVars) {
-            return overrideVars[key];
-          }
+          if (key in overrideVars) return overrideVars[key];
           return Reflect.get(target, key);
         },
       }),
@@ -187,9 +126,6 @@ export class Renderer {
     return task.cmd.render(proxyWithOverrides);
   }
 
-  /**
-   * Renders a variable and caches the result.
-   */
   private renderVar(
     ctx: RenderContext,
     module: ModuleTemplate,
@@ -213,18 +149,11 @@ export class Renderer {
 
     try {
       const template = module.vars[varName];
-      if (!template) {
-        return undefined;
-      }
+      if (!template) return undefined;
 
       const proxy = {
-        vars: new Proxy(
-          {},
-          {
-            get: (_, key: string) => this.renderVar(ctx, module, key, prefix),
-          }
-        ),
-        tasks: {}, // vars shouldn't reference tasks
+        vars: new Proxy({}, { get: (_, key: string) => this.renderVar(ctx, module, key, prefix) }),
+        tasks: {},
         modules: {},
       };
 
@@ -236,16 +165,9 @@ export class Renderer {
     }
   }
 
-  /**
-   * Renders a VariableTemplate based on its type.
-   */
-  private renderVariableTemplate(
-    template: VariableTemplate,
-    ctx: Record<string, unknown>
-  ): unknown {
-    if (typeof template === "object" && "render" in template) {
-      // It's a nunjucks Template
-      return (template as import("nunjucks").Template).render(ctx);
+  private renderVariableTemplate(template: VariableTemplate, ctx: Record<string, unknown>): unknown {
+    if (template instanceof Template) {
+      return template.render(ctx);
     }
 
     if (Array.isArray(template)) {
@@ -263,9 +185,6 @@ export class Renderer {
     return template;
   }
 
-  /**
-   * Creates callback functions for the proxy.
-   */
   private createCallbacks(): ProxyCallbacks {
     return {
       renderVar: (ctx, module, varName, prefix) =>
@@ -340,14 +259,8 @@ if (import.meta.main) {
     __meta__: { used: new Set(["base"]) },
   };
 
-  const getTemplate = (path: string) => {
-    if (path === "root") return rootModule;
-    if (path === "base") return baseModule;
-    throw new Error(`Unknown path: ${path}`);
-  };
-
-  const renderer = new Renderer(getTemplate);
-  const result = renderer.renderAllTasks("root");
+  const renderer = new Renderer();
+  const result = renderer.renderAllTasks(rootModule);
 
   console.log("=== Main Tasks ===");
   for (const task of result.main) {

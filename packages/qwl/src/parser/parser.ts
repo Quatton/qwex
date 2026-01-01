@@ -3,6 +3,11 @@ import { hash } from "../utils/hash";
 import { ArkErrors } from "arktype";
 import { QwlError } from "../errors";
 
+export interface ParseResult {
+  module: ModuleDef;
+  hash: bigint;
+}
+
 export function parseConfig(content: string): ModuleDef | QwlError {
   try {
     const config = Bun.YAML.parse(content);
@@ -17,20 +22,20 @@ export function parseConfig(content: string): ModuleDef | QwlError {
 }
 
 export class Parser {
-  validated: Map<bigint, ModuleDef> = new Map();
+  private cache = new Map<bigint, ModuleDef>();
 
-  parse(content: string): ModuleDef | QwlError {
+  parse(content: string): ParseResult | QwlError {
     const contentHash = hash(content);
-    let cached = this.validated.get(contentHash);
+    let cached = this.cache.get(contentHash);
     if (!cached) {
       const parsed = parseConfig(content);
       if (parsed instanceof QwlError) {
         return parsed;
       }
       cached = parsed;
-      this.validated.set(contentHash, cached);
+      this.cache.set(contentHash, cached);
     }
 
-    return cached;
+    return { module: cached, hash: contentHash };
   }
 }

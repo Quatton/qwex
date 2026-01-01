@@ -1,15 +1,12 @@
-name: steps
-
 modules:
   utils:
-    source: std/utils
+    uses: std/utils
   log:
-    source: std/log
+    uses: std/log
 
 tasks:
-  # Simple step runner - executes a named step
   step:
-    run: |
+    cmd: |
       {{ utils.once }} "utils:color" "{{ utils.color }}"
       {{ log.info }} "${Q_GRAY}┌── ${Q_BLUE}Step: $1${Q_RESET}"
 
@@ -19,10 +16,8 @@ tasks:
 
       local start_time=$(date +%s)
 
-      # --- EXECUTION BARRIER ---
       eval "$command_str"
       local exit_code=$?
-      # -------------------------
 
       local end_time=$(date +%s)
       local duration=$((end_time - start_time))
@@ -37,11 +32,11 @@ tasks:
 
   compose:
     vars:
-      steps: []
-    run: |
+      steps: "[]"
+    cmd: |
       for step in "${steps[@]}"; do
         IFS='|' read -r step_name step_command <<< "$step"
-        {{ steps.step }} "$step_name" "$step_command"
+        {{ tasks.step }} "$step_name" "$step_command"
         local step_exit_code=$?
         if [ $step_exit_code -ne 0 ]; then
           return $step_exit_code

@@ -1,0 +1,14 @@
+# Test file for variable precedence
+# Task vars should override module vars
+
+vars:
+  message: module-level
+
+tasks:
+  useModuleVar:
+    cmd: 'echo "{{ vars.message }}"'
+  
+  useTaskVar:
+    vars:
+      message: task-level
+    cmd: 'echo "{{ vars.message }}"'

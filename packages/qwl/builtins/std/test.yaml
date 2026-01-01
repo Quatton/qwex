@@ -1,15 +1,13 @@
-name: test
-
 modules:
   log:
-    source: std/log
+    uses: std/log
 
 tasks:
   assert:
-    run: |
+    cmd: |
       local description="$1"
       local condition="$2"
-      
+
       if eval "$condition"; then
         {{ log.info }} "${Q_GREEN}✔${Q_RESET} $description"
         return 0
@@ -20,11 +18,11 @@ tasks:
       fi
 
   assert_eq:
-    run: |
+    cmd: |
       local description="$1"
       local expected="$2"
       local actual="$3"
-      
+
       if [ "$expected" = "$actual" ]; then
         {{ log.info }} "${Q_GREEN}✔${Q_RESET} $description"
         return 0
@@ -36,10 +34,10 @@ tasks:
       fi
 
   assert_file:
-    run: |
+    cmd: |
       local description="$1"
       local filepath="$2"
-      
+
       if [ -f "$filepath" ]; then
         {{ log.info }} "${Q_GREEN}✔${Q_RESET} $description"
         return 0
@@ -50,10 +48,10 @@ tasks:
       fi
 
   assert_dir:
-    run: |
+    cmd: |
       local description="$1"
       local dirpath="$2"
-      
+
       if [ -d "$dirpath" ]; then
         {{ log.info }} "${Q_GREEN}✔${Q_RESET} $description"
         return 0
