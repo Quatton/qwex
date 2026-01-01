@@ -23,37 +23,36 @@ tasks:
       current_num=$(echo "$current_level" | xargs -I{} bash -c '{{ vars.level_to_num }}' _ {})
       [ "$msg_num" -ge "$current_num" ]
 
+  _timestamp:
+    cmd: |
+      date '+%Y-%m-%d %H:%M:%S'
+
   trace:
     cmd: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
       if {{ tasks._should_log }} 1; then
-        echo -e "${Q_GRAY}[TRACE]${Q_RESET} $1" >&2
+        printf '%s {{ "[TRACE]" | color("#808080") }} %s\n' "$({{ tasks._timestamp }})" "$1" >&2
       fi
 
   debug:
     cmd: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
       if {{ tasks._should_log }} 2; then
-        echo -e "${Q_GRAY}[DEBUG]${Q_RESET} $1" >&2
+        printf '%s {{ "[DEBUG]" | color("#808080") }} %s\n' "$({{ tasks._timestamp }})" "$1" >&2
       fi
 
   info:
     cmd: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
       if {{ tasks._should_log }} 3; then
-        echo -e "${Q_BLUE}ℹ${Q_RESET} $1" >&2
+        printf '%s {{ "ℹ" | color("blue") }} %s\n' "$({{ tasks._timestamp }})" "$1" >&2
       fi
 
   warn:
     cmd: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
       if {{ tasks._should_log }} 4; then
-        echo -e "${Q_YELLOW}⚠${Q_RESET} $1" >&2
+        printf '%s {{ "⚠" | color("yellow") }} %s\n' "$({{ tasks._timestamp }})" "$1" >&2
       fi
 
   error:
     cmd: |
-      {{ utils.once }} "utils:color" "{{ utils.color }}"
       if {{ tasks._should_log }} 5; then
-        echo -e "${Q_RED}✘${Q_RESET} $1" >&2
+        printf '%s {{ "✘" | color("red") }} %s\n' "$({{ tasks._timestamp }})" "$1" >&2
       fi

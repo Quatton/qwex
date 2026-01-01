@@ -195,6 +195,21 @@ const color = (text: string, colorInput: string): string => {
 };
 
 nj.addFilter("color", color);
+nj.addFilter("grey", (text: string) => color(text, "grey"));
+nj.addFilter("black", (text: string) => color(text, "black"));
+nj.addFilter("brightBlack", (text: string) => color(text, "brightBlack"));
+nj.addFilter("escape", (text: string) =>
+  text.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$/g, "\\$").replace(/`/g, "\\`"),
+);
+nj.addFilter("multiline", (text: string) => text.trim().replace(/(?<!\\)\n/g, " \\\n"));
+nj.addFilter("red", (text: string) => color(text, "red"));
+nj.addFilter("green", (text: string) => color(text, "green"));
+nj.addFilter("yellow", (text: string): string => color(text, "yellow"));
+nj.addFilter("blue", (text: string): string => color(text, "blue"));
+nj.addFilter("magenta", (text: string): string => color(text, "magenta"));
+nj.addFilter("cyan", (text: string): string => color(text, "cyan"));
+nj.addFilter("white", (text: string): string => color(text, "white"));
+nj.addFilter("bold", (text: string): string => color(text, "bold"));
 
 export { nj };
 

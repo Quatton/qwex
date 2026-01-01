@@ -337,4 +337,150 @@ describe("RenderProxyFactory", () => {
       expect(taskFn.inline()).toBe("[INLINE:sub.subTask:{}]");
     });
   });
+
+  describe("comprehensive task access patterns", () => {
+    it("modules.sub.tasks.subTask works", () => {
+      const module = createTestModule();
+      const ctx = new RenderContext();
+      const callbacks = createMockCallbacks();
+      const factory = new RenderProxyFactory(ctx, callbacks);
+      const task = module.tasks.sayHello!;
+
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
+      const modules = proxy.modules as Record<string, unknown>;
+      const sub = modules.sub as Record<string, unknown>;
+      const tasks = sub.tasks as Record<string, unknown>;
+      const taskFn = tasks.subTask as { toString: () => string };
+
+      expect(taskFn.toString()).toBe("sub:subTask");
+    });
+
+    it("sub.tasks.subTask works", () => {
+      const module = createTestModule();
+      const ctx = new RenderContext();
+      const callbacks = createMockCallbacks();
+      const factory = new RenderProxyFactory(ctx, callbacks);
+      const task = module.tasks.sayHello!;
+
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
+      const sub = proxy.sub as Record<string, unknown>;
+      const tasks = sub.tasks as Record<string, unknown>;
+      const taskFn = tasks.subTask as { toString: () => string };
+
+      expect(taskFn.toString()).toBe("sub:subTask");
+    });
+
+    it("sub.subTask works", () => {
+      const module = createTestModule();
+      const ctx = new RenderContext();
+      const callbacks = createMockCallbacks();
+      const factory = new RenderProxyFactory(ctx, callbacks);
+      const task = module.tasks.sayHello!;
+
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
+      const sub = proxy.sub as Record<string, unknown>;
+      const taskFn = sub.subTask as { toString: () => string };
+
+      expect(taskFn.toString()).toBe("sub:subTask");
+    });
+
+    it("tasks.greet works (for root module)", () => {
+      const module = createTestModule();
+      const ctx = new RenderContext();
+      const callbacks = createMockCallbacks();
+      const factory = new RenderProxyFactory(ctx, callbacks);
+      const task = module.tasks.sayHello!;
+
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
+      const tasks = proxy.tasks as Record<string, unknown>;
+      const taskFn = tasks.greet as { toString: () => string };
+
+      expect(taskFn.toString()).toBe("greet");
+    });
+
+    it("greet works (for root module)", () => {
+      const module = createTestModule();
+      const ctx = new RenderContext();
+      const callbacks = createMockCallbacks();
+      const factory = new RenderProxyFactory(ctx, callbacks);
+      const task = module.tasks.sayHello!;
+
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
+      const taskFn = proxy.greet as { toString: () => string };
+
+      expect(taskFn.toString()).toBe("greet");
+    });
+
+    it("modules.sub.tasks.subTask.inline() works", () => {
+      const module = createTestModule();
+      const ctx = new RenderContext();
+      const callbacks = createMockCallbacks();
+      const factory = new RenderProxyFactory(ctx, callbacks);
+      const task = module.tasks.sayHello!;
+
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
+      const modules = proxy.modules as Record<string, unknown>;
+      const sub = modules.sub as Record<string, unknown>;
+      const tasks = sub.tasks as Record<string, unknown>;
+      const taskFn = tasks.subTask as { inline: () => string };
+
+      expect(taskFn.inline()).toBe("[INLINE:sub.subTask:{}]");
+    });
+
+    it("sub.tasks.subTask.inline() works", () => {
+      const module = createTestModule();
+      const ctx = new RenderContext();
+      const callbacks = createMockCallbacks();
+      const factory = new RenderProxyFactory(ctx, callbacks);
+      const task = module.tasks.sayHello!;
+
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
+      const sub = proxy.sub as Record<string, unknown>;
+      const tasks = sub.tasks as Record<string, unknown>;
+      const taskFn = tasks.subTask as { inline: () => string };
+
+      expect(taskFn.inline()).toBe("[INLINE:sub.subTask:{}]");
+    });
+
+    it("sub.subTask.inline() works", () => {
+      const module = createTestModule();
+      const ctx = new RenderContext();
+      const callbacks = createMockCallbacks();
+      const factory = new RenderProxyFactory(ctx, callbacks);
+      const task = module.tasks.sayHello!;
+
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
+      const sub = proxy.sub as Record<string, unknown>;
+      const taskFn = sub.subTask as { inline: () => string };
+
+      expect(taskFn.inline()).toBe("[INLINE:sub.subTask:{}]");
+    });
+
+    it("tasks.greet.inline() works (for root module)", () => {
+      const module = createTestModule();
+      const ctx = new RenderContext();
+      const callbacks = createMockCallbacks();
+      const factory = new RenderProxyFactory(ctx, callbacks);
+      const task = module.tasks.sayHello!;
+
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
+      const tasks = proxy.tasks as Record<string, unknown>;
+      const taskFn = tasks.greet as { inline: () => string };
+
+      expect(taskFn.inline()).toBe("[INLINE:greet:{}]");
+    });
+
+    it("greet.inline() works (for root module)", () => {
+      const module = createTestModule();
+      const ctx = new RenderContext();
+      const callbacks = createMockCallbacks();
+      const factory = new RenderProxyFactory(ctx, callbacks);
+      const task = module.tasks.sayHello!;
+
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
+      const taskFn = proxy.greet as { inline: () => string };
+
+      expect(taskFn.inline()).toBe("[INLINE:greet:{}]");
+    });
+  });
 });

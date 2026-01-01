@@ -34,12 +34,11 @@ const main = defineCommand({
       description: "Path to .env file",
     },
   },
-  async run({ args, rawArgs }) {
+  async run({ args }) {
     const configPath = resolve(args.config);
     const features = args.features ? args.features.split(",") : undefined;
 
-    const separatorIndex = rawArgs.indexOf("--");
-    const bashArgs = separatorIndex >= 0 ? rawArgs.slice(separatorIndex + 1) : [];
+    const bashArgs = args._;
 
     try {
       const pipeline = new Pipeline({
@@ -49,9 +48,13 @@ const main = defineCommand({
 
       const { script } = await pipeline.run();
 
-      if (args.output) {
+      if (args.output !== undefined) {
+        if (args.output === "") {
+          process.stdout.write(script);
+          process.exit(0);
+        }
         await writeFile(args.output, script);
-        consola.error(`Script written to ${args.output}`);
+        consola.info(`Script written to ${args.output}`);
       }
 
       const proc = spawn("bash", ["-c", script, "--", ...bashArgs], {

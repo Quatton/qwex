@@ -2,6 +2,7 @@ import { Template } from "nunjucks";
 
 import type { ModuleTemplate, TaskTemplate, VariableTemplate } from "../ast";
 
+import { QwlError } from "../errors";
 import { nj } from "../utils/templating";
 
 export interface RenderedTask {
@@ -67,13 +68,33 @@ export class RenderProxyFactory {
         __renderContext,
       },
       {
-        get: (target, key: string) => {
+        get: (target, key: string | symbol) => {
+          if (typeof key === "symbol") return undefined;
           if (key in target) return target[key as keyof typeof target];
-          if (key in module.tasks) return this.createTaskRef(module, key, prefix);
+          if (Object.hasOwn(module.tasks, key)) return this.createTaskRef(module, key, prefix);
           const subModule = module.modules[key];
           if (subModule) {
             const newPrefix = prefix ? `${prefix}.${key}` : key;
             return this.createAliasProxy(subModule, newPrefix);
+          }
+          return undefined;
+        },
+        has: (target, key: string) => {
+          if (key in target) return true;
+          if (Object.hasOwn(module.tasks, key)) return true;
+          if (Object.hasOwn(module.modules, key)) return true;
+          return false;
+        },
+        ownKeys: (target) => {
+          return [
+            ...Object.keys(target),
+            ...Object.keys(module.tasks),
+            ...Object.keys(module.modules),
+          ];
+        },
+        getOwnPropertyDescriptor: (target, key: string) => {
+          if (key in target || key in module.tasks || key in module.modules) {
+            return { enumerable: true, configurable: true };
           }
           return undefined;
         },
@@ -118,9 +139,22 @@ export class RenderProxyFactory {
     return new Proxy(
       {},
       {
-        get: (_, key: string) => {
-          if (!(key in module.tasks)) return undefined;
+        get: (_, key: string | symbol) => {
+          if (typeof key === "symbol") return undefined;
+          if (!Object.hasOwn(module.tasks, key)) return undefined;
           return this.createTaskRef(module, key, prefix);
+        },
+        has: (_, key: string) => {
+          return Object.hasOwn(module.tasks, key);
+        },
+        ownKeys: () => {
+          return Object.keys(module.tasks);
+        },
+        getOwnPropertyDescriptor: (_, key: string) => {
+          if (key in module.tasks) {
+            return { enumerable: true, configurable: true };
+          }
+          return undefined;
         },
       },
     );
@@ -154,20 +188,9 @@ export class RenderProxyFactory {
   }
 
   private createAliasProxy(module: ModuleTemplate, prefix: string): Record<string, unknown> {
-    return new Proxy(
-      {},
-      {
-        get: (_, key: string) => {
-          if (key in module.tasks) return this.createTaskRef(module, key, prefix);
-          const subModule = module.modules[key];
-          if (subModule) {
-            const newPrefix = prefix ? `${prefix}.${key}` : key;
-            return this.createAliasProxy(subModule, newPrefix);
-          }
-          return undefined;
-        },
-      },
-    );
+    // Use the full create() method to get a proper proxy with ownKeys support
+    // This ensures nunjucks can properly access nested properties like log.tasks.info
+    return this.create(module, null, prefix);
   }
 
   /**
@@ -216,7 +239,10 @@ export class RenderProxyFactory {
       }
       const subModule = currentModule.modules[part];
       if (!subModule) {
-        throw new Error(`uses(): Module not found: ${part} in path ${path}`);
+        throw new QwlError({
+          code: "RENDERER_ERROR",
+          message: `uses(): Module not found: ${part} in path ${path}`,
+        });
       }
       currentModule = subModule;
       currentPrefix = currentPrefix ? `${currentPrefix}.${part}` : part;
@@ -229,7 +255,10 @@ export class RenderProxyFactory {
     const taskName = parts[i];
 
     if (!taskName || !currentModule.tasks[taskName]) {
-      throw new Error(`uses(): Task not found: ${taskName} in path ${path}`);
+      throw new QwlError({
+        code: "RENDERER_ERROR",
+        message: `uses(): Task not found: ${taskName} in path ${path}`,
+      });
     }
 
     return this.callbacks.renderTaskInline(
@@ -245,6 +274,7 @@ export class RenderProxyFactory {
     template: VariableTemplate,
     ctx: Record<string, unknown>,
   ): unknown {
+    if (typeof template === "string") return template;
     if (template instanceof Template) return template.render(ctx);
     if (Array.isArray(template))
       return template.map((item) => this.renderVariableTemplate(item, ctx));

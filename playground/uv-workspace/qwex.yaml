@@ -1,0 +1,34 @@
+vars:
+  demo_dir: "./uv-workspace-demo"
+
+modules:
+  steps:
+    uses: std/steps
+  log:
+    uses: std/log
+
+tasks:
+  test:
+    desc: "Test uv workspace creation and execution with steps.compose"
+    uses: modules.steps.tasks.compose
+    vars:
+      steps:
+        - desc: "Create temp directory"
+          cmd: "mkdir -p {{ vars.demo_dir }}"
+        - desc: "Initialize uv project"
+          cmd: |
+            uv init {{ vars.demo_dir }}
+        - desc: "Run hello.py"
+          # i wanna try multi-line commands here so make it pass
+          cmd: |
+            cd {{ vars.demo_dir }}
+            uv run hello.py
+  clean:
+    desc: "Clean up temp directory created during test"
+    cmd: |
+      if [ -n "{{ vars.demo_dir }}" ]; then
+        rm -rf "{{ vars.demo_dir }}"
+        {{ log.tasks.info }} "Cleaned up temp directory: {{ vars.demo_dir }}"
+      else
+        {{ log.tasks.warn }} "No temp directory info found for cleanup."
+      fi

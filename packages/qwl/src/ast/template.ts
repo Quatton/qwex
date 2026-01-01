@@ -23,6 +23,7 @@ export function createTemplateRecord(value: VariableDef): VariableTemplate {
 }
 
 export type VariableTemplate =
+  | string
   | Template
   | number
   | boolean
@@ -49,11 +50,18 @@ export function resolveTaskDefs(taskDefs: Record<string, TaskDef> | undefined) {
     return tasks;
   }
   for (const [taskName, taskDef] of Object.entries(taskDefs)) {
-    const cmdStr = Array.isArray(taskDef.cmd) ? taskDef.cmd.join("\n") : taskDef.cmd;
+    // If task has 'uses' field, we'll handle it later in the resolver
+    // For now, just create a template with the cmd if present
+    const cmdStr = taskDef.cmd
+      ? Array.isArray(taskDef.cmd)
+        ? taskDef.cmd.join("\n")
+        : taskDef.cmd
+      : "";
     tasks[taskName] = {
       cmd: createTemplate(cmdStr),
       vars: resolveVariableDefs(taskDef.vars),
       desc: taskDef.desc,
+      uses: taskDef.uses,
     };
   }
   return tasks;

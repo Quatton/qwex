@@ -6,7 +6,8 @@ const $ = scope({
   VariableDef:
     "string | number | boolean | unknown[] | Record<string, unknown>" as type.cast<_VariableDef>,
   TaskDef: {
-    cmd: "string | string[]",
+    "cmd?": "string | string[]",
+    "uses?": "string",
     "desc?": "string",
     "vars?": "Record<string, VariableDef>",
   },

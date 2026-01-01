@@ -9,5 +9,9 @@
   "scripts": {
     "format": "oxfmt . -c .oxfmtrc.jsonc",
     "lint": "oxlint ."
+  },
+  "dependencies": {
+    "@clack/core": "^0.5.0",
+    "@clack/prompts": "^0.11.0"
   }
 }

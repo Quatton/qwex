@@ -1,0 +1,20 @@
+vars:
+  base_dir: "/tmp/test"
+  file_name: "output.txt"
+
+modules:
+  utils:
+    tasks:
+      write_file:
+        vars:
+          content: ""
+          path: ""
+        cmd: |
+          echo "{{ vars.content }}" > "{{ vars.path }}"
+
+tasks:
+  test:
+    uses: modules.utils.tasks.write_file
+    vars:
+      content: "Hello World"
+      path: "{{ vars.base_dir }}/{{ vars.file_name }}"

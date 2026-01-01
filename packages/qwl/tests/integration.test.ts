@@ -36,6 +36,20 @@ describe("Pipeline Integration", () => {
   });
 
   describe("nested modules", () => {
+    it("matches expected output", async () => {
+      const pipeline = new Pipeline({
+        sourcePath: path.join(FIXTURES_DIR, "nested.yaml"),
+      });
+
+      const result = await pipeline.run();
+      const normalizedOutput = normalizeScript(result.script);
+      const expectedPath = path.join(FIXTURES_DIR, "nested.expected.sh");
+      const expected = await fs.readFile(expectedPath, "utf8");
+      const normalizedExpected = normalizeScript(expected);
+
+      expect(normalizedOutput).toBe(normalizedExpected);
+    });
+
     it("inlines tasks from submodules and same module", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "nested.yaml"),
@@ -51,6 +65,20 @@ describe("Pipeline Integration", () => {
   });
 
   describe("variable precedence", () => {
+    it("matches expected output", async () => {
+      const pipeline = new Pipeline({
+        sourcePath: path.join(FIXTURES_DIR, "var-precedence.yaml"),
+      });
+
+      const result = await pipeline.run();
+      const normalizedOutput = normalizeScript(result.script);
+      const expectedPath = path.join(FIXTURES_DIR, "var-precedence.expected.sh");
+      const expected = await fs.readFile(expectedPath, "utf8");
+      const normalizedExpected = normalizeScript(expected);
+
+      expect(normalizedOutput).toBe(normalizedExpected);
+    });
+
     it("resolves task-level vars over module-level vars", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "var-precedence.yaml"),
@@ -66,6 +94,20 @@ describe("Pipeline Integration", () => {
   });
 
   describe("complex module inheritance", () => {
+    it("matches expected output", async () => {
+      const pipeline = new Pipeline({
+        sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
+      });
+
+      const result = await pipeline.run();
+      const normalizedOutput = normalizeScript(result.script);
+      const expectedPath = path.join(FIXTURES_DIR, "circular/entry.expected.sh");
+      const expected = await fs.readFile(expectedPath, "utf8");
+      const normalizedExpected = normalizeScript(expected);
+
+      expect(normalizedOutput).toBe(normalizedExpected);
+    });
+
     it("applies variable scoping correctly through nested modules", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
@@ -125,6 +167,34 @@ describe("Pipeline Integration", () => {
   });
 
   describe("uses() function", () => {
+    it("matches expected output for uses-task-inline", async () => {
+      const pipeline = new Pipeline({
+        sourcePath: path.join(FIXTURES_DIR, "uses-task-inline.yaml"),
+      });
+
+      const result = await pipeline.run();
+      const normalizedOutput = normalizeScript(result.script);
+      const expectedPath = path.join(FIXTURES_DIR, "uses-task-inline.expected.sh");
+      const expected = await fs.readFile(expectedPath, "utf8");
+      const normalizedExpected = normalizeScript(expected);
+
+      expect(normalizedOutput).toBe(normalizedExpected);
+    });
+
+    it("matches expected output for uses-module-task-inline", async () => {
+      const pipeline = new Pipeline({
+        sourcePath: path.join(FIXTURES_DIR, "uses-module-task-inline.yaml"),
+      });
+
+      const result = await pipeline.run();
+      const normalizedOutput = normalizeScript(result.script);
+      const expectedPath = path.join(FIXTURES_DIR, "uses-module-task-inline.expected.sh");
+      const expected = await fs.readFile(expectedPath, "utf8");
+      const normalizedExpected = normalizeScript(expected);
+
+      expect(normalizedOutput).toBe(normalizedExpected);
+    });
+
     it("includes external file content directly in task body", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "uses-function.yaml"),
@@ -202,6 +272,36 @@ describe("Pipeline Integration", () => {
       expect(result.script).toContain('eval "$(declare -f helper)"');
       // Check that $ is escaped to \$ in the body content
       expect(result.script).toContain("\\$VALUE");
+    });
+  });
+
+  describe("task.uses with pre-rendered vars", () => {
+    it("matches expected output", async () => {
+      const pipeline = new Pipeline({
+        sourcePath: path.join(FIXTURES_DIR, "task-uses-with-vars.yaml"),
+      });
+
+      const result = await pipeline.run();
+      const normalizedOutput = normalizeScript(result.script);
+      const expectedPath = path.join(FIXTURES_DIR, "task-uses-with-vars.expected.sh");
+      const expected = await fs.readFile(expectedPath, "utf8");
+      const normalizedExpected = normalizeScript(expected);
+
+      expect(normalizedOutput).toBe(normalizedExpected);
+    });
+
+    it("pre-renders task vars in caller context before passing to used task", async () => {
+      const pipeline = new Pipeline({
+        sourcePath: path.join(FIXTURES_DIR, "task-uses-with-vars.yaml"),
+      });
+
+      const result = await pipeline.run();
+
+      // Check that vars from caller context (base_dir, file_name) are rendered in path
+      expect(result.script).toContain('echo "Hello World" > "/tmp/test/output.txt"');
+      // Should not contain unreplaced template syntax
+      expect(result.script).not.toContain("{{ vars.base_dir }}");
+      expect(result.script).not.toContain("{{ vars.file_name }}");
     });
   });
 });

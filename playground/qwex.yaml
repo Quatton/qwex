@@ -3,6 +3,8 @@ vars:
 
 tasks:
   hello:
+    vars:
+      message: Qwex
     cmd:
-      - echo "Hello, Qwex!"
+      - echo "Hello, ${@:-{{ vars.message }}}!"
     desc: "Prints a hello message"
