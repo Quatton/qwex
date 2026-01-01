@@ -59,14 +59,22 @@ class EofExtension implements nunjucks.Extension {
  * Custom extension for {% context %} tag
  *
  * This extension renders its body content and tracks dependencies referenced
- * within the block. It outputs declare -f statements for all dependencies
- * before the rendered content.
+ * within the block. It outputs eval "$(declare -f)" statements for all dependencies
+ * before the rendered content, which properly defines functions in the current shell.
  *
  * Usage:
  *   {% context %}
  *     {{ tasks.myTask }}
  *   {% endcontext %}
- *   => declare -f myTask\nmyTask
+ *   => eval "$(declare -f myTask)"\nmyTask
+ *
+ *   {% context escape=true %}
+ *     echo $VAR
+ *   {% endcontext %}
+ *   => echo \$VAR  (escapes $ to \$)
+ *
+ * Options:
+ * - escape: if true, escapes $ as \$ in the body content
  *
  * The __renderContext is passed from the proxy and contains:
  * - currentDeps: Set of task names referenced during rendering
@@ -90,13 +98,17 @@ class ContextExtension implements nunjucks.Extension {
 
   run(context: any, ...args: unknown[]): nunjucks.runtime.SafeString {
     const body = args.pop() as () => string;
+    const options = (args[0] as { escape?: boolean }) || {};
 
     // Get the render context from the template context
     const renderContext = context.ctx?.__renderContext;
 
     if (!renderContext) {
       // If no render context, just render the body normally
-      const content = body();
+      let content = body();
+      if (options.escape) {
+        content = content.replace(/\$/g, "\\$");
+      }
       return new nunjucks.runtime.SafeString(content);
     }
 
@@ -104,7 +116,12 @@ class ContextExtension implements nunjucks.Extension {
     const depsBefore = new Set(renderContext.currentDeps);
 
     // Render the body content (this will accumulate deps in currentDeps)
-    const content = body();
+    let content = body();
+
+    // Apply escape if requested
+    if (options.escape) {
+      content = content.replace(/\$/g, "\\$");
+    }
 
     // Find new dependencies added during body rendering
     const newDeps: string[] = [];
@@ -114,12 +131,12 @@ class ContextExtension implements nunjucks.Extension {
       }
     }
 
-    // Generate declare -f statements for new dependencies
+    // Generate eval "$(declare -f)" statements for new dependencies
     if (newDeps.length === 0) {
       return new nunjucks.runtime.SafeString(content);
     }
 
-    const declares = newDeps.map((dep) => `declare -f ${dep}`).join("\n");
+    const declares = newDeps.map((dep) => `eval "$(declare -f ${dep})"`).join("\n");
     return new nunjucks.runtime.SafeString(`${declares}\n${content}`);
   }
 }

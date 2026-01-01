@@ -1,0 +1,10 @@
+tasks:
+  helper:
+    cmd: echo "Helper function"
+
+  main:
+    cmd: |
+      {% context escape=true %}
+      {{ tasks.helper }}
+      echo "Value is $VALUE"
+      {% endcontext %}

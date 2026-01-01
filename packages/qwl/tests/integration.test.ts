@@ -185,10 +185,23 @@ describe("Pipeline Integration", () => {
 
       const result = await pipeline.run();
 
-      // Check that declare -f is output for referenced tasks
-      expect(result.script).toContain("declare -f helper");
+      // Check that eval "$(declare -f)" is output for referenced tasks
+      expect(result.script).toContain('eval "$(declare -f helper)"');
       // And the task call is still present
       expect(result.script).toContain("helper");
+    });
+
+    it("escapes dollar signs when escape=true option is used", async () => {
+      const pipeline = new Pipeline({
+        sourcePath: path.join(FIXTURES_DIR, "context-escape.yaml"),
+      });
+
+      const result = await pipeline.run();
+
+      // Check that eval "$(declare -f)" is still output
+      expect(result.script).toContain('eval "$(declare -f helper)"');
+      // Check that $ is escaped to \$ in the body content
+      expect(result.script).toContain("\\$VALUE");
     });
   });
 });
