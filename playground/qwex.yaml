@@ -5,4 +5,4 @@ modules:
 tasks:
   clean-all:
     cmd: |
-      {{ uv-workspace.tasks.clean }}
+      {{ modules["uv-workspace"].tasks.clean }}

@@ -1,3 +1,5 @@
+import consola from "consola";
+
 import {
   createEmptyModuleTemplate,
   resolveTaskDefs,
@@ -99,6 +101,12 @@ export class Resolver {
     currentPath: string,
   ): Promise<void> {
     for (const [name, def] of Object.entries(modules)) {
+      if (name.match(/-/)) {
+        consola.warn(
+          `Module name "${name}" contains a hyphen (-). Consider using underscores (_) instead to avoid potential issues or make sure to use vars['bracket-syntax'] to address such symbols.. (i.e. hyphenated-module-name will be interpreted as subtraction in some contexts)`,
+        );
+      }
+
       target[name] = await this.createTemplateFromDef(def, currentPath);
     }
   }

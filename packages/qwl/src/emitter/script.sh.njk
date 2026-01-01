@@ -25,7 +25,7 @@ source <(echo "$QWEX_PREAMBLE")
 {% endif %}
 # Hash: {{ task.hash }}
 {{ task.name | replace(".", ":") }}() {
-  {{ task.cmd }}
+  {{ task.cmd | chomp }}
 }
 {% endfor %}
 {% for task in main %}
@@ -34,7 +34,7 @@ source <(echo "$QWEX_PREAMBLE")
 {% endif %}
 # Hash: {{ task.hash }}
 {{ task.name | replace(".", ":") }}() {
-  {{ task.cmd }}
+  {{ task.cmd | chomp }}
 }
 {% endfor %}
 

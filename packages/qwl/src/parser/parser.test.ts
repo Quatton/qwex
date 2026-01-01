@@ -1,4 +1,5 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
+import consola from "consola";
 import { strict as assert } from "node:assert";
 
 import { QwlError } from "../errors";
@@ -17,7 +18,7 @@ describe("parseYaml", () => {
   it("parses vars and tasks", () => {
     const out = parseConfig(yamlText);
     if (out instanceof QwlError) {
-      console.error("Parsing failed with error:", out);
+      consola.error("Parsing failed with error:", out);
       throw out;
     }
     expect(out.vars).toBeDefined();

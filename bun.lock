@@ -36,6 +36,7 @@
       "name": "qwl",
       "dependencies": {
         "arktype": "^2.1.29",
+        "consola": "^3.4.2",
         "nunjucks": "^3.2.4",
       },
       "devDependencies": {

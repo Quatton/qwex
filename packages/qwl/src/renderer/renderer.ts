@@ -335,7 +335,9 @@ export class Renderer {
     ctx: Record<string, unknown>,
   ): unknown {
     if (typeof template === "string") return template;
-    if (template instanceof Template) return template.render(ctx);
+    if (template instanceof Template) {
+      return template.render(ctx);
+    }
     if (Array.isArray(template))
       return template.map((item) => this.renderVariableTemplate(item, ctx));
     if (typeof template === "object" && template !== null) {

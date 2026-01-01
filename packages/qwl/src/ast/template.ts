@@ -1,3 +1,4 @@
+import consola from "consola";
 import { Template } from "nunjucks";
 
 import type { TaskDef, VariableDef } from "./ast";
@@ -52,6 +53,12 @@ export function resolveTaskDefs(taskDefs: Record<string, TaskDef> | undefined) {
   for (const [taskName, taskDef] of Object.entries(taskDefs)) {
     // If task has 'uses' field, we'll handle it later in the resolver
     // For now, just create a template with the cmd if present
+    if (taskName.match(/-/)) {
+      consola.warn(
+        `Task name "${taskName}" contains a hyphen (-). Consider using underscores (_) instead to avoid potential issues or make sure to use vars['bracket-syntax'] to address such symbols.. (i.e. hyphenated-task-name will be interpreted as subtraction in some contexts)`,
+      );
+    }
+
     const cmdStr = taskDef.cmd
       ? Array.isArray(taskDef.cmd)
         ? taskDef.cmd.join("\n")
@@ -73,6 +80,12 @@ export function resolveVariableDefs(varDefs: Record<string, unknown> | undefined
     return vars;
   }
   for (const [varName, varDef] of Object.entries(varDefs)) {
+    if (varName.match(/-/)) {
+      consola.warn(
+        `Variable name "${varName}" contains a hyphen (-). Consider using underscores (_) instead to avoid potential issues or make sure to use vars['bracket-syntax'] to address such symbols.. (i.e. hyphenated-var-name will be interpreted as subtraction in some contexts)`,
+      );
+    }
+
     vars[varName] = createTemplateRecord(varDef as VariableDef);
   }
   return vars;

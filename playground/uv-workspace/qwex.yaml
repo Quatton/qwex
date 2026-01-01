@@ -27,9 +27,9 @@ tasks:
     cmd: |
       if [ -d "{{ vars.demo_dir }}" ]; then
         rm -rf "{{ vars.demo_dir }}"
-        {{ log.tasks.info }} "Cleaned up temp directory: {{ vars.demo_dir }}"
+        {{ log.tasks.info }} "{{ vars.demo_dir }}: Cleaned up temp directory"
       else
-        {{ log.tasks.warn }} "No temp directory info found for cleanup."
+        {{ log.tasks.warn }} "{{ vars.demo_dir }}: No temp directory info found for cleanup."
       fi
   all:
     desc: "Test from clean state"

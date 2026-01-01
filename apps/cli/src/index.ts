@@ -75,7 +75,7 @@ const main = defineCommand({
         process.exit(1);
       }
 
-      consola.error(e);
+      consola.error(e.message);
 
       switch (e instanceof QwlError ? e.code : "UNKNOWN_ERROR") {
         case "LOADER_ERROR":
