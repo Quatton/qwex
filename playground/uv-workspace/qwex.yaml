@@ -25,7 +25,7 @@ tasks:
   clean:
     desc: "Clean up temp directory created during test"
     cmd: |
-      if [ -n "{{ vars.demo_dir }}" ]; then
+      if [ -d "{{ vars.demo_dir }}" ]; then
         rm -rf "{{ vars.demo_dir }}"
         {{ log.tasks.info }} "Cleaned up temp directory: {{ vars.demo_dir }}"
       else

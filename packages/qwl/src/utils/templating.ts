@@ -150,7 +150,8 @@ class ContextExtension implements nunjucks.Extension {
       return new nunjucks.runtime.SafeString(content);
     }
 
-    const declares = newDeps.map((dep) => `eval "$(declare -f ${dep})"`).join("\n");
+    const declares = newDeps.map((dep) => `$(declare -f ${dep})`).join("\n");
+
     return new nunjucks.runtime.SafeString(`${declares}\n${content}`);
   }
 }

@@ -53,11 +53,15 @@ tasks:
       {% for step in vars.steps %}
       # Step: {{ step.desc }}
       if [ "$failed" = false ] || [ "{{ step.always | default(false) }}" = "true" ]; then
-        if ! {{ tasks.step }} "{{ step.desc }} {{ "(always)" if step.always }}" "{{ step.cmd | escape | trim }}"; then
+        if ! {{ tasks.step }} "{{ step.desc }} {{ "(always)" if step.always }}" "{{ step.cmd }}";
+
+        then
           failed=true
           failed_desc="{{ step.desc }}"
         fi
       fi
+
+      cd "$ORIGINAL_PWD"
       {% endfor %}
 
       if [ "$failed" = true ]; then

@@ -1,0 +1,1 @@
+cat $BASH_SOURCE

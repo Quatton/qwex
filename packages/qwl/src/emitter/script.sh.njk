@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-QWEX_PREAMBLE="#!/usr/bin/env bash
-set -euo pipefail
+QWEX_PREAMBLE="set -euo pipefail
 shopt -s expand_aliases
-"
+ORIGINAL_PWD=\$(pwd)"
+
 
 source <(echo "$QWEX_PREAMBLE")
+
+@declare() {
+  echo "$QWEX_PREAMBLE"
+  declare -f {% for task in deps %}{{ task.name | replace(".", ":") }} {% endfor %} {% for task in main %}{{ task.name | replace(".", ":") }} {% endfor %} @main @help
+}
 
 @help() {
   echo "Available tasks:"
@@ -31,8 +36,8 @@ source <(echo "$QWEX_PREAMBLE")
 {{ task.name | replace(".", ":") }}() {
   {{ task.cmd }}
 }
-
 {% endfor %}
+
 @main() {
   case "${1:-}" in
     ""|"-h"|"--help"|"help")
@@ -45,9 +50,8 @@ source <(echo "$QWEX_PREAMBLE")
       ;;
 {% endfor %}
     *)
-      echo "Unknown task: $1" >&2
-      @help
-      exit 1
+      echo "Unknown task: $1. Executing as a script." >&2
+      eval "$@"
       ;;
   esac
 }
