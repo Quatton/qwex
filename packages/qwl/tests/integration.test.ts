@@ -82,20 +82,20 @@ describe("Pipeline Integration", () => {
       expect(result.script).toContain('echo "d1: origin=from-D"');
     });
 
-    it("uses bash-safe function names (double underscores)", async () => {
+    it("uses bash-safe function names (colon separator)", async () => {
       const pipeline = new Pipeline({
         entryPath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
       });
 
       const result = await pipeline.run();
 
-      // Function definitions use double underscores
-      expect(result.script).toContain("B__c1()");
-      expect(result.script).toContain("B__D__d1()");
+      // Function definitions use colons
+      expect(result.script).toContain("B:c1()");
+      expect(result.script).toContain("B:D:d1()");
 
-      // Function calls also use double underscores
-      expect(result.script).toContain("B__c1");
-      expect(result.script).toContain("B__c2");
+      // Function calls also use colons
+      expect(result.script).toContain("B:c1");
+      expect(result.script).toContain("B:c2");
     });
 
     it("deduplicates tasks referenced multiple times", async () => {

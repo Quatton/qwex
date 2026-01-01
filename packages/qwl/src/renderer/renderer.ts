@@ -2,12 +2,7 @@ import { Template } from "nunjucks";
 import type { ModuleTemplate, TaskTemplate, VariableTemplate } from "../ast";
 import { QwlError } from "../errors";
 import { hash } from "../utils/hash";
-import {
-  createRenderContext,
-  createTaskRenderProxy,
-  type RenderContext,
-  type ProxyCallbacks,
-} from "./proxy";
+import { RenderContext, RenderProxyFactory } from "./proxy";
 
 export interface TaskNode {
   name: string;
@@ -23,54 +18,60 @@ export interface RenderResult {
 }
 
 export class Renderer {
+  private ctx!: RenderContext;
+  private proxyFactory!: RenderProxyFactory;
+
   renderAllTasks(module: ModuleTemplate): RenderResult {
-    const ctx = createRenderContext();
+    this.ctx = new RenderContext();
+    this.proxyFactory = new RenderProxyFactory(this.ctx, {
+      renderVar: (ctx, mod, name, prefix) => this.renderVar(mod, name, prefix),
+      renderTask: (ctx, mod, name, prefix) => this.renderTask(mod, name, prefix),
+      renderTaskInline: (ctx, mod, name, prefix, vars) =>
+        this.renderTaskInline(mod, name, prefix, vars),
+    });
 
     for (const taskName of Object.keys(module.tasks)) {
-      ctx.mainTasks.add(taskName);
+      this.ctx.mainTasks.add(taskName);
     }
 
     for (const taskName of Object.keys(module.tasks)) {
-      this.renderTask(ctx, module, taskName, "");
+      this.renderTask(module, taskName, "");
     }
 
     const main: TaskNode[] = [];
     const deps: TaskNode[] = [];
 
-    for (const [name, { cmd, desc }] of ctx.renderedTasks) {
+    for (const [name, { cmd, desc }] of this.ctx.renderedTasks) {
       const node: TaskNode = { name, cmd, hash: hash(cmd).toString(), desc };
-      if (ctx.mainTasks.has(name)) {
+      if (this.ctx.mainTasks.has(name)) {
         main.push(node);
       } else {
         deps.push(node);
       }
     }
 
-    return { main, deps, graph: ctx.graph };
+    return { main, deps, graph: this.ctx.graph };
   }
 
   private renderTask(
-    ctx: RenderContext,
     module: ModuleTemplate,
     taskName: string,
     prefix: string
   ): string {
     const canonicalName = prefix ? `${prefix}.${taskName}` : taskName;
 
-    if (ctx.renderedTasks.has(canonicalName)) {
-      return canonicalName;
-    }
+    if (this.ctx.renderedTasks.has(canonicalName)) return canonicalName;
 
-    if (ctx.pendingTasks.has(canonicalName)) {
+    if (this.ctx.pendingTasks.has(canonicalName)) {
       throw new QwlError({
         code: "RENDERER_ERROR",
         message: `Circular task dependency detected: ${canonicalName}`,
       });
     }
 
-    ctx.pendingTasks.add(canonicalName);
-    const savedDeps = ctx.currentDeps;
-    ctx.currentDeps = new Set();
+    this.ctx.pendingTasks.add(canonicalName);
+    const savedDeps = this.ctx.currentDeps;
+    this.ctx.currentDeps = new Set();
 
     try {
       const task = module.tasks[taskName];
@@ -81,22 +82,20 @@ export class Renderer {
         });
       }
 
-      const proxy = createTaskRenderProxy(ctx, module, task, prefix, this.createCallbacks());
+      const proxy = this.proxyFactory.createForTask(module, task, prefix);
       const cmd = task.cmd.render(proxy);
 
-      ctx.renderedTasks.set(canonicalName, { cmd, desc: task.desc });
-      ctx.graph.set(canonicalName, new Set(ctx.currentDeps));
+      this.ctx.renderedTasks.set(canonicalName, { cmd, desc: task.desc });
+      this.ctx.graph.set(canonicalName, new Set(this.ctx.currentDeps));
 
       return canonicalName;
     } finally {
-      ctx.pendingTasks.delete(canonicalName);
-      ctx.currentDeps = savedDeps;
+      this.ctx.pendingTasks.delete(canonicalName);
+      this.ctx.currentDeps = savedDeps;
     }
   }
 
-  // Inline render: does NOT register as separate task node
   private renderTaskInline(
-    ctx: RenderContext,
     module: ModuleTemplate,
     taskName: string,
     prefix: string,
@@ -111,7 +110,7 @@ export class Renderer {
     }
 
     const modifiedTask: TaskTemplate = { ...task, vars: { ...task.vars } };
-    const proxy = createTaskRenderProxy(ctx, module, modifiedTask, prefix, this.createCallbacks());
+    const proxy = this.proxyFactory.createForTask(module, modifiedTask, prefix);
 
     const proxyWithOverrides = {
       ...proxy,
@@ -127,153 +126,63 @@ export class Renderer {
   }
 
   private renderVar(
-    ctx: RenderContext,
     module: ModuleTemplate,
     varName: string,
     prefix: string
   ): unknown {
     const cacheKey = prefix ? `${prefix}.${varName}` : varName;
 
-    if (ctx.renderedVars.has(cacheKey)) {
-      return ctx.renderedVars.get(cacheKey);
+    if (this.ctx.renderedVars.has(cacheKey)) {
+      return this.ctx.renderedVars.get(cacheKey);
     }
 
-    if (ctx.pendingVars.has(cacheKey)) {
+    if (this.ctx.pendingVars.has(cacheKey)) {
       throw new QwlError({
         code: "RENDERER_ERROR",
         message: `Circular variable dependency detected: ${cacheKey}`,
       });
     }
 
-    ctx.pendingVars.add(cacheKey);
+    this.ctx.pendingVars.add(cacheKey);
 
     try {
       const template = module.vars[varName];
       if (!template) return undefined;
 
       const proxy = {
-        vars: new Proxy({}, { get: (_, key: string) => this.renderVar(ctx, module, key, prefix) }),
+        vars: new Proxy(
+          {},
+          { get: (_, key: string) => this.renderVar(module, key, prefix) }
+        ),
         tasks: {},
         modules: {},
       };
 
       const value = this.renderVariableTemplate(template, proxy);
-      ctx.renderedVars.set(cacheKey, value);
+      this.ctx.renderedVars.set(cacheKey, value);
       return value;
     } finally {
-      ctx.pendingVars.delete(cacheKey);
+      this.ctx.pendingVars.delete(cacheKey);
     }
   }
 
-  private renderVariableTemplate(template: VariableTemplate, ctx: Record<string, unknown>): unknown {
-    if (template instanceof Template) {
-      return template.render(ctx);
-    }
-
-    if (Array.isArray(template)) {
+  private renderVariableTemplate(
+    template: VariableTemplate,
+    ctx: Record<string, unknown>
+  ): unknown {
+    if (template instanceof Template) return template.render(ctx);
+    if (Array.isArray(template))
       return template.map((item) => this.renderVariableTemplate(item, ctx));
-    }
-
     if (typeof template === "object" && template !== null) {
       const result: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(template)) {
-        result[key] = this.renderVariableTemplate(value as VariableTemplate, ctx);
+        result[key] = this.renderVariableTemplate(
+          value as VariableTemplate,
+          ctx
+        );
       }
       return result;
     }
-
     return template;
-  }
-
-  private createCallbacks(): ProxyCallbacks {
-    return {
-      renderVar: (ctx, module, varName, prefix) =>
-        this.renderVar(ctx, module, varName, prefix),
-      renderTask: (ctx, module, taskName, prefix) =>
-        this.renderTask(ctx, module, taskName, prefix),
-      renderTaskInline: (ctx, module, taskName, prefix, overrideVars) =>
-        this.renderTaskInline(ctx, module, taskName, prefix, overrideVars),
-    };
-  }
-}
-
-// ============================================================
-// Testing with import.meta.main
-// ============================================================
-
-if (import.meta.main) {
-  const { resolveTaskDefs, resolveVariableDefs } = await import("../ast");
-
-  // Create test module templates directly
-  const baseModule: ModuleTemplate = {
-    vars: resolveVariableDefs({
-      greeting: "Hi",
-      you: "there",
-    }),
-    tasks: resolveTaskDefs({
-      baseTask: {
-        cmd: 'echo "This is the base task"',
-      },
-    }),
-    modules: {},
-    __meta__: { used: new Set() },
-  };
-
-  const rootModule: ModuleTemplate = {
-    vars: {
-      ...baseModule.vars,
-      ...resolveVariableDefs({
-        greeting: "Hello",
-        target: "{{ vars.greeting }}, World!",
-      }),
-    },
-    tasks: {
-      ...baseModule.tasks,
-      ...resolveTaskDefs({
-        sayHello: {
-          cmd: 'echo "{{ vars.target }}"',
-          desc: "Says hello to the target",
-        },
-        callingSayHello: {
-          cmd: 'echo "About to say hello: {{ tasks.sayHello }}"',
-        },
-        inlineExample: {
-          cmd: 'echo "Inline: {{ tasks.sayHello.inline() }}"',
-        },
-      }),
-    },
-    modules: {
-      sub: {
-        vars: resolveVariableDefs({
-          subVar: "I am sub",
-        }),
-        tasks: resolveTaskDefs({
-          subTask: {
-            cmd: 'echo "{{ vars.subVar }}"',
-          },
-        }),
-        modules: {},
-        __meta__: { used: new Set() },
-      },
-    },
-    __meta__: { used: new Set(["base"]) },
-  };
-
-  const renderer = new Renderer();
-  const result = renderer.renderAllTasks(rootModule);
-
-  console.log("=== Main Tasks ===");
-  for (const task of result.main) {
-    console.log(`  ${task.name}: ${task.cmd}`);
-  }
-
-  console.log("\n=== Dep Tasks ===");
-  for (const task of result.deps) {
-    console.log(`  ${task.name}: ${task.cmd}`);
-  }
-
-  console.log("\n=== Dependency Graph ===");
-  for (const [task, deps] of result.graph) {
-    console.log(`  ${task} → [${[...deps].join(", ")}]`);
   }
 }

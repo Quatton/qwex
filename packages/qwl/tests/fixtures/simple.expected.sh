@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-__qwl_help() {
+@help() {
   echo "Available tasks:"
   echo "  sayHello"
   echo "  build"
@@ -23,10 +23,10 @@ test() {
   npm test
 }
 
-__qwl_main() {
+@main() {
   case "${1:-}" in
     ""|"-h"|"--help"|"help")
-      __qwl_help
+      @help
       ;;
     "sayHello")
       shift
@@ -42,10 +42,10 @@ __qwl_main() {
       ;;
     *)
       echo "Unknown task: $1" >&2
-      __qwl_help
+      @help
       exit 1
       ;;
   esac
 }
 
-__qwl_main "$@"
+@main "$@"

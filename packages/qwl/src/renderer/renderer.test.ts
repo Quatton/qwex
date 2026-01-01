@@ -285,9 +285,9 @@ describe("Renderer", () => {
       const renderer = new Renderer();
       const result = renderer.renderAllTasks(module);
 
-      // Main task should reference child.childTask as bash-safe name
+      // Main task should reference child.childTask as bash-safe name (colon)
       const mainTask = result.main.find((t) => t.name === "main");
-      expect(mainTask?.cmd).toBe('echo "calling child__childTask"');
+      expect(mainTask?.cmd).toBe('echo "calling child:childTask"');
 
       // Child task should be in deps with prefixed name
       const childTask = result.deps.find((t) => t.name === "child.childTask");

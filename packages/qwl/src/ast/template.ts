@@ -3,25 +3,14 @@ import type { TaskDef, VariableDef } from "./ast";
 import { nj } from "../utils/templating";
 
 export function createTemplate(str: string): Template {
-  const t = new Template(str, nj);
-  return t;
+  return new Template(str, nj);
 }
 
-// Recursively convert VariableDef to VariableTemplate
-// - strings become Templates
-// - numbers/booleans stay as-is
-// - arrays are recursively processed
-// - objects are recursively processed
 export function createTemplateRecord(value: VariableDef): VariableTemplate {
-  if (typeof value === "string") {
-    return createTemplate(value);
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  if (Array.isArray(value)) {
+  if (typeof value === "string") return createTemplate(value);
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value))
     return value.map((item) => createTemplateRecord(item as VariableDef));
-  }
   if (typeof value === "object" && value !== null) {
     const record: Record<string, VariableTemplate> = {};
     for (const [key, v] of Object.entries(value)) {
@@ -29,12 +18,10 @@ export function createTemplateRecord(value: VariableDef): VariableTemplate {
     }
     return record;
   }
-  // Fallback for null/undefined - just return as-is
   return value as VariableTemplate;
 }
 
-// VariableTemplate mirrors VariableDef but with strings converted to Templates
-export type VariableTemplate = 
+export type VariableTemplate =
   | Template
   | number
   | boolean

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-__qwl_help() {
+@help() {
   echo "Available tasks:"
 {% for task in main %}
   echo "  {{ task.name }}{% if task.desc %} - {{ task.desc }}{% endif %}"
@@ -13,7 +13,7 @@ __qwl_help() {
 # {{ task.desc }}
 {% endif %}
 # Hash: {{ task.hash }}
-{{ task.name | replace(".", "__") }}() {
+{{ task.name | replace(".", ":") }}() {
   {{ task.cmd }}
 }
 
@@ -23,28 +23,28 @@ __qwl_help() {
 # {{ task.desc }}
 {% endif %}
 # Hash: {{ task.hash }}
-{{ task.name | replace(".", "__") }}() {
+{{ task.name | replace(".", ":") }}() {
   {{ task.cmd }}
 }
 
 {% endfor %}
-__qwl_main() {
+@main() {
   case "${1:-}" in
     ""|"-h"|"--help"|"help")
-      __qwl_help
+      @help
       ;;
 {% for task in main %}
     "{{ task.name }}")
       shift
-      {{ task.name | replace(".", "__") }} "$@"
+      {{ task.name | replace(".", ":") }} "$@"
       ;;
 {% endfor %}
     *)
       echo "Unknown task: $1" >&2
-      __qwl_help
+      @help
       exit 1
       ;;
   esac
 }
 
-__qwl_main "$@"
+@main "$@"

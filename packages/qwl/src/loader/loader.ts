@@ -42,20 +42,18 @@ export async function load(filePath: string): Promise<string> {
 }
 
 async function probeYamlPath(basePath: string): Promise<string | QwlError> {
-  for (const ext of YAML_EXTENSIONS) {
-    const candidate = basePath + ext;
+  const candidates = [
+    ...YAML_EXTENSIONS.map((ext) => basePath + ext),
+    ...YAML_EXTENSIONS.map((ext) => path.join(basePath, `index${ext}`)),
+  ];
+
+  for (const candidate of candidates) {
     try {
       await fs.access(candidate);
       return await canonicalize(candidate);
     } catch {}
   }
-  for (const ext of YAML_EXTENSIONS) {
-    const candidate = path.join(basePath, `index${ext}`);
-    try {
-      await fs.access(candidate);
-      return await canonicalize(candidate);
-    } catch {}
-  }
+
   return new QwlError({
     code: "LOADER_ERROR",
     message: `No YAML file found at ${basePath}`,
