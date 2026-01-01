@@ -27,6 +27,10 @@ export class RenderContext {
   currentDeps = new Set<string>();
   /** Maps pre-rendered var values back to the deps captured during their rendering */
   readonly varCapturedDeps = new Map<string, Set<string>>();
+  /** Maps content hash -> first task name with that hash (for deduplication) */
+  readonly hashToName = new Map<bigint, string>();
+  /** Maps canonical task name -> deduplicated bash name */
+  readonly nameToDedup = new Map<string, string>();
 }
 
 export interface ProxyCallbacks {

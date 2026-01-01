@@ -60,13 +60,21 @@ export class Renderer {
 
     const main: TaskNode[] = [];
     const deps: TaskNode[] = [];
+    const emittedHashes = new Set<bigint>();
 
     for (const [name, { cmd, desc }] of this.ctx.renderedTasks) {
-      const node: TaskNode = { name, cmd, hash: `0x${hash(cmd).toString(16)}`, desc };
-      if (this.ctx.mainTasks.has(name)) {
-        main.push(node);
-      } else {
-        deps.push(node);
+      const cmdHash = hash(cmd);
+      const dedupName = this.ctx.nameToDedup.get(name) ?? name;
+
+      // Only emit the function if this is the canonical (first) name for this hash
+      if (dedupName === name && !emittedHashes.has(cmdHash)) {
+        emittedHashes.add(cmdHash);
+        const node: TaskNode = { name, cmd, hash: `0x${cmdHash.toString(16)}`, desc };
+        if (this.ctx.mainTasks.has(name)) {
+          main.push(node);
+        } else {
+          deps.push(node);
+        }
       }
     }
 
@@ -75,14 +83,14 @@ export class Renderer {
 
   private renderTask(module: ModuleTemplate, taskName: string, prefix: string): TaskRef {
     const canonicalName = prefix ? `${prefix}.${taskName}` : taskName;
-    const bashName = canonicalName.replace(/\./g, ":");
 
-    // If already rendered, return the cached ref
+    // If already rendered, return the cached ref with deduplicated name
     if (this.ctx.renderedTasks.has(canonicalName)) {
       const rendered = this.ctx.renderedTasks.get(canonicalName)!;
+      const dedupName = this.ctx.nameToDedup.get(canonicalName) ?? canonicalName;
       return {
         canonicalName,
-        bashName,
+        bashName: dedupName.replace(/\./g, ":"),
         hash: `0x${hash(rendered.cmd).toString(16)}`,
       };
     }
@@ -169,14 +177,27 @@ export class Renderer {
       const resolvedPrefix = task.uses ? this.getModulePrefix(task.uses) : prefix;
       const proxy = this.proxyFactory.createForTask(_resolvedModule, modifiedTask, resolvedPrefix);
       const cmd = resolvedTask.cmd.render(proxy);
+      const cmdHash = hash(cmd);
+
+      // Deduplication: check if we've seen this exact content before
+      let dedupName: string;
+      if (this.ctx.hashToName.has(cmdHash)) {
+        // Reuse existing task name for this content
+        dedupName = this.ctx.hashToName.get(cmdHash)!;
+      } else {
+        // First time seeing this content, register it
+        dedupName = canonicalName;
+        this.ctx.hashToName.set(cmdHash, canonicalName);
+      }
+      this.ctx.nameToDedup.set(canonicalName, dedupName);
 
       this.ctx.renderedTasks.set(canonicalName, { cmd, desc: task.desc });
       this.ctx.graph.set(canonicalName, new Set(this.ctx.currentDeps));
 
       return {
         canonicalName,
-        bashName,
-        hash: `0x${hash(cmd).toString(16)}`,
+        bashName: dedupName.replace(/\./g, ":"),
+        hash: `0x${cmdHash.toString(16)}`,
       };
     } finally {
       this.ctx.pendingTasks.delete(canonicalName);

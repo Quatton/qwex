@@ -3,12 +3,13 @@ QWEX_PREAMBLE="set -euo pipefail
 shopt -s expand_aliases
 ORIGINAL_PWD=\$(pwd)"
 
-
 source <(echo "$QWEX_PREAMBLE")
 
-@declare() {
-  echo "$QWEX_PREAMBLE"
-  declare -f {% for task in deps %}{{ task.name | replace(".", ":") }} {% endfor %} {% for task in main %}{{ task.name | replace(".", ":") }} {% endfor %} @main @help
+@source() {
+  declare -p QWEX_PREAMBLE
+  echo "source <(echo \"\$QWEX_PREAMBLE\")"
+  declare -f {% for task in deps %}{{ task.name | replace(".", ":") }} {% endfor %} {% for task in main %}{{ task.name | replace(".", ":") }} {% endfor %} @main @help @source
+  echo "@main \$@"
 }
 
 @help() {
@@ -50,7 +51,7 @@ source <(echo "$QWEX_PREAMBLE")
       ;;
 {% endfor %}
     *)
-      echo "Unknown task: $1. Executing as a script." >&2
+      echo "Unknown task: $@. Executing as a script." >&2
       eval "$@"
       ;;
   esac

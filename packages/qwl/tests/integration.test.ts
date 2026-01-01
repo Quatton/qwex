@@ -3,15 +3,21 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { Pipeline } from "../src/pipeline";
+import innerEmitterTemplate from "../src/emitter/inner.sh.njk" with { type: "text" };
 
 const FIXTURES_DIR = path.join(import.meta.dir, "fixtures");
+
+function createPipeline(fixturePath: string): Pipeline {
+  return new Pipeline({
+    sourcePath: path.join(FIXTURES_DIR, fixturePath),
+    emitterTemplateStr: innerEmitterTemplate,
+  });
+}
 
 describe("Pipeline Integration", () => {
   describe("simple module", () => {
     it("generates bash script matching expected output", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "simple.yaml"),
-      });
+      const pipeline = createPipeline("simple.yaml");
 
       const result = await pipeline.run();
 
@@ -25,9 +31,7 @@ describe("Pipeline Integration", () => {
     });
 
     it("returns correct task count", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "simple.yaml"),
-      });
+      const pipeline = createPipeline("simple.yaml");
 
       const result = await pipeline.run();
 
@@ -37,9 +41,7 @@ describe("Pipeline Integration", () => {
 
   describe("nested modules", () => {
     it("matches expected output", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "nested.yaml"),
-      });
+      const pipeline = createPipeline("nested.yaml");
 
       const result = await pipeline.run();
       const normalizedOutput = normalizeScript(result.script);
@@ -51,9 +53,7 @@ describe("Pipeline Integration", () => {
     });
 
     it("inlines tasks from submodules and same module", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "nested.yaml"),
-      });
+      const pipeline = createPipeline("nested.yaml");
 
       const result = await pipeline.run();
 
@@ -66,9 +66,7 @@ describe("Pipeline Integration", () => {
 
   describe("variable precedence", () => {
     it("matches expected output", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "var-precedence.yaml"),
-      });
+      const pipeline = createPipeline("var-precedence.yaml");
 
       const result = await pipeline.run();
       const normalizedOutput = normalizeScript(result.script);
@@ -80,9 +78,7 @@ describe("Pipeline Integration", () => {
     });
 
     it("resolves task-level vars over module-level vars", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "var-precedence.yaml"),
-      });
+      const pipeline = createPipeline("var-precedence.yaml");
 
       const result = await pipeline.run();
 
@@ -95,9 +91,7 @@ describe("Pipeline Integration", () => {
 
   describe("complex module inheritance", () => {
     it("matches expected output", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
-      });
+      const pipeline = createPipeline("circular/entry.yaml");
 
       const result = await pipeline.run();
       const normalizedOutput = normalizeScript(result.script);
@@ -109,9 +103,7 @@ describe("Pipeline Integration", () => {
     });
 
     it("applies variable scoping correctly through nested modules", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
-      });
+      const pipeline = createPipeline("circular/entry.yaml");
 
       const result = await pipeline.run();
 
@@ -126,9 +118,7 @@ describe("Pipeline Integration", () => {
     });
 
     it("generates bash-safe function names with colon separators", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
-      });
+      const pipeline = createPipeline("circular/entry.yaml");
 
       const result = await pipeline.run();
 
@@ -142,9 +132,7 @@ describe("Pipeline Integration", () => {
     });
 
     it("defines each task function only once despite multiple references", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
-      });
+      const pipeline = createPipeline("circular/entry.yaml");
 
       const result = await pipeline.run();
 
@@ -155,9 +143,7 @@ describe("Pipeline Integration", () => {
     });
 
     it("duplicates inlined task code without creating function dependencies", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
-      });
+      const pipeline = createPipeline("circular/entry.yaml");
 
       const result = await pipeline.run();
 
@@ -168,9 +154,7 @@ describe("Pipeline Integration", () => {
 
   describe("uses() function", () => {
     it("matches expected output for uses-task-inline", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "uses-task-inline.yaml"),
-      });
+      const pipeline = createPipeline("uses-task-inline.yaml");
 
       const result = await pipeline.run();
       const normalizedOutput = normalizeScript(result.script);
@@ -182,9 +166,7 @@ describe("Pipeline Integration", () => {
     });
 
     it("matches expected output for uses-module-task-inline", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "uses-module-task-inline.yaml"),
-      });
+      const pipeline = createPipeline("uses-module-task-inline.yaml");
 
       const result = await pipeline.run();
       const normalizedOutput = normalizeScript(result.script);
@@ -196,9 +178,7 @@ describe("Pipeline Integration", () => {
     });
 
     it("includes external file content directly in task body", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "uses-function.yaml"),
-      });
+      const pipeline = createPipeline("uses-function.yaml");
 
       const result = await pipeline.run();
 
@@ -208,9 +188,7 @@ describe("Pipeline Integration", () => {
     });
 
     it("inlines local task code with uses('tasks.taskName')", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "uses-task-inline.yaml"),
-      });
+      const pipeline = createPipeline("uses-task-inline.yaml");
 
       const result = await pipeline.run();
 
@@ -220,9 +198,7 @@ describe("Pipeline Integration", () => {
     });
 
     it("inlines task from submodule with uses('modules.sub.tasks.taskName')", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "uses-module-task-inline.yaml"),
-      });
+      const pipeline = createPipeline("uses-module-task-inline.yaml");
 
       const result = await pipeline.run();
 
@@ -233,9 +209,7 @@ describe("Pipeline Integration", () => {
 
   describe("eof tag", () => {
     it("generates heredoc syntax with unique hash-based delimiter", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "eof-tag.yaml"),
-      });
+      const pipeline = createPipeline("eof-tag.yaml");
 
       const result = await pipeline.run();
 
@@ -249,27 +223,23 @@ describe("Pipeline Integration", () => {
 
   describe("context tag", () => {
     it("generates declare -f for tasks referenced in context blocks", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "context-tag.yaml"),
-      });
+      const pipeline = createPipeline("context-tag.yaml");
 
       const result = await pipeline.run();
 
-      // Check that eval "$(declare -f)" is output for referenced tasks
-      expect(result.script).toContain('eval "$(declare -f helper)"');
+      // Check that $(declare -f) is output for referenced tasks
+      expect(result.script).toContain("$(declare -f helper)");
       // And the task call is still present
       expect(result.script).toContain("helper");
     });
 
     it("escapes dollar signs when escape=true option is used", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "context-escape.yaml"),
-      });
+      const pipeline = createPipeline("context-escape.yaml");
 
       const result = await pipeline.run();
 
-      // Check that eval "$(declare -f)" is still output
-      expect(result.script).toContain('eval "$(declare -f helper)"');
+      // Check that $(declare -f) is still output
+      expect(result.script).toContain("$(declare -f helper)");
       // Check that $ is escaped to \$ in the body content
       expect(result.script).toContain("\\$VALUE");
     });
@@ -277,9 +247,7 @@ describe("Pipeline Integration", () => {
 
   describe("task.uses with pre-rendered vars", () => {
     it("matches expected output", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "task-uses-with-vars.yaml"),
-      });
+      const pipeline = createPipeline("task-uses-with-vars.yaml");
 
       const result = await pipeline.run();
       const normalizedOutput = normalizeScript(result.script);
@@ -291,9 +259,7 @@ describe("Pipeline Integration", () => {
     });
 
     it("pre-renders task vars in caller context before passing to used task", async () => {
-      const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "task-uses-with-vars.yaml"),
-      });
+      const pipeline = createPipeline("task-uses-with-vars.yaml");
 
       const result = await pipeline.run();
 

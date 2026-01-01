@@ -1,0 +1,19 @@
+{% for task in deps %}
+{% if task.desc %}
+# {{ task.desc }}
+{% endif %}
+# Hash: {{ task.hash }}
+{{ task.name | replace(".", ":") }}() {
+  {{ task.cmd }}
+}
+
+{% endfor %}
+{% for task in main %}
+{% if task.desc %}
+# {{ task.desc }}
+{% endif %}
+# Hash: {{ task.hash }}
+{{ task.name | replace(".", ":") }}() {
+  {{ task.cmd }}
+}
+{% endfor %}

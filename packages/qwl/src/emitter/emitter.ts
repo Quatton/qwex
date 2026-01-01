@@ -12,13 +12,13 @@ export interface EmitResult {
 export class Emitter {
   private template: nunjucks.Template;
 
-  constructor() {
+  constructor(templateStr?: string) {
     const env = new nunjucks.Environment(null, {
       autoescape: false,
       trimBlocks: true,
       lstripBlocks: true,
     });
-    this.template = new nunjucks.Template(scriptTemplate, env);
+    this.template = new nunjucks.Template(templateStr ?? scriptTemplate, env);
   }
 
   emit(result: RenderResult): EmitResult {

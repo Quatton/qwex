@@ -8,7 +8,8 @@
   "scripts": {
     "cli": "bun run src/index.ts",
     "lint": "oxlint .",
-    "format": "oxfmt . -c ../../.oxfmtrc.jsonc"
+    "format": "oxfmt . -c ../../.oxfmtrc.jsonc",
+    "build": "bun build --compile src/index.ts --outfile dist/qwex"
   },
   "dependencies": {
     "@clack/core": "^0.5.0",

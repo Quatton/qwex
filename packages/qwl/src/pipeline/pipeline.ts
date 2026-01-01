@@ -8,6 +8,8 @@ import { Resolver } from "../resolver";
 export interface PipelineOptions {
   sourcePath: string;
   features?: string[];
+  /** If set, uses this exact Nunjucks template string for emission (overrides the default emitter template). */
+  emitterTemplateStr?: string;
 }
 
 export class Pipeline {
@@ -40,7 +42,9 @@ export class Pipeline {
     const template = await resolver.resolve(entryPath);
     const renderer = new Renderer();
     const result = renderer.renderAllTasks(template);
-    const emitter = new Emitter();
+    const emitter = this.options.emitterTemplateStr
+      ? new Emitter(this.options.emitterTemplateStr)
+      : new Emitter();
     return emitter.emit(result);
   }
 }

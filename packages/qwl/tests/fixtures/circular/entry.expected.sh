@@ -1,19 +1,3 @@
-#!/usr/bin/env bash
-QWEX_PREAMBLE="#!/usr/bin/env bash
-set -euo pipefail
-shopt -s expand_aliases
-"
-
-eval QWEX_PREAMBLE
-
-@help() {
-  echo "Available tasks:"
-  echo "  a1 - Original a1 from A"
-  echo "  main - Main entry task"
-  echo "  testDedup - Test task deduplication - reference same task twice"
-  echo "  testInlineDedup - Test inline doesn't create duplicate deps"
-}
-
 # C1 basic task
 # Hash: 0xc18572bc4ff5b9fe
 B:c1() {
@@ -39,7 +23,6 @@ B:D:d1
 a1() {
   echo "a1: origin=from-entry"
 }
-
 # Main entry task
 # Hash: 0xad313f82b5b1af3d
 main() {
@@ -52,7 +35,6 @@ B:c1
 B:c2
 
 }
-
 # Test task deduplication - reference same task twice
 # Hash: 0x9646a1ee13d9f7b1
 testDedup() {
@@ -62,7 +44,6 @@ echo "between calls"
 a1
 
 }
-
 # Test inline doesn't create duplicate deps
 # Hash: 0x7dcffc3a2635bac
 testInlineDedup() {
@@ -71,34 +52,3 @@ echo "a1: origin=from-entry"
 echo "a1: origin=from-entry"
 
 }
-
-@main() {
-  case "${1:-}" in
-    ""|"-h"|"--help"|"help")
-      @help
-      ;;
-    "a1")
-      shift
-      a1 "$@"
-      ;;
-    "main")
-      shift
-      main "$@"
-      ;;
-    "testDedup")
-      shift
-      testDedup "$@"
-      ;;
-    "testInlineDedup")
-      shift
-      testInlineDedup "$@"
-      ;;
-    *)
-      echo "Unknown task: $1" >&2
-      @help
-      exit 1
-      ;;
-  esac
-}
-
-@main "$@"

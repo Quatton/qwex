@@ -357,5 +357,70 @@ describe("Renderer", () => {
       const helperTasks = result.deps.filter((t) => t.name === "sub.helper");
       expect(helperTasks.length).toBe(1);
     });
+
+    it("deduplicates identical tasks across modules (uv-workspace style)", () => {
+      // Mirrors the real-world shape from playground/uv-workspace:
+      // - user imports std/steps
+      // - user also imports std/log
+      // - std/steps itself imports std/log as a submodule (often named logs)
+      // We want to ensure we don't end up emitting BOTH steps:logs:error and logs:error.
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          main: {
+            cmd: "{{ steps.logs.error }}\n{{ logs.error }}\n",
+          },
+        }),
+        modules: {
+          steps: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({}),
+            modules: {
+              logs: {
+                vars: resolveVariableDefs({}),
+                tasks: resolveTaskDefs({
+                  error: {
+                    cmd: "echo boom",
+                  },
+                }),
+                modules: {},
+                __meta__: { used: new Set() },
+              },
+            },
+            __meta__: { used: new Set() },
+          },
+          logs: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({
+              error: {
+                cmd: "echo boom",
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const emitted = [...result.main, ...result.deps].filter(
+        (t) => t.name === "steps.logs.error" || t.name === "logs.error",
+      );
+      expect(emitted.length).toBe(1);
+
+      const mainTask = result.main.find((t) => t.name === "main");
+      expect(mainTask?.cmd).toBeDefined();
+
+      const cmd = mainTask?.cmd ?? "";
+      const hasSteps = cmd.includes("steps:logs:error");
+      // "steps:logs:error" contains "logs:error" as a suffix, so detect standalone logs:error
+      // that is NOT preceded by ':' (i.e., not part of steps:logs:error)
+      const hasStandaloneLogs = /(^|[^:])logs:error/.test(cmd);
+      expect(hasSteps && hasStandaloneLogs).toBe(false);
+      expect(hasSteps || hasStandaloneLogs).toBe(true);
+    });
   });
 });
