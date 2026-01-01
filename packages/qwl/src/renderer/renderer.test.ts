@@ -1,6 +1,7 @@
-import { describe, it, expect } from "bun:test";
-import { Renderer } from "./renderer";
+import { describe, expect, it } from "bun:test";
+
 import { resolveTaskDefs, resolveVariableDefs, type ModuleTemplate } from "../ast";
+import { Renderer } from "./renderer";
 
 function createRootModule(): ModuleTemplate {
   const baseModule: ModuleTemplate = {
@@ -168,7 +169,7 @@ describe("Renderer", () => {
             cmd: 'echo "{{ vars.msg }}"',
           },
           wrapper: {
-            cmd: 'start; {{ tasks.base.inline() }}; end',
+            cmd: "start; {{ tasks.base.inline() }}; end",
           },
         }),
         modules: {},

@@ -1,0 +1,7 @@
+tasks:
+  helper:
+    cmd: echo "Hello from helper"
+
+  main:
+    cmd: |
+      echo "Inlined: {{ uses('tasks.helper') }}"

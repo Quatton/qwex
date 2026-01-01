@@ -1,5 +1,7 @@
 import { Template } from "nunjucks";
+
 import type { TaskDef, VariableDef } from "./ast";
+
 import { nj } from "../utils/templating";
 
 export function createTemplate(str: string): Template {
@@ -9,8 +11,7 @@ export function createTemplate(str: string): Template {
 export function createTemplateRecord(value: VariableDef): VariableTemplate {
   if (typeof value === "string") return createTemplate(value);
   if (typeof value === "number" || typeof value === "boolean") return value;
-  if (Array.isArray(value))
-    return value.map((item) => createTemplateRecord(item as VariableDef));
+  if (Array.isArray(value)) return value.map((item) => createTemplateRecord(item as VariableDef));
   if (typeof value === "object" && value !== null) {
     const record: Record<string, VariableTemplate> = {};
     for (const [key, v] of Object.entries(value)) {
@@ -35,6 +36,7 @@ export type TaskTemplate = Omit<TaskDef, "cmd" | "vars"> & {
 export type ModuleTemplate = {
   __meta__: {
     used: Set<string>;
+    sourcePath?: string; // Absolute path to the source file for uses()
   };
   vars: Record<string, VariableTemplate>;
   tasks: Record<string, TaskTemplate>;
@@ -56,9 +58,7 @@ export function resolveTaskDefs(taskDefs: Record<string, TaskDef> | undefined) {
   return tasks;
 }
 
-export function resolveVariableDefs(
-  varDefs: Record<string, unknown> | undefined
-) {
+export function resolveVariableDefs(varDefs: Record<string, unknown> | undefined) {
   const vars: Record<string, VariableTemplate> = {};
   if (!varDefs) {
     return vars;

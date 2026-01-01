@@ -1,7 +1,8 @@
-import { ModuleDef } from "../ast";
-import { hash } from "../utils/hash";
 import { ArkErrors } from "arktype";
+
+import { ModuleDef } from "../ast";
 import { QwlError } from "../errors";
+import { hash } from "../utils/hash";
 
 export interface ParseResult {
   module: ModuleDef;

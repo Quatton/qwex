@@ -1,22 +1,34 @@
 import {
-  createEmptyModuleTemplate,
-  resolveVariableDefs,
-  resolveTaskDefs,
-  type ModuleDef,
-  type ModuleTemplate,
+    createEmptyModuleTemplate,
+    resolveTaskDefs,
+    resolveVariableDefs,
+    type ModuleDef,
+    type ModuleTemplate,
+    type TaskDef,
 } from "../ast";
 import { QwlError } from "../errors";
+import { filterByFeatures, selectUses } from "./features";
 
 export type ModuleLoader = (
   path: string,
-  parentPath?: string
+  parentPath?: string,
 ) => Promise<{ module: ModuleDef; hash: bigint; resolvedPath: string }>;
+
+export interface ResolverOptions {
+  features?: Set<string>;
+}
 
 export class Resolver {
   private cache = new Map<bigint, ModuleTemplate>();
   private stack = new Set<bigint>();
+  private features: Set<string>;
 
-  constructor(private loader: ModuleLoader) {}
+  constructor(
+    private loader: ModuleLoader,
+    options: ResolverOptions = {},
+  ) {
+    this.features = options.features ?? new Set();
+  }
 
   async resolve(path: string, parentPath?: string): Promise<ModuleTemplate> {
     const { module, hash, resolvedPath } = await this.loader(path, parentPath);
@@ -41,28 +53,37 @@ export class Resolver {
 
   private async createTemplateFromDef(
     def: ModuleDef,
-    currentPath: string
+    currentPath: string,
   ): Promise<ModuleTemplate> {
-    const template = def.uses
-      ? await this.resolveBase(def.uses, currentPath)
-      : createEmptyModuleTemplate();
+    // Select uses based on feature flags
+    const uses = selectUses(def as Record<string, unknown>, this.features);
 
-    if (def.vars) Object.assign(template.vars, resolveVariableDefs(def.vars));
-    if (def.tasks) Object.assign(template.tasks, resolveTaskDefs(def.tasks));
-    if (def.modules)
-      await this.resolveInlineModules(
-        template.modules,
-        def.modules,
-        currentPath
-      );
+    const template = uses ? await this.resolveBase(uses, currentPath) : createEmptyModuleTemplate();
+
+    // Set source path for uses() function
+    template.__meta__.sourcePath = currentPath;
+
+    // Filter vars by features
+    const vars = filterByFeatures(def.vars as Record<string, unknown> | undefined, this.features);
+    Object.assign(template.vars, resolveVariableDefs(vars));
+
+    // Filter tasks by features
+    const tasks = filterByFeatures(def.tasks as Record<string, TaskDef> | undefined, this.features);
+    Object.assign(template.tasks, resolveTaskDefs(tasks));
+
+    // Filter modules by features
+    const modules = filterByFeatures(
+      def.modules as Record<string, ModuleDef> | undefined,
+      this.features,
+    );
+    if (Object.keys(modules).length > 0) {
+      await this.resolveInlineModules(template.modules, modules, currentPath);
+    }
 
     return template;
   }
 
-  private async resolveBase(
-    uses: string,
-    currentPath: string
-  ): Promise<ModuleTemplate> {
+  private async resolveBase(uses: string, currentPath: string): Promise<ModuleTemplate> {
     const parent = await this.resolve(uses, currentPath);
     return {
       vars: { ...parent.vars },
@@ -75,7 +96,7 @@ export class Resolver {
   private async resolveInlineModules(
     target: Record<string, ModuleTemplate>,
     modules: Record<string, ModuleDef>,
-    currentPath: string
+    currentPath: string,
   ): Promise<void> {
     for (const [name, def] of Object.entries(modules)) {
       target[name] = await this.createTemplateFromDef(def, currentPath);
@@ -143,6 +164,6 @@ if (import.meta.main) {
   console.dir(
     // @ts-ignore
     Object.entries(resolved.vars).map(([k, v]) => [k, v.tmplStr]),
-    { depth: null }
+    { depth: null },
   );
 }

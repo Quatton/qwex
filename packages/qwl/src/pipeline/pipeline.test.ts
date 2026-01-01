@@ -1,6 +1,7 @@
-import { describe, it, expect } from "bun:test";
-import { Pipeline } from "./pipeline";
+import { describe, expect, it } from "bun:test";
 import path from "node:path";
+
+import { Pipeline } from "./pipeline";
 
 const FIXTURES_DIR = path.join(import.meta.dir, "../../tests/fixtures");
 

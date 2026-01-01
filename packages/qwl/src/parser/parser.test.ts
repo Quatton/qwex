@@ -1,7 +1,8 @@
 import { describe, it, expect } from "bun:test";
-import { parseConfig } from "./index";
 import { strict as assert } from "node:assert";
+
 import { QwlError } from "../errors";
+import { parseConfig } from "./index";
 
 const yamlText = `vars:
   variable: "value"

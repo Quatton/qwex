@@ -1,0 +1,7 @@
+vars:
+  name: TestName
+
+tasks:
+  includeScript:
+    cmd: |
+      {{ uses("./included-script.sh") }}

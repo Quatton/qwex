@@ -1,7 +1,8 @@
-import { describe, it, expect } from "bun:test";
-import { Pipeline } from "../src/pipeline";
-import path from "node:path";
+import { describe, expect, it } from "bun:test";
 import fs from "node:fs/promises";
+import path from "node:path";
+
+import { Pipeline } from "../src/pipeline";
 
 const FIXTURES_DIR = path.join(import.meta.dir, "fixtures");
 
@@ -118,9 +119,87 @@ describe("Pipeline Integration", () => {
       const result = await pipeline.run();
 
       // testInlineDedup inlines a1 twice, check both are present
-      expect(result.script).toContain(
-        'echo "a1: origin=from-entry"\necho "a1: origin=from-entry"'
-      );
+      expect(result.script).toContain('echo "a1: origin=from-entry"\necho "a1: origin=from-entry"');
+    });
+  });
+
+  describe("uses() function", () => {
+    it("includes file content in task", async () => {
+      const pipeline = new Pipeline({
+        entryPath: path.join(FIXTURES_DIR, "uses-function.yaml"),
+      });
+
+      const result = await pipeline.run();
+
+      // Check that the included script content is present
+      expect(result.script).toContain('echo "This is an included script"');
+      expect(result.script).toContain('echo "Variable: $1"');
+    });
+
+    it("inlines task with uses('tasks.taskName')", async () => {
+      const pipeline = new Pipeline({
+        entryPath: path.join(FIXTURES_DIR, "uses-task-inline.yaml"),
+      });
+
+      const result = await pipeline.run();
+
+      // Check that the task is inlined
+      expect(result.script).toContain('echo "Inlined: echo');
+      expect(result.script).toContain("Hello from helper");
+    });
+
+    it("inlines module task with uses('modules.sub.tasks.taskName')", async () => {
+      const pipeline = new Pipeline({
+        entryPath: path.join(FIXTURES_DIR, "uses-module-task-inline.yaml"),
+      });
+
+      const result = await pipeline.run();
+
+      // Check that the submodule task is inlined
+      expect(result.script).toContain('echo "From submodule"');
+    });
+  });
+
+  describe("declare filter", () => {
+    it("outputs declare -f for task reference", async () => {
+      const pipeline = new Pipeline({
+        entryPath: path.join(FIXTURES_DIR, "declare-filter.yaml"),
+      });
+
+      const result = await pipeline.run();
+
+      // Check that the declare statement is present
+      expect(result.script).toContain("declare -f helper");
+    });
+  });
+
+  describe("eof tag", () => {
+    it("wraps content in heredoc syntax with unique delimiter", async () => {
+      const pipeline = new Pipeline({
+        entryPath: path.join(FIXTURES_DIR, "eof-tag.yaml"),
+      });
+
+      const result = await pipeline.run();
+
+      // Check that heredoc syntax is present (no cat <<, just delimiter)
+      expect(result.script).toMatch(/'EOF_[A-F0-9]+'/); // Unique hash-based delimiter
+      expect(result.script).toContain("Hello World!");
+      expect(result.script).toContain("This is a heredoc.");
+      // The closing delimiter should match (without quotes)
+      expect(result.script).toMatch(/EOF_[A-F0-9]+$/m);
+    });
+  });
+
+  describe("declare tag", () => {
+    it("outputs declare -f for multiple task references", async () => {
+      const pipeline = new Pipeline({
+        entryPath: path.join(FIXTURES_DIR, "declare-tag.yaml"),
+      });
+
+      const result = await pipeline.run();
+
+      // Check that the declare statement with multiple functions is present
+      expect(result.script).toContain("declare -f helper1 helper2");
     });
   });
 });

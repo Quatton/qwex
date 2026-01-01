@@ -14,8 +14,7 @@ export class QwlError extends Error {
 
   constructor(opts: { code: QwlErrorCode; message?: string; cause?: unknown }) {
     const message =
-      opts.message ??
-      (opts.cause instanceof Error ? opts.cause.message : "Unknown error");
+      opts.message ?? (opts.cause instanceof Error ? opts.cause.message : "Unknown error");
 
     super(message);
 
@@ -49,10 +48,7 @@ export class QwlError extends Error {
 
     return new QwlError({
       code: "UNKNOWN_ERROR",
-      message:
-        cause instanceof Error
-          ? cause.message
-          : `Unknown error: ${String(cause)}`,
+      message: cause instanceof Error ? cause.message : `Unknown error: ${String(cause)}`,
       cause,
     });
   }

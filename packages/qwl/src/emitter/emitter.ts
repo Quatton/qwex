@@ -1,5 +1,7 @@
-import type { RenderResult } from "../renderer";
 import nunjucks from "nunjucks";
+
+import type { RenderResult } from "../renderer";
+
 import scriptTemplate from "./script.sh.njk" with { type: "text" };
 
 export interface EmitResult {

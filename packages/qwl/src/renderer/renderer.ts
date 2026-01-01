@@ -1,7 +1,10 @@
 import { Template } from "nunjucks";
+
 import type { ModuleTemplate, TaskTemplate, VariableTemplate } from "../ast";
+
 import { QwlError } from "../errors";
 import { hash } from "../utils/hash";
+import { setCurrentModulePath } from "../utils/templating";
 import { RenderContext, RenderProxyFactory } from "./proxy";
 
 export interface TaskNode {
@@ -53,11 +56,7 @@ export class Renderer {
     return { main, deps, graph: this.ctx.graph };
   }
 
-  private renderTask(
-    module: ModuleTemplate,
-    taskName: string,
-    prefix: string
-  ): string {
+  private renderTask(module: ModuleTemplate, taskName: string, prefix: string): string {
     const canonicalName = prefix ? `${prefix}.${taskName}` : taskName;
 
     if (this.ctx.renderedTasks.has(canonicalName)) return canonicalName;
@@ -82,6 +81,9 @@ export class Renderer {
         });
       }
 
+      // Set module path for uses() function
+      setCurrentModulePath(module.__meta__.sourcePath ?? null);
+
       const proxy = this.proxyFactory.createForTask(module, task, prefix);
       const cmd = task.cmd.render(proxy);
 
@@ -92,6 +94,7 @@ export class Renderer {
     } finally {
       this.ctx.pendingTasks.delete(canonicalName);
       this.ctx.currentDeps = savedDeps;
+      setCurrentModulePath(null);
     }
   }
 
@@ -99,7 +102,7 @@ export class Renderer {
     module: ModuleTemplate,
     taskName: string,
     prefix: string,
-    overrideVars: Record<string, unknown>
+    overrideVars: Record<string, unknown>,
   ): string {
     const task = module.tasks[taskName];
     if (!task) {
@@ -109,27 +112,30 @@ export class Renderer {
       });
     }
 
-    const modifiedTask: TaskTemplate = { ...task, vars: { ...task.vars } };
-    const proxy = this.proxyFactory.createForTask(module, modifiedTask, prefix);
+    // Set module path for uses() function
+    setCurrentModulePath(module.__meta__.sourcePath ?? null);
 
-    const proxyWithOverrides = {
-      ...proxy,
-      vars: new Proxy(proxy.vars as object, {
-        get(target, key: string) {
-          if (key in overrideVars) return overrideVars[key];
-          return Reflect.get(target, key);
-        },
-      }),
-    };
+    try {
+      const modifiedTask: TaskTemplate = { ...task, vars: { ...task.vars } };
+      const proxy = this.proxyFactory.createForTask(module, modifiedTask, prefix);
 
-    return task.cmd.render(proxyWithOverrides);
+      const proxyWithOverrides = {
+        ...proxy,
+        vars: new Proxy(proxy.vars as object, {
+          get(target, key: string) {
+            if (key in overrideVars) return overrideVars[key];
+            return Reflect.get(target, key);
+          },
+        }),
+      };
+
+      return task.cmd.render(proxyWithOverrides);
+    } finally {
+      setCurrentModulePath(null);
+    }
   }
 
-  private renderVar(
-    module: ModuleTemplate,
-    varName: string,
-    prefix: string
-  ): unknown {
+  private renderVar(module: ModuleTemplate, varName: string, prefix: string): unknown {
     const cacheKey = prefix ? `${prefix}.${varName}` : varName;
 
     if (this.ctx.renderedVars.has(cacheKey)) {
@@ -150,10 +156,7 @@ export class Renderer {
       if (!template) return undefined;
 
       const proxy = {
-        vars: new Proxy(
-          {},
-          { get: (_, key: string) => this.renderVar(module, key, prefix) }
-        ),
+        vars: new Proxy({}, { get: (_, key: string) => this.renderVar(module, key, prefix) }),
         tasks: {},
         modules: {},
       };
@@ -168,7 +171,7 @@ export class Renderer {
 
   private renderVariableTemplate(
     template: VariableTemplate,
-    ctx: Record<string, unknown>
+    ctx: Record<string, unknown>,
   ): unknown {
     if (template instanceof Template) return template.render(ctx);
     if (Array.isArray(template))
@@ -176,10 +179,7 @@ export class Renderer {
     if (typeof template === "object" && template !== null) {
       const result: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(template)) {
-        result[key] = this.renderVariableTemplate(
-          value as VariableTemplate,
-          ctx
-        );
+        result[key] = this.renderVariableTemplate(value as VariableTemplate, ctx);
       }
       return result;
     }

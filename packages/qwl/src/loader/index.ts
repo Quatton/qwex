@@ -1,8 +1,2 @@
-export {
-  canonicalize,
-  load,
-  isBuiltin,
-  getBuiltinText,
-  resolveModulePath,
-  Loader,
-} from "./loader";
+export { Loader, canonicalize, getBuiltinText, isBuiltin, load, resolveModulePath } from "./loader";
+

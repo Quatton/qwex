@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { QwlError } from "../errors";
 
+import stdLog from "../../builtins/std/log.yaml" with { type: "text" };
+import stdSteps from "../../builtins/std/steps.yaml" with { type: "text" };
+import stdTest from "../../builtins/std/test.yaml" with { type: "text" };
 // Import builtins as text
 import stdUtils from "../../builtins/std/utils.yaml" with { type: "text" };
-import stdLog from "../../builtins/std/log.yaml" with { type: "text" };
-import stdTest from "../../builtins/std/test.yaml" with { type: "text" };
-import stdSteps from "../../builtins/std/steps.yaml" with { type: "text" };
+import { QwlError } from "../errors";
 
 const BUILTINS: Record<string, string> = {
   "std/utils": stdUtils,
@@ -60,10 +60,7 @@ async function probeYamlPath(basePath: string): Promise<string | QwlError> {
   });
 }
 
-export async function resolveModulePath(
-  specifier: string,
-  parentPath?: string
-): Promise<string> {
+export async function resolveModulePath(specifier: string, parentPath?: string): Promise<string> {
   if (isBuiltin(specifier)) {
     return specifier;
   }

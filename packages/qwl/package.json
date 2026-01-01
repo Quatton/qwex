@@ -1,19 +1,23 @@
 {
   "name": "qwl",
-  "module": "index.ts",
   "type": "module",
+  "module": "index.ts",
   "scripts": {
-    "test": "bun test"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "@types/nunjucks": "^3.2.6"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+    "test": "bun test",
+    "lint": "oxlint .",
+    "format": "oxfmt . -c .oxfmtrc.jsonc"
   },
   "dependencies": {
     "arktype": "^2.1.29",
     "nunjucks": "^3.2.4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/nunjucks": "^3.2.6",
+    "oxfmt": "^0.21.0",
+    "oxlint": "^1.36.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
   }
 }

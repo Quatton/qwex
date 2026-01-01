@@ -1,0 +1,10 @@
+tasks:
+  helper:
+    cmd: echo "Hello from helper"
+
+  main:
+    cmd: |
+      # Get function definition
+      {{ tasks.helper | declare }}
+      # Call the function
+      helper

@@ -1,0 +1,10 @@
+vars:
+  name: World
+
+tasks:
+  heredoc:
+    cmd: |
+      {% eof %}
+      Hello {{ vars.name }}!
+      This is a heredoc.
+      {% endeof %}

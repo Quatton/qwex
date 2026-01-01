@@ -1,14 +1,7 @@
-import { describe, it, expect } from "bun:test";
-import {
-  RenderContext,
-  RenderProxyFactory,
-  type ProxyCallbacks,
-} from "./proxy";
-import {
-  resolveTaskDefs,
-  resolveVariableDefs,
-  type ModuleTemplate,
-} from "../ast";
+import { describe, expect, it } from "bun:test";
+
+import { resolveTaskDefs, resolveVariableDefs, type ModuleTemplate } from "../ast";
+import { RenderContext, RenderProxyFactory, type ProxyCallbacks } from "./proxy";
 
 function createTestModule(): ModuleTemplate {
   return {
@@ -206,10 +199,7 @@ describe("RenderProxyFactory", () => {
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
-      const subProxy = (proxy.modules as Record<string, unknown>).sub as Record<
-        string,
-        unknown
-      >;
+      const subProxy = (proxy.modules as Record<string, unknown>).sub as Record<string, unknown>;
 
       expect(subProxy).toBeDefined();
       expect(subProxy.vars).toBeDefined();
@@ -224,10 +214,7 @@ describe("RenderProxyFactory", () => {
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
-      const subProxy = (proxy.modules as Record<string, unknown>).sub as Record<
-        string,
-        unknown
-      >;
+      const subProxy = (proxy.modules as Record<string, unknown>).sub as Record<string, unknown>;
       const result = (subProxy.vars as Record<string, unknown>).subVar;
 
       expect(result).toBe("[VAR:sub.subVar]");
@@ -241,10 +228,7 @@ describe("RenderProxyFactory", () => {
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
-      const subProxy = (proxy.modules as Record<string, unknown>).sub as Record<
-        string,
-        unknown
-      >;
+      const subProxy = (proxy.modules as Record<string, unknown>).sub as Record<string, unknown>;
       const taskRef = (subProxy.tasks as Record<string, unknown>).subTask as {
         toString: () => string;
       };
@@ -304,10 +288,7 @@ describe("RenderProxyFactory", () => {
       const factory = new RenderProxyFactory(ctx, callbacks);
       const task = module.tasks.sayHello!;
 
-      const proxy = factory.createForTask(module, task, "") as Record<
-        string,
-        unknown
-      >;
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
       const taskFn = proxy.greet as { toString: () => string };
 
       expect(typeof taskFn.toString).toBe("function");
@@ -320,10 +301,7 @@ describe("RenderProxyFactory", () => {
       const factory = new RenderProxyFactory(ctx, callbacks);
       const task = module.tasks.sayHello!;
 
-      const proxy = factory.createForTask(module, task, "") as Record<
-        string,
-        unknown
-      >;
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
       const subProxy = proxy.sub as Record<string, unknown>;
 
       expect(subProxy).toBeDefined();
@@ -336,10 +314,7 @@ describe("RenderProxyFactory", () => {
       const factory = new RenderProxyFactory(ctx, callbacks);
       const task = module.tasks.sayHello!;
 
-      const proxy = factory.createForTask(module, task, "") as Record<
-        string,
-        unknown
-      >;
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
       const subProxy = proxy.sub as Record<string, unknown>;
       const taskFn = subProxy.subTask as { toString: () => string };
 
@@ -353,10 +328,7 @@ describe("RenderProxyFactory", () => {
       const factory = new RenderProxyFactory(ctx, callbacks);
       const task = module.tasks.sayHello!;
 
-      const proxy = factory.createForTask(module, task, "") as Record<
-        string,
-        unknown
-      >;
+      const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
       const subProxy = proxy.sub as Record<string, unknown>;
       const taskFn = subProxy.subTask as {
         inline: (vars?: Record<string, unknown>) => string;

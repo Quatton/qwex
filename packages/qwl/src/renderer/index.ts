@@ -1,2 +1,3 @@
-export * from "./renderer";
 export * from "./proxy";
+export * from "./renderer";
+

@@ -47,18 +47,12 @@ describe("loader", () => {
   });
 
   it("canonicalize throws for missing files", async () => {
-    const missing = path.join(
-      process.cwd(),
-      "this-file-should-not-exist-123456.txt"
-    );
+    const missing = path.join(process.cwd(), "this-file-should-not-exist-123456.txt");
     await expect(canonicalize(missing)).rejects.toThrow();
   });
 
   it("load throws for missing files", async () => {
-    const missing = path.join(
-      process.cwd(),
-      "this-file-should-not-exist-abcdef.txt"
-    );
+    const missing = path.join(process.cwd(), "this-file-should-not-exist-abcdef.txt");
     await expect(load(missing)).rejects.toThrow();
   });
 });

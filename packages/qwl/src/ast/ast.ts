@@ -1,11 +1,6 @@
 import { scope, type } from "arktype";
 
-type _VariableDef =
-  | string
-  | number
-  | boolean
-  | _VariableDef[]
-  | { [key: string]: _VariableDef };
+type _VariableDef = string | number | boolean | _VariableDef[] | { [key: string]: _VariableDef };
 
 const $ = scope({
   VariableDef:
@@ -15,15 +10,9 @@ const $ = scope({
     "desc?": "string",
     "vars?": "Record<string, VariableDef>",
   },
-  PartialModuleDef: {
-    "uses?": "string",
-    "vars?": "Record<string, VariableDef>",
-    "tasks?": "Record<string, TaskDef>",
-  },
-  ModuleDef: {
-    "...": "PartialModuleDef",
-    "modules?": "Record<string, PartialModuleDef>",
-  },
+  // Allow any string keys (including feature flags like "uses[ssh]")
+  PartialModuleDef: "Record<string, unknown>",
+  ModuleDef: "Record<string, unknown>",
 });
 
 const types = $.export();
@@ -32,6 +21,19 @@ export const TaskDef = types.TaskDef;
 export const VariableDef = types.VariableDef;
 export const ModuleDef = types.ModuleDef;
 
-export type TaskDef = typeof TaskDef.infer;
+export type TaskDef = {
+  cmd: string;
+  desc?: string;
+  vars?: Record<string, unknown>;
+};
+
 export type VariableDef = typeof VariableDef.infer;
-export type ModuleDef = typeof ModuleDef.infer;
+
+export type ModuleDef = {
+  uses?: string;
+  vars?: Record<string, unknown>;
+  tasks?: Record<string, TaskDef>;
+  modules?: Record<string, ModuleDef>;
+  // Allow any other keys for feature flags
+  [key: string]: unknown;
+};

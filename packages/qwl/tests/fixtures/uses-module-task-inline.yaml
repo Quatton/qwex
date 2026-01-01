@@ -1,0 +1,10 @@
+modules:
+  sub:
+    tasks:
+      subTask:
+        cmd: echo "From submodule"
+
+tasks:
+  main:
+    cmd: |
+      {{ uses('modules.sub.tasks.subTask') }}

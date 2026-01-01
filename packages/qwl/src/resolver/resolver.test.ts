@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { Resolver, type ModuleLoader } from "./resolver";
+import { strict as assert } from "node:assert";
+
 import { type ModuleDef } from "../ast";
 import { hash } from "../utils/hash";
-import { strict as assert } from "node:assert";
+import { Resolver, type ModuleLoader } from "./resolver";
 
 const createLoader = (modules: Record<string, ModuleDef>): ModuleLoader => {
   return async (path: string) => {
@@ -126,8 +127,6 @@ describe("Resolver", () => {
     };
     const resolver = new Resolver(createLoader(modules));
 
-    await expect(resolver.resolve("modA")).rejects.toThrow(
-      /Circular module dependency/
-    );
+    await expect(resolver.resolve("modA")).rejects.toThrow(/Circular module dependency/);
   });
 });

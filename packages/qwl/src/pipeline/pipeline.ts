@@ -1,12 +1,13 @@
-import { Loader, isBuiltin, resolveModulePath } from "../loader";
-import { Parser, type ParseResult } from "../parser";
-import { Resolver } from "../resolver";
-import { Renderer } from "../renderer";
 import { Emitter, type EmitResult } from "../emitter";
 import { QwlError } from "../errors";
+import { Loader, resolveModulePath } from "../loader";
+import { Parser } from "../parser";
+import { Renderer } from "../renderer";
+import { Resolver } from "../resolver";
 
 export interface PipelineOptions {
   entryPath: string;
+  features?: string[];
 }
 
 export class Pipeline {
@@ -17,20 +18,24 @@ export class Pipeline {
 
   async run(): Promise<EmitResult> {
     const entryPath = await resolveModulePath(this.options.entryPath);
+    const features = new Set(this.options.features ?? []);
 
-    const resolver = new Resolver(async (specifier, parentPath) => {
-      const resolvedPath = await resolveModulePath(specifier, parentPath);
-      const text = await this.loader.load(resolvedPath);
-      const parsed = this.parser.parse(text);
-      if (parsed instanceof QwlError) {
-        throw parsed;
-      }
-      return {
-        module: parsed.module,
-        hash: parsed.hash,
-        resolvedPath,
-      };
-    });
+    const resolver = new Resolver(
+      async (specifier, parentPath) => {
+        const resolvedPath = await resolveModulePath(specifier, parentPath);
+        const text = await this.loader.load(resolvedPath);
+        const parsed = this.parser.parse(text);
+        if (parsed instanceof QwlError) {
+          throw parsed;
+        }
+        return {
+          module: parsed.module,
+          hash: parsed.hash,
+          resolvedPath,
+        };
+      },
+      { features },
+    );
 
     const template = await resolver.resolve(entryPath);
     const renderer = new Renderer();
