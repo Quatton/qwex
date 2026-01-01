@@ -5,6 +5,7 @@ export type QwlErrorCode =
   | "YAML_PARSE_ERROR"
   | "SYNTAX_ERROR"
   | "RESOLVER_ERROR"
+  | "RENDERER_ERROR"
   | "INTERNAL_ERROR"
   | "UNKNOWN_ERROR";
 

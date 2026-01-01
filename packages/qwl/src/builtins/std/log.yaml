@@ -1,0 +1,63 @@
+name: log
+
+modules:
+  utils:
+    source: std/utils
+
+vars:
+  # Log levels: TRACE=1, DEBUG=2, INFO=3, WARNING=4, ERROR=5
+  # Default level is INFO (3)
+  level_to_num: |
+    case "$1" in
+      TRACE|trace|1) echo 1 ;;
+      DEBUG|debug|2) echo 2 ;;
+      INFO|info|3)   echo 3 ;;
+      WARN|warn|WARNING|warning|4) echo 4 ;;
+      ERROR|error|5) echo 5 ;;
+      *) echo 3 ;;  # default to INFO
+    esac
+
+tasks:
+  _should_log:
+    run: |
+      local msg_level="$1"
+      local current_level="${QWEX_LOG_LEVEL:-INFO}"
+      local msg_num current_num
+      msg_num=$({{ level_to_num }})
+      current_num=$(echo "$current_level" | xargs -I{} bash -c '{{ level_to_num }}' _ {})
+      [ "$msg_num" -ge "$current_num" ]
+
+  trace:
+    run: |
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      if log:_should_log 1; then
+        echo -e "${Q_GRAY}[TRACE]${Q_RESET} $1" >&2
+      fi
+
+  debug:
+    run: |
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      if log:_should_log 2; then
+        echo -e "${Q_GRAY}[DEBUG]${Q_RESET} $1" >&2
+      fi
+
+  info:
+    run: |
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      if log:_should_log 3; then
+        echo -e "${Q_BLUE}ℹ${Q_RESET} $1" >&2
+      fi
+
+  warn:
+    run: |
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      if log:_should_log 4; then
+        echo -e "${Q_YELLOW}⚠${Q_RESET} $1" >&2
+      fi
+
+  error:
+    run: |
+      {{ utils.once }} "utils:color" "{{ utils.color }}"
+      if log:_should_log 5; then
+        echo -e "${Q_RED}✘${Q_RESET} $1" >&2
+      fi
