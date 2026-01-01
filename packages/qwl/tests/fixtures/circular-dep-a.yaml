@@ -1,0 +1,8 @@
+# Test fixture: circular dependency A -> B -> A
+modules:
+  B:
+    uses: ./circular-dep-b.yaml
+
+tasks:
+  task1:
+    cmd: echo "Task 1"

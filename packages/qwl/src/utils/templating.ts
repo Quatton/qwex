@@ -33,7 +33,7 @@ function generateEofDelimiter(content: string): string {
 class EofExtension implements nunjucks.Extension {
   tags = ["eof"];
 
-  parse(parser: any, nodes: any, lexer: any): any {
+  parse(parser: any, nodes: any, _lexer: any): any {
     const tok = parser.nextToken();
     const args = parser.parseSignature(null, true);
     parser.advanceAfterBlockEnd(tok.value);
@@ -44,7 +44,7 @@ class EofExtension implements nunjucks.Extension {
     return new nodes.CallExtension(this, "run", args, [body]);
   }
 
-  run(context: unknown, ...args: unknown[]): nunjucks.runtime.SafeString {
+  run(_context: unknown, ...args: unknown[]): nunjucks.runtime.SafeString {
     const body = args.pop() as () => string;
     const explicitDelimiter = args[0] as string | undefined;
 
@@ -77,7 +77,7 @@ class ContextExtension implements nunjucks.Extension {
   tags = ["context"];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  parse(parser: any, nodes: any, lexer: any): any {
+  parse(parser: any, nodes: any, _lexer: any): any {
     const tok = parser.nextToken();
     const args = parser.parseSignature(null, true);
     parser.advanceAfterBlockEnd(tok.value);
@@ -175,7 +175,7 @@ const color = (text: string, colorInput: string): string => {
     return text;
   }
   return `${colorCode}${text}${resetCode}`;
-}
+};
 
 nj.addFilter("color", color);
 
@@ -212,7 +212,6 @@ export { nj };
 //   console.log("Output:", template2);
 //   console.log("Deps after:", [...mockRenderContext.currentDeps]);
 // }
-
 
 if (import.meta.main) {
   console.log(color("This is green text", "green"));

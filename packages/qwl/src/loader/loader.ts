@@ -4,7 +4,6 @@ import path from "node:path";
 import stdLog from "../../builtins/std/log.yaml" with { type: "text" };
 import stdSteps from "../../builtins/std/steps.yaml" with { type: "text" };
 import stdTest from "../../builtins/std/test.yaml" with { type: "text" };
-// Import builtins as text
 import stdUtils from "../../builtins/std/utils.yaml" with { type: "text" };
 import { QwlError } from "../errors";
 

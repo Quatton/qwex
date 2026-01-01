@@ -55,11 +55,7 @@ export class RenderProxyFactory {
     const varsProxy = this.createVarsProxy(module, task, prefix);
     const tasksProxy = this.createTasksProxy(module, prefix);
     const modulesProxy = this.createModulesProxy(module, prefix);
-
-    // Create uses() function for this context
     const usesFunction = this.createUsesFunction(module, prefix);
-
-    // Expose render context for {% context %} extension
     const __renderContext = this.ctx;
 
     return new Proxy(
@@ -184,7 +180,6 @@ export class RenderProxyFactory {
     prefix: string,
   ): (path: string, overrideVars?: Record<string, unknown>) => string {
     return (path: string, overrideVars: Record<string, unknown> = {}): string => {
-      // Check if it's a task path
       if (path.startsWith("tasks.") || path.startsWith("modules.")) {
         return this.resolveTaskPath(module, path, prefix, overrideVars);
       }
@@ -209,7 +204,6 @@ export class RenderProxyFactory {
     let currentPrefix = prefix;
     let i = 0;
 
-    // Navigate through modules
     while (i < parts.length - 2) {
       const part = parts[i];
       if (!part) {
@@ -229,7 +223,6 @@ export class RenderProxyFactory {
       i++;
     }
 
-    // Extract task part
     if (parts[i] === "tasks") {
       i++;
     }

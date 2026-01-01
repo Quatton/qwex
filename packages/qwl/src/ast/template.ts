@@ -36,7 +36,7 @@ export type TaskTemplate = Omit<TaskDef, "cmd" | "vars"> & {
 export type ModuleTemplate = {
   __meta__: {
     used: Set<string>;
-    sourcePath?: string; // Absolute path to the source file for uses()
+    sourcePath?: string;
   };
   vars: Record<string, VariableTemplate>;
   tasks: Record<string, TaskTemplate>;

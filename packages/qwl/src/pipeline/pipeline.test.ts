@@ -7,16 +7,16 @@ const FIXTURES_DIR = path.join(import.meta.dir, "../../tests/fixtures");
 
 describe("Pipeline", () => {
   describe("constructor", () => {
-    it("accepts entry path option", () => {
+    it("creates pipeline instance with valid source path", () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "simple.yaml"),
       });
-      expect(pipeline).toBeDefined();
+      expect(pipeline).toBeInstanceOf(Pipeline);
     });
   });
 
   describe("run", () => {
-    it("returns EmitResult with script and count", async () => {
+    it("generates bash script with task count", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "simple.yaml"),
       });
@@ -27,6 +27,8 @@ describe("Pipeline", () => {
       expect(result).toHaveProperty("count");
       expect(typeof result.script).toBe("string");
       expect(typeof result.count).toBe("number");
+      expect(result.count).toBeGreaterThan(0);
+      expect(result.script.length).toBeGreaterThan(0);
     });
 
     it("resolves relative paths from cwd", async () => {
@@ -36,28 +38,26 @@ describe("Pipeline", () => {
         const pipeline = new Pipeline({ sourcePath: "simple.yaml" });
         const result = await pipeline.run();
         expect(result.count).toBeGreaterThan(0);
+        expect(result.script).toContain("echo");
       } finally {
         process.chdir(originalCwd);
       }
     });
 
-    it("throws QwlError for non-existent file", async () => {
+    it("throws error for non-existent file", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "non-existent.yaml"),
       });
 
-      await expect(pipeline.run()).rejects.toThrow();
+      await expect(pipeline.run()).rejects.toThrow(/LOADER_ERROR|ENOENT|cannot find/i);
     });
 
-    it("throws on circular module dependency", async () => {
-      // Create a test that would have circular deps
-      // For now, just verify the pipeline works
+    it("throws error on circular module dependency", async () => {
       const pipeline = new Pipeline({
-        sourcePath: path.join(FIXTURES_DIR, "simple.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "circular-dep-a.yaml"),
       });
 
-      const result = await pipeline.run();
-      expect(result.script).toContain("echo");
+      await expect(pipeline.run()).rejects.toThrow(/Circular module dependency/);
     });
   });
 });

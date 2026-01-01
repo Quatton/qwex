@@ -8,7 +8,7 @@ const FIXTURES_DIR = path.join(import.meta.dir, "fixtures");
 
 describe("Pipeline Integration", () => {
   describe("simple module", () => {
-    it("generates expected bash script", async () => {
+    it("generates bash script matching expected output", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "simple.yaml"),
       });
@@ -36,7 +36,7 @@ describe("Pipeline Integration", () => {
   });
 
   describe("nested modules", () => {
-    it("renders inline tasks correctly", async () => {
+    it("inlines tasks from submodules and same module", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "nested.yaml"),
       });
@@ -51,7 +51,7 @@ describe("Pipeline Integration", () => {
   });
 
   describe("variable precedence", () => {
-    it("task vars override module vars", async () => {
+    it("resolves task-level vars over module-level vars", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "var-precedence.yaml"),
       });
@@ -65,8 +65,8 @@ describe("Pipeline Integration", () => {
     });
   });
 
-  describe("complex inheritance", () => {
-    it("renders nested module tasks with correct prefixes", async () => {
+  describe("complex module inheritance", () => {
+    it("applies variable scoping correctly through nested modules", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
       });
@@ -83,14 +83,14 @@ describe("Pipeline Integration", () => {
       expect(result.script).toContain('echo "d1: origin=from-D"');
     });
 
-    it("uses bash-safe function names (colon separator)", async () => {
+    it("generates bash-safe function names with colon separators", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
       });
 
       const result = await pipeline.run();
 
-      // Function definitions use colons
+      // Function definitions use colons for module hierarchy
       expect(result.script).toContain("B:c1()");
       expect(result.script).toContain("B:D:d1()");
 
@@ -99,32 +99,33 @@ describe("Pipeline Integration", () => {
       expect(result.script).toContain("B:c2");
     });
 
-    it("deduplicates tasks referenced multiple times", async () => {
+    it("defines each task function only once despite multiple references", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
       });
 
       const result = await pipeline.run();
 
-      // Count occurrences of a1() function definition
+      // Count occurrences of a1() function definition - should be exactly 1
       const a1Defs = result.script.match(/^a1\(\)/gm);
+      expect(a1Defs).toBeDefined();
       expect(a1Defs?.length).toBe(1);
     });
 
-    it("inlines tasks without creating dependencies", async () => {
+    it("duplicates inlined task code without creating function dependencies", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
       });
 
       const result = await pipeline.run();
 
-      // testInlineDedup inlines a1 twice, check both are present
+      // testInlineDedup inlines a1 twice - both copies should be present in the output
       expect(result.script).toContain('echo "a1: origin=from-entry"\necho "a1: origin=from-entry"');
     });
   });
 
   describe("uses() function", () => {
-    it("includes file content in task", async () => {
+    it("includes external file content directly in task body", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "uses-function.yaml"),
       });
@@ -136,49 +137,48 @@ describe("Pipeline Integration", () => {
       expect(result.script).toContain('echo "Variable: $1"');
     });
 
-    it("inlines task with uses('tasks.taskName')", async () => {
+    it("inlines local task code with uses('tasks.taskName')", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "uses-task-inline.yaml"),
       });
 
       const result = await pipeline.run();
 
-      // Check that the task is inlined
+      // Check that the task code is inlined directly
       expect(result.script).toContain('echo "Inlined: echo');
       expect(result.script).toContain("Hello from helper");
     });
 
-    it("inlines module task with uses('modules.sub.tasks.taskName')", async () => {
+    it("inlines task from submodule with uses('modules.sub.tasks.taskName')", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "uses-module-task-inline.yaml"),
       });
 
       const result = await pipeline.run();
 
-      // Check that the submodule task is inlined
+      // Check that the submodule task code is inlined
       expect(result.script).toContain('echo "From submodule"');
     });
   });
 
   describe("eof tag", () => {
-    it("wraps content in heredoc syntax with unique delimiter", async () => {
+    it("generates heredoc syntax with unique hash-based delimiter", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "eof-tag.yaml"),
       });
 
       const result = await pipeline.run();
 
-      // Check that heredoc syntax is present (no cat <<, just delimiter)
-      expect(result.script).toMatch(/'EOF_[A-F0-9]+'/); // Unique hash-based delimiter
+      // Check that heredoc syntax is present with unique delimiter
+      expect(result.script).toMatch(/'EOF_[A-F0-9]+'/); // Opening delimiter with quotes
       expect(result.script).toContain("Hello World!");
       expect(result.script).toContain("This is a heredoc.");
-      // The closing delimiter should match (without quotes)
-      expect(result.script).toMatch(/EOF_[A-F0-9]+$/m);
+      expect(result.script).toMatch(/^EOF_[A-F0-9]+$/m); // Closing delimiter without quotes
     });
   });
 
   describe("context tag", () => {
-    it("outputs declare -f for task references in context block", async () => {
+    it("generates declare -f for tasks referenced in context blocks", async () => {
       const pipeline = new Pipeline({
         sourcePath: path.join(FIXTURES_DIR, "context-tag.yaml"),
       });
@@ -187,7 +187,7 @@ describe("Pipeline Integration", () => {
 
       // Check that declare -f is output for referenced tasks
       expect(result.script).toContain("declare -f helper");
-      // And the task call is still there
+      // And the task call is still present
       expect(result.script).toContain("helper");
     });
   });

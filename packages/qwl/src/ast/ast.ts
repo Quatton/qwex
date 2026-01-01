@@ -10,9 +10,15 @@ const $ = scope({
     "desc?": "string",
     "vars?": "Record<string, VariableDef>",
   },
-  // Allow any string keys (including feature flags like "uses[ssh]")
-  PartialModuleDef: "Record<string, unknown>",
-  ModuleDef: "Record<string, unknown>",
+  PartialModuleDef: {
+    "uses?": "string",
+    "vars?": "Record<string, VariableDef>",
+    "tasks?": "Record<string, TaskDef>",
+  },
+  ModuleDef: {
+    "...": "PartialModuleDef",
+    "modules?": "Record<string, PartialModuleDef>",
+  },
 });
 
 const types = $.export();
@@ -21,19 +27,6 @@ export const TaskDef = types.TaskDef;
 export const VariableDef = types.VariableDef;
 export const ModuleDef = types.ModuleDef;
 
-export type TaskDef = {
-  cmd: string | string[];
-  desc?: string;
-  vars?: Record<string, unknown>;
-};
-
+export type TaskDef = typeof TaskDef.infer;
 export type VariableDef = typeof VariableDef.infer;
-
-export type ModuleDef = {
-  uses?: string;
-  vars?: Record<string, unknown>;
-  tasks?: Record<string, TaskDef>;
-  modules?: Record<string, ModuleDef>;
-  // Allow any other keys for feature flags
-  [key: string]: unknown;
-};
+export type ModuleDef = typeof ModuleDef.infer;
