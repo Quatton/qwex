@@ -1,9 +1,13 @@
 {
   "name": "qwex",
-  "type": "module",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
-  "module": "index.ts"
+  "type": "module",
+  "scripts": {
+    "format": "oxfmt . -c .oxfmtrc.jsonc",
+    "lint": "oxlint ."
+  }
 }

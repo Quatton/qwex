@@ -1,10 +1,10 @@
 import {
-    createEmptyModuleTemplate,
-    resolveTaskDefs,
-    resolveVariableDefs,
-    type ModuleDef,
-    type ModuleTemplate,
-    type TaskDef,
+  createEmptyModuleTemplate,
+  resolveTaskDefs,
+  resolveVariableDefs,
+  type ModuleDef,
+  type ModuleTemplate,
+  type TaskDef,
 } from "../ast";
 import { QwlError } from "../errors";
 import { filterByFeatures, selectUses } from "./features";

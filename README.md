@@ -36,4 +36,3 @@ env:
         key: GITHUB_APP_PRIVATE_KEY
   # ... map other vars
 ```
-

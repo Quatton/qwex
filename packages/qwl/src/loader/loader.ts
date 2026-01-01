@@ -29,7 +29,10 @@ export async function canonicalize(filePath: string): Promise<string> {
   try {
     return await fs.realpath(path.resolve(filePath));
   } catch (e) {
-    throw QwlError.from(e);
+    throw new QwlError({
+      code: "LOADER_ERROR",
+      message: `Failed to canonicalize path '${filePath}': ${(e as Error).message}.`,
+    });
   }
 }
 
@@ -37,7 +40,10 @@ export async function load(filePath: string): Promise<string> {
   try {
     return await fs.readFile(filePath, "utf8");
   } catch (e) {
-    throw QwlError.from(e);
+    throw new QwlError({
+      code: "LOADER_ERROR",
+      message: `Failed to load file '${filePath}': ${(e as Error).message}`,
+    });
   }
 }
 
@@ -61,6 +67,13 @@ async function probeYamlPath(basePath: string): Promise<string | QwlError> {
 }
 
 export async function resolveModulePath(specifier: string, parentPath?: string): Promise<string> {
+  if (!specifier) {
+    throw new QwlError({
+      code: "LOADER_ERROR",
+      message: "Module specifier is required",
+    });
+  }
+
   if (isBuiltin(specifier)) {
     return specifier;
   }

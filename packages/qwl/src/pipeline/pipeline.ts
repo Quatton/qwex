@@ -6,7 +6,7 @@ import { Renderer } from "../renderer";
 import { Resolver } from "../resolver";
 
 export interface PipelineOptions {
-  entryPath: string;
+  sourcePath: string;
   features?: string[];
 }
 
@@ -17,7 +17,7 @@ export class Pipeline {
   constructor(private options: PipelineOptions) {}
 
   async run(): Promise<EmitResult> {
-    const entryPath = await resolveModulePath(this.options.entryPath);
+    const entryPath = await resolveModulePath(this.options.sourcePath);
     const features = new Set(this.options.features ?? []);
 
     const resolver = new Resolver(

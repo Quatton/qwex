@@ -10,17 +10,17 @@
 ### Considerations
 
 - I thought about making a client-side cluster, removing the kueue and kubernetes entirely. The idea is to not make a job scheduler but only a coordinator that checks if jobs are running, and the user just uses it as a "spreadsheet" to coordinate this with their peers.
-  - However, I decided against this because 
+  - However, I decided against this because
     - It would be reinventing the wheel
     - This makes actual distributed computing impossible.
     - Having to suspend someone else's job is not feasible in a client-side only model.
 - We will stick to the motto of "let's use great technologies to build accessible applications", rather than "let's use accessible technologies to build great applications".
 - Renamed to Qwex
-  
+
 ### Activities
 
 - Add RBAC manifests for the controller to manage kueue workloads.
-  > Since this RBAC manifests only live in side the 
+  > Since this RBAC manifests only live in side the
 
 ## What is Qwex?
 
@@ -54,6 +54,7 @@ After extensive design discussions, we've finalized the architecture for Qwex's 
 #### Core Concepts
 
 **Job vs Run**
+
 - **Job**: Template/definition of work (the recipe)
   - Defines: command, environment, dependencies, configuration
   - Reusable and versioned
@@ -64,6 +65,7 @@ After extensive design discussions, we've finalized the architecture for Qwex's 
   - Tracks: status, timestamps, exit code, artifacts
 
 **Runner vs Run Relationship**
+
 - **Run**: Pure data model (state object)
   - Contains: ID, JobID, Status, CreatedAt, StartedAt, FinishedAt, ExitCode, Error, Metadata
   - Immutable/append-only
@@ -78,6 +80,7 @@ After extensive design discussions, we've finalized the architecture for Qwex's 
 #### Run Lifecycle States
 
 Simplified state machine for MVP:
+
 ```
 
 
@@ -89,6 +92,7 @@ SUCCEEDED | FAILED | CANCELLED
 ```
 
 Future expansion:
+
 ```
 PENDING → INITIALIZING → RUNNING → FINALIZING → SUCCEEDED/FAILED/CANCELLED
 ```
@@ -96,7 +100,8 @@ PENDING → INITIALIZING → RUNNING → FINALIZING → SUCCEEDED/FAILED/CANCELL
 #### Directory Structure
 
 **Nested structure** (matches wandb/mlflow patterns):
-```
+
+````
 project/
   train.py
   out/                    # conventional output dir (user writes here)
@@ -118,9 +123,10 @@ project/
 # User code - no qwex-specific logic needed
 import torch
 torch.save(model.state_dict(), "out/model.pth")
-```
+````
 
 **Configuration** (`.qwex/config.yaml`):
+
 ```yaml
 artifacts:
   watch_directories:
@@ -136,11 +142,13 @@ artifacts:
 ```
 
 **Implementation**: Post-run directory scan (not real-time fsnotify)
+
 - After command exits, scan configured directories
 - Copy files to `.qwex/runs/<runId>/files/`
 - Generate `artifacts.json` manifest with checksums
 
 **CLI override:**
+
 ```bash
 qwex run python train.py --local --watch outputs,models
 ```
@@ -150,16 +158,19 @@ qwex run python train.py --local --watch outputs,models
 **Design principle**: Qwex is **execution layer**, not **tracking layer**
 
 **What qwex stores:**
+
 - Execution metadata: status, command, exit code, timestamps
 - Console output: stdout/stderr
 - Artifacts: files from watched directories
 
 **What qwex does NOT store:**
+
 - Metrics/plots (leave to wandb/mlflow)
 - Hyperparameters (except as command args)
 - Training checkpoints (unless in watched dir)
 
 **Example with wandb:**
+
 ```python
 import wandb
 import torch
@@ -175,17 +186,20 @@ wandb.save("out/model.pth")
 ```
 
 **Result:**
+
 - Qwex captures: `out/model.pth` → `.qwex/runs/abc123/files/`
 - Wandb captures: `out/model.pth` → `wandb/run-xyz/files/`
 - No conflicts — orthogonal systems
 
 **Environment variables (optional):**
+
 ```bash
 QWEX_RUN_ID=abc123
 QWEX_RUN_DIR=/path/to/.qwex/runs/abc123
 ```
 
 User code can optionally use these to link tracking runs:
+
 ```python
 import wandb
 import os
@@ -200,26 +214,28 @@ wandb.init(
 
     - out
     - models
-```
+
+````
 
 **Code (language-agnostic):**
 ```python
 
 **Run:**
 📦 Captured 1 artifact (50 MB)
-```
+````
 
 **View artifacts:**
-  out/model.pth (50.0 MB)
-
+out/model.pth (50.0 MB)
 
 #### Key Benefits
+
 ✅ **Tool-agnostic**: coexists with wandb/mlflow/tensorboard  
-✅ **Conventional**: `out/` is standard (like `node_modules/`, `build/`)  
+✅ **Conventional**: `out/` is standard (like `node_modules/`, `build/`)
 
 1. Update `pkg/qsdk/runner/interface.go` with Job/Run separation and lifecycle states
 
 ## Week 9: Nov 26, 2025
+
 #### Design Philosophy
 
 - **Open protocol, flexible implementation**: Protocol is OSS, servers implement it however they want
@@ -233,23 +249,23 @@ Every qwex-compatible server exposes `/.well-known/qwex.json`:
 ```json
 {
   "qwex": "1.0",
-  
+
   "server": {
     "name": "string",
     "version": "string",
     "docs": "string (optional)"
   },
-  
+
   "api": {
     "versions": ["v1"],
     "base": "/api"
   },
-  
+
   "auth": {
     "type": "oauth2 | api-key | local | none",
     "spec": { }
   },
-  
+
   "features": {
     "source": { },
     "artifacts": { },
@@ -300,14 +316,14 @@ Features don't change API shape, they change behavior:
     "maxSize": 104857600,
     "requireClean": true
   },
-  
+
   "artifacts": {
     "enabled": true,
     "autoUpload": true,
     "patterns": ["*.pt", "*.onnx", "outputs/**"],
     "maxSize": 1073741824
   },
-  
+
   "runs": {
     "wait": true,
     "cancel": true,
@@ -337,12 +353,14 @@ Features don't change API shape, they change behavior:
 **Problem**: How does remote execution get your code?
 
 **Solution**: Git bundle approach (strict mode)
+
 - Must commit before run (enforces reproducibility)
 - Client creates git bundle of committed code
 - Bundle uploaded to S3 (for remote) or worktree created (for local)
 - Every run tied to exact git SHA
 
 **Local runs**: Git worktree (instant, no network)
+
 ```bash
 git worktree add /tmp/qwex-runs/<run-id> <sha> --detach
 # Container mounts this directory
@@ -350,6 +368,7 @@ git worktree add /tmp/qwex-runs/<run-id> <sha> --detach
 ```
 
 **Remote runs**: Git bundle + S3
+
 ```bash
 git bundle create /tmp/repo.bundle --all
 # Upload to s3://qwex/source/<run-id>/repo.bundle
@@ -357,6 +376,7 @@ git bundle create /tmp/repo.bundle --all
 ```
 
 **Benefits**:
+
 - No GitHub token needed (bundle contains everything)
 - Perfect reproducibility (exact SHA)
 - `qwex checkout <run-id>` can recreate exact state
@@ -365,6 +385,7 @@ git bundle create /tmp/repo.bundle --all
 #### Example Manifests
 
 **qwexcloud (production)**:
+
 ```json
 {
   "qwex": "1.0",
@@ -394,6 +415,7 @@ git bundle create /tmp/repo.bundle --all
 ```
 
 **qwex-local (development)**:
+
 ```json
 {
   "qwex": "1.0",
@@ -468,28 +490,28 @@ ArtifactUrlResponse:
 #### Implementation Plan
 
 **Phase 1: Protocol Foundation**
+
 1. Create `docs/protocol/qwp-v1.md` — Full spec
 2. Create `pkg/qwp/` — Go types for manifest + requests/responses
 3. Create `api/qwp/openapi.yaml` — OpenAPI spec for v1 routes
 
-**Phase 2: qwex-local Server**
-4. Create local server implementing QWP v1
-   - Auth: api-key (simple header check)
-   - Source: mount (git worktree)
-   - Runs: local + docker backends
-   - Artifacts: disabled initially
+**Phase 2: qwex-local Server** 4. Create local server implementing QWP v1
 
-**Phase 3: qwexctl Refactor**
-5. Create `pkg/qwp/client.go` — Protocol client
-6. Refactor qwexctl to use qwp client
-   - `qwexctl init <server>` — Register server
-   - `qwexctl run` — Use protocol
+- Auth: api-key (simple header check)
+- Source: mount (git worktree)
+- Runs: local + docker backends
+- Artifacts: disabled initially
 
-**Phase 4: qwexcloud Alignment**
-7. Update qwexcloud to implement QWP v1
-   - Add `/.well-known/qwex.json`
-   - Align routes to spec
-   - Add source upload endpoint
+**Phase 3: qwexctl Refactor** 5. Create `pkg/qwp/client.go` — Protocol client 6. Refactor qwexctl to use qwp client
+
+- `qwexctl init <server>` — Register server
+- `qwexctl run` — Use protocol
+
+**Phase 4: qwexcloud Alignment** 7. Update qwexcloud to implement QWP v1
+
+- Add `/.well-known/qwex.json`
+- Align routes to spec
+- Add source upload endpoint
 
 ## Week 9: Nov 29, 2025
 
@@ -498,16 +520,19 @@ ArtifactUrlResponse:
 In preparation for the new Python-based daemon and client architecture, we have removed the legacy Go codebase. This allows us to focus on a single language stack and iterate faster on the new daemon design.
 
 **Safety Measures:**
+
 - A backup branch was created before deletion: `wip/go-backup-20251129T115607Z`
 - The deletion commit on `main` is: `45323bc`
 
 **Removed Components:**
+
 - `apps/qwexcloud` (Go server)
 - `apps/qwexctl` (Go CLI)
 - `pkg/*` (Go packages: k8s, qapi, qrunner, etc.)
 - `go.mod`, `go.sum`
 
 **Next Steps:**
+
 - Implement the Python daemon with UDS/HTTP support.
 - Refactor `qwexctl` (Python) to communicate with the daemon.
 - Implement the plugin system for runners.
@@ -525,6 +550,7 @@ After discovering design flaws in the current implementation, we're documenting 
 **Every run executes in a git worktree, not the working directory.**
 
 This ensures:
+
 1. **Reproducibility**: Run tied to exact commit SHA
 2. **Isolation**: Concurrent runs don't interfere
 3. **Clean state**: No uncommitted changes affect execution
@@ -586,11 +612,13 @@ $QWEX_HOME/                    # ~/.qwex by default, or workspace/.qwex
 Storage handles syncing code to remote execution environments.
 
 **git-direct**: Push to bare repo via SSH
+
 - Used with SSH layer
 - Remote creates worktree from pushed commit
 - `base_path` should come from layer's `qwex_home`, not hardcoded
 
 **mount**: Direct filesystem mount
+
 - Used with local/docker execution
 - No transfer needed, worktree created locally
 
@@ -617,18 +645,21 @@ runners:
 ```
 
 Storage config should reference layer to avoid duplication:
+
 - `ssh_host` comes from layer
 - `base_path` = `{layer.qwex_home}/repos`
 
 #### Registry Decorators
 
 Simplified decorator names:
+
 - `@layer` instead of `@register_layer`
 - `@storage` instead of `@register_storage`
 
 #### Checkout a Run
 
 To reproduce a run:
+
 ```bash
 qwex checkout <run-id>
 # reads run.json, gets commit, creates worktree
@@ -643,7 +674,6 @@ git worktree add ./run-<run-id> <commit>
 4. **Shorter decorators**: `@layer`, `@storage`
 
 ---
-
 
 ## Week 10: Dec 3, 2025
 
@@ -689,11 +719,13 @@ Instead of hiding layers behind Python abstractions, expose them as **user-owned
 #### Template Contract
 
 Each template:
+
 1. Receives context variables (run ID, workspace, layer config, etc.)
-2. Wraps `{{ inner }}` or `{{ command }}` 
+2. Wraps `{{ inner }}` or `{{ command }}`
 3. Outputs valid shell
 
 **Example `ssh.sh.j2`:**
+
 ```bash
 #!/bin/bash
 ssh {{ layers.ssh.user }}@{{ layers.ssh.host }} bash -c '
@@ -702,6 +734,7 @@ ssh {{ layers.ssh.user }}@{{ layers.ssh.host }} bash -c '
 ```
 
 **Composition (ssh → docker):**
+
 ```bash
 # Rendered for: qwex run -r hpc echo hello
 ssh qtn@csc bash -c '
@@ -737,7 +770,6 @@ ssh qtn@csc bash -c '
 2. Add second layer (docker) and prove composition works.
 3. Only then consider Go rewrite, registry, etc.
 
-
 ---
 
 ## Dec 3, 2025: Global Qwex Home Architecture
@@ -752,7 +784,7 @@ ssh qtn@csc bash -c '
 $HOME/.qwex/$WORKSPACE_NAME/runs/$RUN_ID/
 ├── meta/
 │   ├── id
-│   ├── command_line  
+│   ├── command_line
 │   ├── status
 │   ├── created_at
 │   ├── started_at
@@ -764,6 +796,7 @@ $HOME/.qwex/$WORKSPACE_NAME/runs/$RUN_ID/
 ```
 
 **Benefits**:
+
 - Bash can easily read/write individual files with `>` and `cat`
 - No JSON parsing complexity
 - Simple directory structure for run discovery
@@ -771,6 +804,7 @@ $HOME/.qwex/$WORKSPACE_NAME/runs/$RUN_ID/
 - Atomic updates (each file is independent)
 
 **Implementation**:
+
 - Workspace name extracted from `qwex.yaml` `name:` field
 - Global qwex home at `$HOME/.qwex/$WORKSPACE_NAME/runs/`
 - File-based metadata creation and status updates
@@ -781,7 +815,6 @@ $HOME/.qwex/$WORKSPACE_NAME/runs/$RUN_ID/
 ---
 
 ## Dec 5, 2025: Asking questions
-
 
 1. What core problem are you actually trying to solve? Beyond the surface-level features (running jobs on SSH/SLURM/Singularity, etc.), what's the fundamental pain point or inefficiency in distributed computing/ML workflows that motivated qwex? Why isn't this just a wrapper around existing tools like Kubernetes, Ray, or even plain SSH scripts? What evidence do you have that this problem is widespread enough to warrant a new tool?
 
@@ -810,9 +843,11 @@ $HOME/.qwex/$WORKSPACE_NAME/runs/$RUN_ID/
 ## Reflection Log: Why This Design, Not Another Way
 
 ### Overview
+
 This reflection log synthesizes the design rationale for Qwex (Queued Workspace-Aware EXecutor) based on critical questioning and self-examination. As a thesis foundation, it addresses why certain architectural choices were made, trade-offs considered, and alternatives rejected. The analysis draws from interviews (N=15 with ML engineers, students, and professors), project evolution, and ongoing development challenges. Critically, Qwex positions itself as a "paradigm shift" in ML infrastructure by filling the execution gap in knowledge sharing, but this claim remains unproven without empirical data.
 
 ### Core Problem and Motivation
+
 **Why this problem?** The emergence of AI/ML commoditization has made models, code, SDKs, and pipelines open-source, but infrastructure lacks standardized protocols. Research code (especially private) is notoriously hard to reproduce: "here's the data, run it on any GPU/container!" wastes researchers' time and GPU resources. Interviews revealed diverse pain points—burning money on idle VMs, ad-hoc spreadsheets for reservations, overnight runs on personal PCs—highlighting socio-economic barriers to standardization adoption. Qwex isn't a wrapper for one tool but a "standard-gatherer" for any integrable tool, allowing users to compose solutions without imposing new standards.
 
 **Why not alternatives?** Pushing for universal protocols (e.g., a job spec standard) was rejected due to adoption inertia. Existing tools (K8s, Ray) solve parts but not composition across heterogeneous environments. Qwex acts as "protective gear" over "hot lava," enabling reproducibility without waiting for ecosystem consensus.
@@ -820,6 +855,7 @@ This reflection log synthesizes the design rationale for Qwex (Queued Workspace-
 **Critical doubt:** Without quantitative metrics (e.g., time waste quantification), this is anecdotal. The thesis risks being dismissed as solving a "first-world problem" in academia.
 
 ### Architecture and Modularity
+
 **Why modular (qwml, qwp, qwexcli)?** To solve "N x M problems"—combinatorial explosions from multiple runtimes (N) and backends (M). Analogous to React's component modularity vs. monolithic HTML: swapping layers (e.g., engines, layers, commands) is easier. Modules are "first-class" like in programming languages (unlike C++'s lack thereof). Fragmentation (multiple pyproject.toml files) stems from iterative pivots, not design intent—admitted as "stupidity" in managing files.
 
 **Why not monolithic or DSL?** Monolithic would limit extensibility. A DSL was avoided to prevent "yet another standard," aligning with the anti-standard ethos. Instead, shell templates (e.g., ssh.sh.j2) provide cohesion: "just call qwex run."
@@ -827,6 +863,7 @@ This reflection log synthesizes the design rationale for Qwex (Queued Workspace-
 **Critical doubt:** Modularity may be premature without proof of N x M benefits. Fragmentation indicates instability; if unaddressed, it undermines maintainability. Evidence needed: user studies showing modularity reduces complexity.
 
 ### Runner System and Trade-Offs
+
 **Why runners as a "compiler," not custom?** Provides a baseline for comparing trade-offs: cloud-native ease vs. on-prem simplicity (e.g., K8s PVCs/ingress vs. user-dir cache). Shows complexities clearly (e.g., SSH envelope encryption vs. K8s secrets). Not custom runners but a compiler generating execution scripts.
 
 **Why prioritize SSH/SLURM/Singularity over cloud-only?** Interviews showed hybrid/on-prem needs. Cloud tools (AWS Batch) are easier but obscure trade-offs; Qwex makes them explicit.
@@ -834,6 +871,7 @@ This reflection log synthesizes the design rationale for Qwex (Queued Workspace-
 **Critical doubt:** No benchmarks yet (project 50% done). Claims of "much easier" integrations are speculative. Evaluation via Olsen's HCI criteria is promising but unapplied—how will it validate effectiveness?
 
 ### Failure Modes and Robustness
+
 **Why minimal error handling?** Assumes user errors ("footguns") are inevitable; Qwex is a "port" for plugging in, not a safety net. Only bugs in compilation are "real" errors. Deferred for later.
 
 **Why not prioritize robustness?** Focus on MVP execution over perfection.
@@ -841,6 +879,7 @@ This reflection log synthesizes the design rationale for Qwex (Queued Workspace-
 **Critical doubt:** Logs show file-not-found and Rust panics—unacceptable for production. Skipping this weakens the thesis; robustness is key for reproducibility claims.
 
 ### Uniqueness and Competitors
+
 **Why composable over wrappers?** Users have different requirements (e.g., Ray migration pains); keeping runtime outside code avoids lock-in. Shell compiler enables composition (e.g., dask.sh.j2) beyond Makefiles' limitations. Integrates MLflow/Prefect/Dask without replacing them.
 
 **Why not use existing tools directly?** They don't compose across backends or isolate runtimes.
@@ -848,6 +887,7 @@ This reflection log synthesizes the design rationale for Qwex (Queued Workspace-
 **Critical doubt:** If Makefiles can do similar with plugins, what's the unique value? Examples needed to prove superiority.
 
 ### Overarching Narrative and Risks
+
 **Why a "paradigm shift"?** Fills the "last layer" of ML sharing: executing code. Weights & Biases tracks experiments assuming code runs; GitHub Actions handles CI/CD. Qwex enables reproducible execution across infrastructures.
 
 **Risks downplayed:** Abandonment (biggest fear)—mitigated by pivoting (e.g., from prototype 1). No Plan B beyond "think of a way to pivot." Project incompleteness (50% done, no data) risks thesis failure.
@@ -855,16 +895,16 @@ This reflection log synthesizes the design rationale for Qwex (Queued Workspace-
 **Critical doubt:** "Paradigm shift" is bold without adoption evidence. If abandoned, the thesis becomes a cautionary tale of overambition. Pivot to studying socio-economic factors instead?
 
 ### Lessons and Thesis Implications
-This design reflects pragmatism over perfection: build what works for users, avoid standards wars. But critical gaps (data, robustness, stability) must be addressed. For the thesis, emphasize iterative design, user-centered insights, and the "standard-gatherer" metaphor. Future work: complete evaluation, stabilize architecture, gather metrics. If Qwex succeeds, it validates the approach; if not, it highlights infrastructure standardization's challenges.
 
+This design reflects pragmatism over perfection: build what works for users, avoid standards wars. But critical gaps (data, robustness, stability) must be addressed. For the thesis, emphasize iterative design, user-centered insights, and the "standard-gatherer" metaphor. Future work: complete evaluation, stabilize architecture, gather metrics. If Qwex succeeds, it validates the approach; if not, it highlights infrastructure standardization's challenges.
 
 ## Week 10: Dec 7, 2025
 
- - Added a minimal template scaffold and project scaffolding improvements for the CLI package `apps/qwexcli`:
-  - `apps/qwexcli/qwexcli/templates/base.py`: simple template exposing `run(argv)` which executes a command.
-  - `apps/qwexcli/qwexcli/lib/project.py`: scaffold now writes explicit `defaults` and `runners` into `.qwex/config.yaml` and creates `.qwex/.gitignore` to ignore internal artifacts.
-  - `apps/qwexcli/qwexcli/lib/config.py`: removed `workspaces` from the schema; added `defaults` and `runners` fields (defaults.runner -> "base", runners.base.templates -> ["base"]).
-  - Tests updated to assert the new defaults and the presence of `.qwex/.gitignore`.
+- Added a minimal template scaffold and project scaffolding improvements for the CLI package `apps/qwexcli`:
+- `apps/qwexcli/qwexcli/templates/base.py`: simple template exposing `run(argv)` which executes a command.
+- `apps/qwexcli/qwexcli/lib/project.py`: scaffold now writes explicit `defaults` and `runners` into `.qwex/config.yaml` and creates `.qwex/.gitignore` to ignore internal artifacts.
+- `apps/qwexcli/qwexcli/lib/config.py`: removed `workspaces` from the schema; added `defaults` and `runners` fields (defaults.runner -> "base", runners.base.templates -> ["base"]).
+- Tests updated to assert the new defaults and the presence of `.qwex/.gitignore`.
 
 ---
 
@@ -909,6 +949,7 @@ The devil's advocate argument (which I made myself and now regret): this is just
 **But this:** "A protocol for composable, transparent, user-owned execution templates that enable reproducible ML runs across heterogeneous infrastructure without imposing new standards."
 
 Key properties that make it novel:
+
 - **Transparent**: Users can read and modify the generated execution scripts
 - **Composable**: Layers stack (SSH wraps Docker wraps command)
 - **User-owned**: Templates live in `.qwex/`, not hidden in a library
@@ -950,7 +991,8 @@ Either way, it's research.
 
 Yooooo. here's a quick dump:
 
-so it must have 4 main stages: 
+so it must have 4 main stages:
+
 1. packing up and sending this to where the remote machine can retrieve
 2. telling what the remote machine needs to do to get this job started
 3. keeping the stdout/stderr observable by default.
@@ -959,22 +1001,24 @@ so it must have 4 main stages:
 most of the tools on the market assume you have 1. ready and just does 2. or blur the line between 1 and 2 so much you can't migrate. they also assume 3 is easy to do by default if you work with 2 long enouguh. and 4? "eh not my job" -- they said.
 
 while the python cli can be powerful and use any buildtime dependencies you want.
-the runtime capability is one of the hardest problem you have to think about. 
+the runtime capability is one of the hardest problem you have to think about.
 what is the least requirement to make it achieve the same robust execution on any machine you run?
 
 we need to define what makes a run "robust" because i have been throwing this jargon left and right without defining what it means. robust in dictionary means strong and showing vigorous health. so what i mean is that it's fault-tolerant and "just works".
+
 1. can start by itself non-interactively: have everything ready before the run.
 2. show that it's alive: you know that it's moving. if you have tqdm in your python script it should in real-time show the epoch of your run for you to estimate how long it might have left.
 3. recoverable when it got teared down: you can still recover the output after it's done. containers are ephemeral and especially k8s pods where they just "hehe you don't need this anymore? gbye~".
 
-1 implies that source code, 3rd-party data from network storage, dependencies, must be in-place before run. 2  implies that runtime logs must be saved somewhere standard enough for every run to be the same. 3 implies that when the runs ended, someone who has no information of the run knows what and where to upload the artifacts of those runs. 
+1 implies that source code, 3rd-party data from network storage, dependencies, must be in-place before run. 2 implies that runtime logs must be saved somewhere standard enough for every run to be the same. 3 implies that when the runs ended, someone who has no information of the run knows what and where to upload the artifacts of those runs.
 
-if you are reading until this point and thought hey that's not what i usually do, i'd rather... 
+if you are reading until this point and thought hey that's not what i usually do, i'd rather...
 yes, that's what makes this a research and that's what makes this incredibly difficult. there is no industrial standard to this and everybody simply has a standard to themselves, write their own scripts that work for them, yet the most difficult part of machine learning research is: time to replicate an experiment. you have all the source codes and where to get the data but making this code run in the same environment, the same hardware conditions is not easy.
 
 a good way to start is asking: here's a very simple codebase. it downloads a model from huggingface and generate text from prompt: "write me a python calculator". everything is prewritten so you just have to run it. on the otherside you have an HPC cluster with unknown spec for the environment but it uses slurm and RTX A2000 (maybe). go
 
 you would say
+
 ```
 ssh user@host
 
@@ -1019,7 +1063,7 @@ CUDA out of memory pls find another machine
 uv run python main.py
 def calculate(expression: str):
   # it is technically RCE so don't use this in prod
-  return eval(expression) 
+  return eval(expression)
 ```
 
 nice you made it!
@@ -1027,11 +1071,11 @@ now i don't want a calculator anymore. i want a haiku about cincinnati zoo in 20
 
 then you realized oh i shoulda use git.
 
-now your workflow changes as you realized things. 
+now your workflow changes as you realized things.
 
 it's inefficient. im tired of that too.
 
-so qwex is here to fix that. you write code. you add what you need. you run it as if you are sitting in a restaurant. line cook will work it out for you. it's not another vscode-server but sure it has a layer that works well on vscode-server. it's not another gitpod but sure it has a layer that works well with it.  it's not slurm it's not k8s. but it's the last IaC you need.
+so qwex is here to fix that. you write code. you add what you need. you run it as if you are sitting in a restaurant. line cook will work it out for you. it's not another vscode-server but sure it has a layer that works well on vscode-server. it's not another gitpod but sure it has a layer that works well with it. it's not slurm it's not k8s. but it's the last IaC you need.
 
 so what do we do? it is a launcher who will help package our job bundle to be run in another environment, nail a hole to make it observable, and eventually retrievable, while also respecting the job scheduler or minimizing the usage on the receiving end. mind you that we don't aim to save any cost through minimizing the usage because cost depends on a lot of factors and should be saved by other means. (analogy: you don't go on a diet just because to save your food cost) it's just a metric to help us build an efficient shared compute resource. if it does help you save cost then good for you.
 
@@ -1046,10 +1090,11 @@ sure so it's a python cli.
 
 because it makes sure a command is run on another machine. the user would either run `qwex shell` to make the play-field like when you do `source .venv/bin/activate` or `ssh` (change the context of the shell) or `qwex run <command>` to do the same thing for one-off command. (usually the latter is preferred). so it's a command wrapper / transformer.
 
-what do we do when `python main.py` is received as an input? 
-first we bundle this source code. we could tarball the entire thing and send everything along with the wire but that would be very inefficient for a larger codebase, especially when we do this a couple of times. it might also be difficult to separate what should be ignored. the industrial standard is using git. this also comes with perks that you can send only a few commits on every run  (or none!) making this highly efficient. so now the first dependency we need is git. 
+what do we do when `python main.py` is received as an input?
+first we bundle this source code. we could tarball the entire thing and send everything along with the wire but that would be very inefficient for a larger codebase, especially when we do this a couple of times. it might also be difficult to separate what should be ignored. the industrial standard is using git. this also comes with perks that you can send only a few commits on every run (or none!) making this highly efficient. so now the first dependency we need is git.
 
-there are millions way to send a git repository to another machine. 
+there are millions way to send a git repository to another machine.
+
 1. git bundle pros: it should work in every case as long as the recipient can download that bundle cons: incremental update can be difficult. you need to create a new bundle every time.
 2. git direct push pros: no download needed because it pushes to the target repository directly. cons: works only if you have ssh access
 3. git push pros: just work. industrial standards cons: needs origin/git server. needs read credentials.
@@ -1058,7 +1103,7 @@ we should keep all of these in mind.
 
 so packaging is a success.
 
-next, submission. submission differs wildly across different machines and its scheduler backend. some requires access via ssh.... or not if you're already in it. 
+next, submission. submission differs wildly across different machines and its scheduler backend. some requires access via ssh.... or not if you're already in it.
 it must be self-contained and should not have references to the files in your repository (for job description. of course it might reference it for runtime purposes like main.py but not `cat job.yaml`) the details on how it should be implemented will be discussed later.
 
 ---
@@ -1069,9 +1114,9 @@ next it's the lifecycle management. this is the part where it should be shared, 
 
 this is tightly linked to the scheduler backend because each scheduler implements it differently. for slurm you kinda have to make this multi-stage. for k8s you have init containers and prestop hook. for everything else you kinda have to make a trap by yourself.
 
-let's come back to pre-source and post-source. 
+let's come back to pre-source and post-source.
 
-pre-source is the part where you have environment-agnostic idempotent task like git clone, rclone or mounting nas to your scheduler's accessible environment. git worktree add. 
+pre-source is the part where you have environment-agnostic idempotent task like git clone, rclone or mounting nas to your scheduler's accessible environment. git worktree add.
 this is tightly linked to the packaging. you should know where to clone to. and have the secrets ready. you also could not reference anything inside your code. (because this is pre-source) so everything is run here. this should require almost no extra dependencies except you wanna do aws s3, rclone, or git. but yeah the design consideration is how to reduce the dependencies of this part.
 
 post-source is the part where you can have more environment-specific tasks like uv sync.
@@ -1095,6 +1140,7 @@ i'm going to argue that both are easy to pull off but the former lacks flexibili
 first let's think what a barebone framework is.
 
 qwex run >
+
 - choose the correct interface
 - call submit method > package the source > create run id > create a command that will submit the correct tmpl
 - subscribe to the status event (will discuss later)
@@ -1107,8 +1153,8 @@ this is the client part and create a command that will submit the correct tmpl i
 so the input of this template compiler will contains:
 
 1. source [ uses: <base plugin>, with: path], storages: [ uses: <base plugin>, with: path ]
-2. init: image, command, args (as if it's a github workflow) 
-3. run: {{ command }} 
+2. init: image, command, args (as if it's a github workflow)
+3. run: {{ command }}
 4. exit: eh wait.... OHHHH
 
 i think we could technically make this exactly like github workflow? but maybe simplify or extend it.
@@ -1116,9 +1162,9 @@ i think we could technically make this exactly like github workflow? but maybe s
 so what i like about https://github.com/nektos/act is that you can run github workflow locally. what it lacks is that it doesn't bridge the gap between local and runner env. maybe i wanna start from there? a workflow language with boundary-crossing. crazy lol.
 
 boundary-crossing, compilable workflow language. interesting... very interesting honestly.
-and it also allows you to write action in python instead of javascript... or actually whatever you want. (as opposed to github action) 
+and it also allows you to write action in python instead of javascript... or actually whatever you want. (as opposed to github action)
 
-so it's like act + github action with boundary crossing? lit. lit. honestly fire. but the hardest part is making sure 1. runner has this workflow. 2. runner has the dependency to understand this workflow. 3. make this as light weight as possible 
+so it's like act + github action with boundary crossing? lit. lit. honestly fire. but the hardest part is making sure 1. runner has this workflow. 2. runner has the dependency to understand this workflow. 3. make this as light weight as possible
 
 i think i might accidentally added a new idea
 
@@ -1126,13 +1172,13 @@ i think i might accidentally added a new idea
 
 github workflow transpiler?
 
-tempting. lol. 
+tempting. lol.
 
 it doesn't have to be jinja2 template. i wanna do something that offers similar idea to github workflow?
 
-the problem is that github workflow has too much feature (like in/output passing) which eventually would require a runtime.  i think we should own our template. making it similar to github workflow, but not too similar
+the problem is that github workflow has too much feature (like in/output passing) which eventually would require a runtime. i think we should own our template. making it similar to github workflow, but not too similar
 
-so the problem of describing this as workflow is that it knows how to exit early with fault tolerance. 
+so the problem of describing this as workflow is that it knows how to exit early with fault tolerance.
 
 chicken and egg of taskfile. the source needs to be transferred in order for the runner to see the taskfile. we can technically string serialize everything sure but we run into another problem of understanding this taskfile. so we need to package the taskfile parser/runner... too? no we're not gonna do that. it will run without knowing the taskfile. sure it might run scripts included in the action but that must be post-source. which is fine, sometimes.
 
@@ -1140,7 +1186,7 @@ some runner doesn't even know how to containerize things and we have to tell it 
 
 that's why github workflow fails. actually i don't think there is a tool for this yet. the best solution is that makes the backend understand this job.yaml. LIKE K8S!!!
 
-so im making k8s-less dependency-free task-runner compiler? interesting. 
+so im making k8s-less dependency-free task-runner compiler? interesting.
 
 after thinking and thinking you can see how it boils down to "oh it's just xyz"
 
@@ -1152,21 +1198,21 @@ as you can see pre-flight and remote have no description.
 
 also this boils down to justfile that you can do so what's the point lmao
 
-run command: 
-  git push
-  ssh host "cd ./workspaces/repo && git pull && {{ command }} | tee output.log"
-  scp  host:./workspaces/repo/output.log ./
+run command:
+git push
+ssh host "cd ./workspaces/repo && git pull && {{ command }} | tee output.log"
+scp host:./workspaces/repo/output.log ./
 
-or 
+or
 
 run wrapper command:
-    wrapped_command=get_wrapper(wrapper) command
-    git push
-    exec wrapped_command
-    scp  host:./workspaces/repo/output.log ./
+wrapped_command=get_wrapper(wrapper) command
+git push
+exec wrapped_command
+scp host:./workspaces/repo/output.log ./
 
 then oh sharing? i'll post this on my github gist.
-   
+
 is that actually the extent of my project
 
 ---
@@ -1177,21 +1223,21 @@ ah fuck it really is taskfile registry. nothing more than that. 😭
 
 it sucks what am i doing lmao.
 
-https://taskfile.dev/docs/reference/schema look at the power of taskfile lmao. 
+https://taskfile.dev/docs/reference/schema look at the power of taskfile lmao.
 
-it's really just taskfile presets with boundary fuck it. 
+it's really just taskfile presets with boundary fuck it.
 
 i could make workflow that repeatedly wraps command from above output then submit it. this is the most stupid thing ever lol.
 
-can taskfile technically be compiled into pure bash. idk.  i could contribute the compiler part.
+can taskfile technically be compiled into pure bash. idk. i could contribute the compiler part.
 
 actually where is my goal of contribution now.
 
 ---
 
-qwex is a job.yaml that runs taskfile.yaml cross-compiler. it makes job.yaml & task.yaml runs anywhere without k8s or taskfile. but because calling it job.yam or taskfile.yaml makes this looks like it has more features than it has so we will not be calling it kubernetes jobs nor taskfile. instead it just also has compile target of job.yaml. 
+qwex is a job.yaml that runs taskfile.yaml cross-compiler. it makes job.yaml & task.yaml runs anywhere without k8s or taskfile. but because calling it job.yam or taskfile.yaml makes this looks like it has more features than it has so we will not be calling it kubernetes jobs nor taskfile. instead it just also has compile target of job.yaml.
 
-the idea of job.yaml is that it requires kubernetes to read it. the idea of task.yaml is that it requires the task binary to read it. now you just define tasks to run and it will be compiled to pure bash to target any runner or container backend. oh you need python? as long as it is std python and your runner is python friendly it will inline that python script for you. 
+the idea of job.yaml is that it requires kubernetes to read it. the idea of task.yaml is that it requires the task binary to read it. now you just define tasks to run and it will be compiled to pure bash to target any runner or container backend. oh you need python? as long as it is std python and your runner is python friendly it will inline that python script for you.
 
 qwex run
 
@@ -1208,19 +1254,19 @@ this gets compiled into
 for ssh:
 git push
 ssh host << EOF
-   {{ landing tasks }} 
-   sbatch "{{init_headers}} {{ init_command }}"
-   sbatch "{{run_headers}}  qwex run {{ command }}" <- can use qwex run now because it assumes init_command installs qwex for it.
+{{ landing tasks }}
+sbatch "{{init_headers}} {{ init_command }}"
+sbatch "{{run_headers}} qwex run {{ command }}" <- can use qwex run now because it assumes init_command installs qwex for it.
 EOF
 
 for kubectl:
 code --wait /tmp/job.yaml # close to confirm
-kubectl apply -y  /tmp/job.yaml
+kubectl apply -y /tmp/job.yaml
 
 for docker-separated:
 {{ skip git push }}
 docker compose run --rm
-init container 
+init container
 run container
 
 for docker-simple
@@ -1236,7 +1282,7 @@ i think we should read this: https://www.reddit.com/r/kubernetes/comments/16tme4
 
 About SkyPilot...
 
-After reviewing SkyPilot's architecture and features, it's THE EXACT same idea as qwex with the same problem, and the same target audience. 
+After reviewing SkyPilot's architecture and features, it's THE EXACT same idea as qwex with the same problem, and the same target audience.
 
 Good news is that we're not alone and now we don't have to convince anyone that this is a real problem. Bad news is that we have to compete with an established open-source project with a lot of traction. (9k stars!!! on GitHub, wow)
 
@@ -1251,6 +1297,7 @@ is my analogy correct?
 Spec of qwex.
 
 `qwex init` > creates qwex.yaml at root.
+
 1. check if .gitignore exists. if not create one with: .qwex/
 2. if .gitignore exists, check if it contains `/\.qwex/?/` then append it.
 
@@ -1279,17 +1326,18 @@ tasks:
 ```
 
 What `qwex run` does is:
+
 1. Load ./qwex.yaml
 2. Load .qwex/.env.yaml (if exists) and override the config.
 3. Generate a lexicographically sortable unique run_id (e.g., 20231212_153045_abcd1234)
 4. Find the task `run` in the config.
-5. For each step in task `run`: 
+5. For each step in task `run`:
    1. Load the step's `uses` plugin (e.g., std/echo)
    2. Recursively resolve `with` parameters using Jinja2 templating with context:
       - `args`: command-line args passed to `qwex run`
       - `run_id`: generated run ID
    3. Compile the step into a shell command using qwex's core
-   4. Append the compiled command to a master shell script along with qwex core. 
+   4. Append the compiled command to a master shell script along with qwex core.
 6. Finally we should have a shell script that looks like:
 
 ```bash
@@ -1335,11 +1383,11 @@ presets:
 modules:
   trace:
     source: std/trace
-  
+
   github:
     source: std/git
     vars: { repo: "git@..." }
-  
+
   ssh_node:
     source: std/ssh
     vars: { host: "cluster-01" }
@@ -1348,11 +1396,11 @@ tasks:
   run_experiment:
     args:
       - command
-    
+
     steps:
       # Phase 1: Local Prep
       - uses: code.push
-      
+
       # Phase 2: The Actor Boundary
       - uses: agent.exec
         with:
@@ -1362,7 +1410,7 @@ tasks:
           steps:
             - uses: code.pull
               with: { mode: "worktree" }
-            
+
             - uses: trace.capture
               with:
                 # The 'Inner Run' starts executing this command
@@ -1400,8 +1448,8 @@ tasks:
                              {{ core.agent.exec }} {{ task }} {{ with }} ????
                       EOF
 ```
- 
-this'd be so difficult to pull off LMAO. 
+
+this'd be so difficult to pull off LMAO.
 
 ## Week 12: Dec 15, 2025
 
@@ -1429,6 +1477,7 @@ how would you submit a kubernetes job?
 #### 1. Syntax & Grammar
 
 **Root module (user-written YAML):**
+
 ```yaml
 name: hello-world
 
@@ -1446,7 +1495,7 @@ vars:
 tasks:
   greet:
     run: echo "Hello, World!"
-  
+
   say:
     args:
       - name: message
@@ -1460,10 +1509,10 @@ tasks:
       for i in $(seq 1 {{ args.times }}); do
         echo "{{ args.message }}"
       done
-  
+
   debug:
     run: {{ log.tasks.debug }} "Debugging message"
-  
+
   composite:
     uses: steps.tasks.step  # Inline expansion (macro)
     with:
@@ -1474,6 +1523,7 @@ tasks:
 ```
 
 **Reference formats (full paths, syntactic sugar deferred):**
+
 - `{{ vars.X }}` - module-level var
 - `{{ tasks.greet }}` - task in this module → renders to `hello-world:greet`
 - `{{ args.message }}` - task-level arg → renders to `${1:-default}` or `${MESSAGE:-default}`
@@ -1482,21 +1532,25 @@ tasks:
 - Shorthand (future): `{{ debug }}`, `{{ log.debug }}` (with precedence lookup)
 
 **Reserved keywords (cannot be module names):**
+
 - `vars`, `tasks`, `args`, `name`, `modules`
 
 #### 2. Compilation Pipeline Overview
 
-**Stage 1: Parse** 
+**Stage 1: Parse**
+
 - Load YAML → AST (Module, Task, Args)
 - Validate structure
 - Validate structure
 
 **Stage 2: Resolve**
+
 - Load all modules recursively (e.g., `qstd/log.yaml`, `qstd/steps.yaml`)
 - Build flat module registry: `{"__main__": Module, "log": Module, "steps": Module, ...}`
 - Construct environment tree (Jinja context)
 
 **Stage 3: Compile to IR**
+
 - For each task, flatten and merge vars/args/tasks into accessible scope
 - Render Jinja templates with task-specific context
 - Detect function references (`{{ log.tasks.debug }}` → `log:debug`) → dependencies
@@ -1504,6 +1558,7 @@ tasks:
 - Output: `BashScript` IR with functions, dependencies, metadata
 
 **Stage 4: Render to Bash**
+
 - Emit preamble (`#!/bin/bash`, `set -u`)
 - Emit `@module` functions (dependency registration, includes)
 - Emit all compiled functions with dependency registration lines
@@ -1512,6 +1567,7 @@ tasks:
 #### 3. Environment Tree & Variable Scoping
 
 **Global environment tree (built after module resolution):**
+
 ```python
 {
   "name": "hello-world",
@@ -1560,13 +1616,14 @@ tasks:
 ```
 
 **Task-scoped Jinja context (when rendering a single task):**
+
 ```python
 {
   "name": "hello-world",  # root module name
   "vars": { "compile_time_var": "..." },  # root module vars
   "tasks": { "greet": "hello-world:greet", ... },  # task refs (canonical names)
   "args": { "message": "${1:-Hello!}", "times": "${2:-1}" },  # this task's args
-  
+
   # Imported modules (same structure)
   "log": { "name": "log", "vars": {...}, "tasks": {...} },
   "steps": { "name": "steps", "vars": {...}, "tasks": {...} },
@@ -1575,6 +1632,7 @@ tasks:
 ```
 
 **Scoping rules:**
+
 - Args only visible within task scope
 - Task-level vars override root vars (shadow)
 - Module context is flat and accessible at any depth
@@ -1583,17 +1641,20 @@ tasks:
 #### 4. Function Visibility & Dependencies
 
 **What each compiled function sees:**
+
 - Access to all root-level and imported module tasks/vars via Jinja context
 - Bash cannot access Jinja vars; they're rendered at compile time
 - Function dependencies tracked via reference scanning (e.g., `log:debug` in function body)
 
 **Dependency detection:**
+
 - Walk Jinja AST (or simple string scan) for `{{ module.tasks.X }}`
 - Map to canonical name: `log:debug`
 - Store in `BashFunction.dependencies`
 - Render `module:register_dependency "func_name" "dep1 dep2 ..."`
 
 **Execution model (at runtime in bash):**
+
 ```bash
 module:register_dependency "hello-world:say" "log:debug steps:step"
 module:include "hello-world:say"  # Declares all transitive deps first
@@ -1602,6 +1663,7 @@ module:include "hello-world:say"  # Declares all transitive deps first
 #### 5. Jinja Macros & Inlining (`uses/with`)
 
 **Inlining via Jinja macro (not yet implemented but planned):**
+
 ```yaml
 debug-vars:
   uses: steps.tasks.step
@@ -1613,6 +1675,7 @@ debug-vars:
 ```
 
 **Compiler behavior:**
+
 1. Resolve `uses` to task definition (e.g., `steps.step` → load from `qstd/steps.yaml`)
 2. Inline the referenced task body
 3. Substitute `with` values as positional args or loop vars
@@ -1620,6 +1683,7 @@ debug-vars:
 5. No dependency on `steps:step` at runtime (already inlined)
 
 **Equivalent to writing:**
+
 ```yaml
 debug-vars:
   run: |
@@ -1631,16 +1695,19 @@ debug-vars:
 #### 6. Shorthand & Syntactic Sugar (TODO)
 
 **Deferred to Phase 2 (post-MVP):**
+
 - `{{ debug }}` → lookup `vars.debug` or `tasks.debug` with precedence
 - `{{ log.debug }}` → lookup `log.vars.debug` or `log.tasks.debug`
 - `$message` syntax for args (using Jinja custom filters)
 
 **Explicit namespace required for MVP:**
+
 - Always use `{{ vars.X }}`, `{{ tasks.X }}`, `{{ args.X }}`, `{{ module.tasks.X }}`
 
 #### 7. Module Registry & Include Mechanics
 
 **Module loading (in Resolver):**
+
 1. Parse root YAML
 2. For each entry in `modules:`, load `source:` file recursively
 3. Build flat registry (no nesting)
@@ -1648,6 +1715,7 @@ debug-vars:
 5. Inject `module` (or `@module`) functions for dependency tracking
 
 **At runtime (bash):**
+
 ```bash
 # In preamble / header:
 module:register_dependency () { ... }
@@ -1660,6 +1728,7 @@ module:include "log:debug"
 ```
 
 **Special case: `@module` (or `module`)**
+
 - Always loaded from `qstd/module.yaml` (or provided)
 - Contains core functions: `register_dependency`, `collect_dependencies`, `include`
 - Cannot be overridden by user
@@ -1667,6 +1736,7 @@ module:include "log:debug"
 #### 8. Standard Library Modules
 
 **Structure:**
+
 ```
 qstd/
   module.yaml       # Core: register_dependency, collect_dependencies, include
@@ -1676,6 +1746,7 @@ qstd/
 ```
 
 **Dependency graph:**
+
 ```
 log:debug → utils:once, utils:color
 steps:step → (no deps)
@@ -1684,6 +1755,7 @@ module:include → (no deps, builtin)
 ```
 
 **Example `qstd/log.yaml`:**
+
 ```yaml
 name: log
 
@@ -1702,6 +1774,7 @@ tasks:
 ```
 
 **Example `qstd/utils.yaml`:**
+
 ```yaml
 name: utils
 
@@ -1718,7 +1791,7 @@ tasks:
         UTILS_ONCE_HASHSET[$1]=1
         eval "$2"
       fi
-  
+
   color:
     run: |
       if [ -t 1 ]; then
@@ -1734,6 +1807,7 @@ tasks:
 #### Implementation Roadmap
 
 **Phase 1 (Current): Full-path references + Module loading**
+
 - [x] Parser (AST)
 - [ ] Resolver (module loading, env tree construction)
 - [ ] Compiler IR (BashScript, BashFunction with deps)
@@ -1741,11 +1815,13 @@ tasks:
 - [ ] Test playgrounds (module_run_usage, task_with_args, module_inline, module-uses-with)
 
 **Phase 2 (Future): Syntactic sugar**
+
 - [ ] Shorthand lookup ({{ debug }} → vars/tasks precedence)
 - [ ] `$arg` syntax for args
 - [ ] Optional args (getopt) & named args
 
 **Phase 3 (Future): Advanced**
+
 - [ ] Automatic dependency detection via Jinja AST walk
 - [ ] Inlining macros (`uses/with` → compile-time expansion)
 - [ ] Validation & type hints for args/vars
@@ -1759,37 +1835,39 @@ tasks:
 after the first round of semantic analysis we should have
 
 {
-  ".": "sourcehash",
-  "": "..."
+".": "sourcehash",
+"": "..."
 }
 and
 {
-  "sourcehash": {
-  vars: {
-    kv pairs
-  },
-  modules: { 
-    kv pairs: ModuleSpec(source, vars (overrides))
-  },
-  tasks: { kv pairs: TaskSpec(... ) }
+"sourcehash": {
+vars: {
+kv pairs
+},
+modules: {
+kv pairs: ModuleSpec(source, vars (overrides))
+},
+tasks: { kv pairs: TaskSpec(... ) }
 }}
 
 2. start from root, traverse its tasks
-if it's not an inlined task -> do:
+   if it's not an inlined task -> do:
+
 - check its dependencies, ([whatever not vars/args].taskname)
 - if it's valid (exists in hashtoast[sourcetohash["alias"]]) then continue else raise error here
 - build task dependency graph. (a dict of array?) -> if there is a cyclic dependency, raise error here
 - if it's an inlined task add it to the inline inline stack.
 
 3. we start from the top of the inline stack, then
-- for each pop task in the stack 
+
+- for each pop task in the stack
 - if this task is not an inlined task, skip
 - if this task is has more than one inlined tasks, tries to parse every source task
 - if at least one of them is an inlined task, add the task itself back to the stack, then add all the to be inlined tasks to the stack
-- if can parse successfully (its source task is not an inlined task itself) 
+- if can parse successfully (its source task is not an inlined task itself)
 
 4. then we recursively parse everything in the module source: after the first round of semantic analysis we got the source map: [parent.parent2.alias]-> source hash
-then hash->actual source ast. 
+   then hash->actual source ast.
 
 not sure if we should prefix the keys with . or suffix with . or none. the index could be "." or simply empty string. this will be used as a prefix when expanding env later so i like "" so that it can be used as-is but index as empty string just sounds weird, because other requires "." you will see later
 i think flat namespace is better but could you check if it's implemented the same way i explained?
@@ -1798,18 +1876,18 @@ then continue building task dependency graph here. not sure if we should resolve
 
 5. we then makes an env map. which is a vars-resolved map of module. start from root again
 
-we first resolve vars like this:  [*module_defined_vars, *import overrides]
+we first resolve vars like this: [*module_defined_vars, *import overrides]
 we then calculate envhash: hash{sourcehash+varhash}
 alias->hash{
-  "parent.parent2.alias": "envhash"
+"parent.parent2.alias": "envhash"
 },
 envhash->canonical module alias {
-  "hash": "whatever gets resolved first as traversed bredth-first from root" <- remember to traverse breadth first! use python built-in from collections import deque
+"hash": "whatever gets resolved first as traversed bredth-first from root" <- remember to traverse breadth first! use python built-in from collections import deque
 }, (for example if std is imported at vars before std imported under utils and no vars override is used, then hashes are the same, meaning canonical is std instead of utils.std and utils.std will simply be resolved to std )
 {
-  [envhash]: {
-    vars: resolved vars
-  }
+[envhash]: {
+vars: resolved vars
+}
 }
 
 then after canonical module alias is resolved, we can start a new loop from the root and traverse through task dependency graph root
@@ -1821,16 +1899,16 @@ not sure if this is accurate?
 hash(envhash, hash(TaskSpec.vars), hash(taskname)) -> taskhash
 
 {
-  taskhash: tasknode
+taskhash: tasknode
 }
 
 if not exist we compile tasknode
 
 TaskNode(
-  name="get its module env hash -> get its module canonical name -> become canonalias.taskname"
-  run="<vars.varname>" -> render the variable first -> it might become <alias.taskname> later then we render the
-  <alias.taskname> by just simply looking up the envhash then choose canonical taskname by canonical.module.alias.taskname"
-  deps: [canonical taskname]
+name="get its module env hash -> get its module canonical name -> become canonalias.taskname"
+run="<vars.varname>" -> render the variable first -> it might become <alias.taskname> later then we render the
+<alias.taskname> by just simply looking up the envhash then choose canonical taskname by canonical.module.alias.taskname"
+deps: [canonical taskname]
 )
 
 then we add task node to the stack
@@ -1850,6 +1928,7 @@ wdyt?
 ### Design Goals
 
 The current Phase 1 implementation (working, all tests passing) has several inefficiencies:
+
 - Loads all modules eagerly, including unused ones
 - Builds a nested env tree, then flattens it during rendering
 - Separates canonicalization from inline expansion (two passes)
@@ -1908,16 +1987,16 @@ while q or inline_stack:
     if q:
         fqn = q.popleft()  # e.g., "utils:color"
         alias, name = fqn.split(":")
-        
+
         # Cycle detection
         if (alias, name) in visited:
             continue
         visited.add((alias, name))
-        
+
         # Lazy load module if not already loaded
         if alias not in alias_to_source_hash:
             load_module(alias)  # Parse YAML, compute source_hash, cache
-        
+
         # Lazy resolve env if not already resolved
         if alias not in alias_to_env_hash:
             source_hash = alias_to_source_hash[alias]
@@ -1925,19 +2004,19 @@ while q or inline_stack:
             resolved_vars = merge(ast.vars, parent_overrides)
             env_hash = hash(source_hash, hash_dict(resolved_vars))
             alias_to_env_hash[alias] = env_hash
-            
+
             # Canonical alias: first-seen wins (BFS guarantees root priority)
             if env_hash not in env_hash_to_canonical_alias:
                 env_hash_to_canonical_alias[env_hash] = alias
                 env_hash_to_env[env_hash] = {"vars": resolved_vars}
-        
+
         # Get task from AST
         ast = source_hash_to_ast[alias_to_source_hash[alias]]
         item = ast.items[name]  # Could be task or var
-        
+
         if not is_task(item):
             continue  # Skip vars during dep traversal
-        
+
         # Handle inline tasks
         if item.is_inlined():
             inline_stack.append((alias, name, item))
@@ -1946,34 +2025,34 @@ while q or inline_stack:
                 src_alias, src_name = parse_ref(src_ref)
                 q.append(f"{src_alias}:{src_name}")
             continue
-        
+
         # Collect deps and canonicalize immediately
         deps = collect_deps(item)  # e.g., ["utils.color", "log.debug"]
         canonical_deps = set()
         for dep_ref in deps:
             dep_alias, dep_name = parse_ref(dep_ref)
-            
+
             # Lazy load dep module
             if dep_alias not in alias_to_env_hash:
                 load_and_resolve_env(dep_alias)
-            
+
             # Canonicalize dep reference
             dep_env_hash = alias_to_env_hash[dep_alias]
             dep_canon_alias = env_hash_to_canonical_alias[dep_env_hash]
             canonical_dep = f"{dep_canon_alias}:{dep_name}"
             canonical_deps.add(canonical_dep)
             q.append(canonical_dep)  # Traverse transitive deps
-        
+
         # Canonicalize this task's name
         env_hash = alias_to_env_hash[alias]
         canon_alias = env_hash_to_canonical_alias[env_hash]
         canon_fqn = f"{canon_alias}:{name}"
         dep_graph[canon_fqn] = canonical_deps
-    
+
     # Process inline expansion stack (after deps)
     if not q and inline_stack:
         alias, name, item = inline_stack.pop()
-        
+
         # Check if all inline sources are resolved (non-inline)
         all_resolved = True
         for src_ref in item.inlined_sources():
@@ -1983,16 +2062,16 @@ while q or inline_stack:
                 all_resolved = False
                 inline_stack.append((alias, name, item))  # Retry later
                 break
-        
+
         if not all_resolved:
             continue
-        
+
         # Expand inline: use **source module's vars**, not caller's
         expanded = inline_expand(
             item,
             source_module_vars=env_hash_to_env[alias_to_env_hash[src_alias]]["vars"]
         )
-        
+
         # Replace in AST and re-enqueue
         ast = source_hash_to_ast[alias_to_source_hash[alias]]
         ast.items[name] = expanded
@@ -2014,15 +2093,15 @@ for canon_fqn in dep_graph.keys():
     env = env_hash_to_env[env_hash]
     ast = source_hash_to_ast[alias_to_source_hash[alias]]
     task = ast.items[name]
-    
+
     # Render body (deps already canonicalized)
     rendered_body = render(task.run, vars=env["vars"], args=task.args)
     body_hash = hash(rendered_body)
-    
+
     # Deduplicate by body hash
     if body_hash in body_hash_to_canonical_fqn:
         continue  # Skip duplicate; first canonical wins
-    
+
     body_hash_to_canonical_fqn[body_hash] = canon_fqn
     node = TaskNode(
         name=canon_fqn,
@@ -2081,6 +2160,7 @@ render_bash(task_nodes, root_tasks)
 Should we keep `args` as a separate field in `Task`, or merge it into `vars`?
 
 **Current Design (Phase 1):**
+
 ```python
 @dataclass
 class Arg:
@@ -2095,6 +2175,7 @@ class Task:
 ```
 
 **Proposed Design (Phase 2):**
+
 ```python
 @dataclass
 class Task:
@@ -2105,6 +2186,7 @@ class Task:
 ### Initial Position: Keep Separate
 
 **Arguments FOR separation:**
+
 1. **Explicit positional semantics**: `Arg(positional=1)` makes runtime params obvious
 2. **Inline expansion clarity**: Parent knows which fields are compile-time (vars) vs runtime (args)
 3. **Collision prevention**: Prevents parent from accidentally overriding runtime params with `with:`
@@ -2112,11 +2194,13 @@ class Task:
 ### The Rebuttal
 
 **User's counterarguments:**
+
 1. **`$1` IS explicit**: Template syntax `{{ $1 }}` is MORE explicit than metadata field `Arg(positional=1)`
 2. **Current design breaks inline expansion**: Args are inaccessible during `uses/with` expansion
 3. **Dict `with:` should override everything**: No reason to hide args from parent; let parent customize all vars
 
 **Example of the problem:**
+
 ```yaml
 # Current (Phase 1) - BROKEN
 tasks:
@@ -2137,6 +2221,7 @@ tasks:
 ```
 
 With merged namespace:
+
 ```yaml
 # Proposed (Phase 2) - FIXED
 tasks:
@@ -2168,12 +2253,14 @@ tasks:
 4. **Simpler AST**: Remove `Arg` dataclass entirely. Parser just needs to detect `{{ $N }}` pattern for validation/analysis.
 
 **What changes:**
+
 - Remove `Arg` dataclass from `ast/spec.py`
 - Update `Task.from_dict()` to parse args-like vars (detect `{{ $N }}` for positional inference)
 - Update inline expansion: `with:` dict can override any var, including ones with `{{ $1 }}` refs
 - Emit behavior unchanged: `{{ $1 }}` still renders as bash positional param
 
 **Benefits:**
+
 - Unified namespace: all task inputs in one place
 - Flexible parent overrides: no arbitrary restrictions
 - Cleaner AST: one less dataclass to maintain
@@ -2190,28 +2277,28 @@ Based on the feedback from Dec 17, we have refactored the compiler and standard 
 ### Changes Implemented
 
 1.  **Removed `args` Namespace**
-    *   Removed `Arg` dataclass from AST.
-    *   Removed `args:` field from `Task`.
-    *   Adopted native Bash positional parameters (`$1`, `$2`) directly in templates.
-    *   For semantic naming, users can alias them in `vars:` (e.g., `message: "$1"`).
+    - Removed `Arg` dataclass from AST.
+    - Removed `args:` field from `Task`.
+    - Adopted native Bash positional parameters (`$1`, `$2`) directly in templates.
+    - For semantic naming, users can alias them in `vars:` (e.g., `message: "$1"`).
 
 2.  **Flattened Environment Model**
-    *   Removed `vars.` and `tasks.` prefixes.
-    *   Variables and tasks are now accessible directly in the Jinja context (e.g., `{{ color }}` instead of `{{ vars.color }}`, `{{ log.debug }}` instead of `{{ log.tasks.debug }}`).
-    *   `Resolver` now produces a flattened dictionary instead of a nested tree.
+    - Removed `vars.` and `tasks.` prefixes.
+    - Variables and tasks are now accessible directly in the Jinja context (e.g., `{{ color }}` instead of `{{ vars.color }}`, `{{ log.debug }}` instead of `{{ log.tasks.debug }}`).
+    - `Resolver` now produces a flattened dictionary instead of a nested tree.
 
 3.  **Standard Library Updates**
-    *   `log.yaml`, `utils.yaml`, `steps.yaml` updated to new spec.
-    *   `utils.color` now calls `once` internally.
-    *   `steps.step` renamed to `steps.compose`.
+    - `log.yaml`, `utils.yaml`, `steps.yaml` updated to new spec.
+    - `utils.color` now calls `once` internally.
+    - `steps.step` renamed to `steps.compose`.
 
 4.  **Playground Standardization**
-    *   Renamed directories to kebab-case:
-        *   `module_inline` → `module-inline`
-        *   `module_run_usage` → `module-run`
-        *   `task_with_args` → `task-with-args`
-    *   Updated all `qwex.yaml` files to reflect the new spec.
-    *   Added `playground/qwex.yaml` orchestration workflow to test all examples.
+    - Renamed directories to kebab-case:
+      - `module_inline` → `module-inline`
+      - `module_run_usage` → `module-run`
+      - `task_with_args` → `task-with-args`
+    - Updated all `qwex.yaml` files to reflect the new spec.
+    - Added `playground/qwex.yaml` orchestration workflow to test all examples.
 
 ### Migration Guide
 
@@ -2252,12 +2339,14 @@ The QWL (Qwex Workflow Language) compiler transforms YAML task definitions into 
    - Mixing these would require complex custom Jinja2 extensions that understand bash escaping rules
 
 **What Jinja2 IS used for:**
+
 - Rendering `{{ variable }}` references
 - Rendering `{{ module.task }}` task references (which become canonical names like `log:debug`)
 - Processing `uses/with` blocks for task composition
 - Template inheritance (future feature)
 
 **The pipeline is:**
+
 ```
 YAML → AST → qx preprocessing → Jinja rendering → Bash IR → Bash script
                 ↑                    ↑
@@ -2273,12 +2362,14 @@ YAML → AST → qx preprocessing → Jinja rendering → Bash IR → Bash scrip
 The resolver maintains two parallel index systems for backward compatibility:
 
 **Legacy Cache (Phase 1):**
+
 ```python
 _module_cache: Dict[str, Module]      # alias -> Module AST
 _source_map: Dict[str, Path]          # alias -> source file path
 ```
 
 **Hash-Indexed Maps (Phase 2):**
+
 ```python
 alias_to_source_hash: Dict[str, str]           # "log" -> "a3f2..."
 source_hash_to_ast: Dict[str, Module]          # "a3f2..." -> Module AST
@@ -2289,12 +2380,14 @@ env_hash_to_env: Dict[str, Dict[str, Any]]     # "b8d1..." -> {vars, tasks}
 ```
 
 **Hash Functions:**
+
 ```python
 source_hash = sha256(file_bytes)[:16]
 env_hash = sha256(f"{source_hash}:{json(vars_dict)}")[:16]
 ```
 
 **Why Two Systems?**
+
 - Source hash: identifies unique file content
 - Env hash: identifies unique instantiation (source + vars binding)
 - Two modules with same source but different vars → different env_hash
@@ -2314,26 +2407,28 @@ def resolve(root_module: Module) -> Dict[str, Any]:
 ```
 
 **Step 1: Module Loading (Recursive)**
+
 ```python
 def _load_modules_recursive(module, visited=None, module_dir=None):
     for mod_ref in module.modules.values():
         # Resolve source with builtin fallback
         source_path = _resolve_module_source(mod_ref.source, module_dir)
-        
+
         # Parse and cache
         loaded = parser.parse_file(source_path)
         _module_cache[mod_ref.name] = loaded
-        
+
         # Index by hash
         source_hash = sha256(source_path.read_bytes())[:16]
         alias_to_source_hash[mod_ref.name] = source_hash
         source_hash_to_ast[source_hash] = loaded
-        
+
         # Recurse with module's directory as new base
         self._load_modules_recursive(loaded, visited, source_path.parent)
 ```
 
 **Builtin Resolution:**
+
 ```python
 def _resolve_module_source(source: str, module_dir: Path) -> Path:
     """
@@ -2346,38 +2441,40 @@ def _resolve_module_source(source: str, module_dir: Path) -> Path:
     # Try local paths first
     if (module_dir / f"{source}.yaml").exists():
         return module_dir / f"{source}.yaml"
-    
+
     # Try builtins
     if (_BUILTINS_DIR / f"{source}.yaml").exists():
         return _BUILTINS_DIR / f"{source}.yaml"
-    
+
     raise FileNotFoundError(...)
 ```
 
 **Step 2: Build Flat Maps**
+
 ```python
 def _build_flat_maps(module, alias, parent_vars, visited=None):
     # Compute resolved vars (parent + module vars)
     resolved_vars = {**parent_vars, **module.vars}
-    
+
     # Compute env hash
     source_hash = alias_to_source_hash[alias]
     env_hash = _hash_env(source_hash, resolved_vars)
-    
+
     # Register canonical alias (first wins in BFS)
     if env_hash not in env_hash_to_canonical_alias:
         env_hash_to_canonical_alias[env_hash] = alias
-    
+
     # Build and store environment
     env = _build_module_env(module, alias, resolved_vars)
     env_hash_to_env[env_hash] = env
-    
+
     # Recurse to imports
     for mod_name in module.modules:
         self._build_flat_maps(_module_cache[mod_name], mod_name, resolved_vars)
 ```
 
 **Step 3: Build Environment Dict**
+
 ```python
 def _build_module_env(module, alias, resolved_vars) -> Dict[str, Any]:
     """
@@ -2391,17 +2488,18 @@ def _build_module_env(module, alias, resolved_vars) -> Dict[str, Any]:
     """
     env = dict(resolved_vars)
     env["module_name"] = module.name
-    
+
     for task_name in module.tasks:
         if alias == "":
             env[task_name] = task_name  # Root: "greet"
         else:
             env[task_name] = f"{alias}:{task_name}"  # "log:debug"
-    
+
     return env
 ```
 
 **Step 4: Build Nested Tree (Backward Compatibility)**
+
 ```python
 def _build_env_tree(module, is_root=True) -> Dict[str, Any]:
     """
@@ -2440,20 +2538,20 @@ def _compile_with_bfs(root_module, env_tree, root_task_names):
     visited = set()  # {canonical_fqn, ...}
     body_hash_to_fqn = {}  # {body_hash: first_fqn}
     compiled = []  # [(fqn, BashFunction), ...]
-    
+
     # Seed with root tasks
     for task_name in root_task_names:
         queue.append(("", task_name))
-    
+
     while queue:
         alias, task_name = queue.popleft()
-        
+
         # Get canonical FQN
         canonical_fqn = resolver.get_canonical_fqn(alias, task_name)
         if canonical_fqn in visited:
             continue
         visited.add(canonical_fqn)
-        
+
         # Get module and task
         if alias == "":
             mod = root_module
@@ -2461,32 +2559,33 @@ def _compile_with_bfs(root_module, env_tree, root_task_names):
         else:
             mod = resolver._module_cache[alias]
             mod_env = env_tree[alias]
-        
+
         task = mod.tasks[task_name]
-        
+
         # Detect dependencies (AST-based, before rendering)
         if task.uses:
             deps = _detect_deps_from_uses(task.uses, task.with_, mod_env)
         else:
             deps = _detect_deps_from_template(task.run, mod_env)
-        
+
         # Enqueue dependencies
         for dep_alias, dep_task in deps:
             queue.append((dep_alias, dep_task))
-        
+
         # Compile task
         fn = _compile_task(alias, task, mod_env)
-        
+
         # Body-hash deduplication
         body_hash = sha256(fn.body.encode())[:16]
         if body_hash not in body_hash_to_fqn:
             body_hash_to_fqn[body_hash] = canonical_fqn
             compiled.append((canonical_fqn, fn))
-    
+
     return [fn for _, fn in compiled]
 ```
 
 **Key Points:**
+
 - **AST-based dependency detection**: Scan template for `{{ module.task }}` patterns BEFORE rendering
 - **Canonical FQN**: `get_canonical_fqn(alias, task)` uses env_hash to deduplicate equivalent modules
 - **Body-hash dedup**: If two tasks compile to identical bash code, emit only once
@@ -2494,15 +2593,16 @@ def _compile_with_bfs(root_module, env_tree, root_task_names):
 #### Dependency Detection
 
 **From Template (AST-based):**
+
 ```python
 def _detect_deps_from_template(template: str, env_tree) -> Set[Tuple[str, str]]:
     """
     Regex: {{ module.task }}
     Returns: {(alias, task_name), ...}
-    
+
     Example:
     "{{ log.debug }}" → [("log", "debug")]
-    
+
     Verification:
     - Check env_tree["log"]["debug"] exists
     - Check it's a canonical name (contains ":")
@@ -2510,7 +2610,7 @@ def _detect_deps_from_template(template: str, env_tree) -> Set[Tuple[str, str]]:
     """
     pattern = r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)"
     deps = set()
-    
+
     for module_ref, task_ref in re.findall(pattern, template):
         if module_ref in env_tree and isinstance(env_tree[module_ref], dict):
             module_env = env_tree[module_ref]
@@ -2519,16 +2619,17 @@ def _detect_deps_from_template(template: str, env_tree) -> Set[Tuple[str, str]]:
                 if ":" in canonical:
                     alias, task_name = canonical.split(":", 1)
                     deps.add((alias, task_name))
-    
+
     return deps
 ```
 
 **From uses/with:**
+
 ```python
 def _detect_deps_from_uses(uses, with_items, env_tree) -> Set[Tuple[str, str]]:
     """
     uses: "steps.compose"
-    
+
     1. Parse uses reference: module.task → (module, task)
     2. Look up canonical name in env_tree
     3. Scan with_items for nested run: templates
@@ -2542,21 +2643,21 @@ def _detect_deps_from_uses(uses, with_items, env_tree) -> Set[Tuple[str, str]]:
 def _compile_task(module_name, task, env_tree) -> BashFunction:
     # Generate function name
     fn_name = task.name if module_name == "" else f"{module_name}:{task.name}"
-    
+
     # Build task-local context
     task_context = dict(env_tree)
     if task.vars:
         task_context.update(task.vars)
-    
+
     # Render body
     if task.uses:
         body = _compile_uses_with(task.uses, task.with_, env_tree, task_context)
     else:
         body = _render(task.run, task_context)
-    
+
     # Detect deps from rendered body (for rendered check)
     deps = _detect_dependencies(body)  # Regex: \b(module:task)\b
-    
+
     return BashFunction(name=fn_name, body=body, dependencies=list(deps))
 ```
 
@@ -2574,7 +2675,7 @@ def _render(template: str, context: Dict[str, Any]) -> str:
     """
     # Stage 1: qx preprocessing
     template = _process_qx_blocks(template, context)
-    
+
     # Stage 2: Jinja rendering
     from jinja2 import Environment
     env = Environment()
@@ -2590,7 +2691,7 @@ def _render(template: str, context: Dict[str, Any]) -> str:
 def _process_qx_blocks(template: str, context) -> str:
     """
     Pattern: {% qx %}...{% xq %}
-    
+
     Replacement:
     << 'QWEX_A3F2B8D1'
     $(module:include log:debug utils:color)
@@ -2598,28 +2699,29 @@ def _process_qx_blocks(template: str, context) -> str:
     QWEX_A3F2B8D1
     """
     pattern = r"\{%\s*qx\s*%\}(.*?)\{%\s*xq\s*%\}"
-    
+
     def replace_qx_block(match):
         block_content = match.group(1)
         return _generate_heredoc_block(block_content, context)
-    
+
     return re.sub(pattern, replace_qx_block, template, flags=re.DOTALL)
 ```
 
 **Heredoc Generation:**
+
 ```python
 def _generate_heredoc_block(block_content, context) -> str:
     import uuid
-    
+
     # Unique delimiter
     heredoc_id = f"QWEX_{uuid.uuid4().hex[:8].upper()}"
-    
+
     # Detect task refs: {{ module.task }}
     task_refs = _detect_task_refs_in_block(block_content, context)
-    
+
     # Escape $ as \$ for remote evaluation
     escaped_content = block_content.replace("$", "\\$")
-    
+
     # Build heredoc
     if task_refs:
         deps_list = " ".join(sorted(task_refs))
@@ -2634,16 +2736,17 @@ $(module:include {deps_list})
 ```
 
 **Task Reference Detection in qx Blocks:**
+
 ```python
 def _detect_task_refs_in_block(block, context) -> Set[str]:
     """
     Find {{ module.task }} patterns and resolve to canonical names.
     Also detect already-canonical module:task patterns.
-    
+
     Returns: {'log:debug', 'utils:color'}
     """
     refs = set()
-    
+
     # Pattern 1: {{ module.task }}
     pattern = r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)"
     for module_ref, task_ref in re.findall(pattern, block):
@@ -2652,15 +2755,16 @@ def _detect_task_refs_in_block(block, context) -> Set[str]:
             if task_ref in module_env:
                 canonical = module_env[task_ref]
                 refs.add(canonical)
-    
+
     # Pattern 2: module:task (already canonical)
     canonical_pattern = r"\b([a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z_][a-zA-Z0-9_]*)\b"
     refs.update(re.findall(canonical_pattern, block))
-    
+
     return refs
 ```
 
 **Why Escape $?**
+
 ```bash
 # Without escaping (WRONG):
 ssh remote << 'EOF'
@@ -2676,12 +2780,14 @@ EOF
 #### Stage 2: Jinja2 Rendering
 
 **What Jinja2 Renders:**
+
 1. Variable substitution: `{{ color }}` → `"blue"`
 2. Task references: `{{ log.debug }}` → `log:debug`
 3. Conditional logic: `{% if condition %}`
 4. Loops: `{% for item in items %}`
 
 **Example:**
+
 ```jinja
 # Template
 {{ log.debug }} "Starting task"
@@ -2701,6 +2807,7 @@ echo "Color is blue"
 ### Complete Example Walkthrough
 
 **Input YAML:**
+
 ```yaml
 name: example
 vars:
@@ -2716,9 +2823,11 @@ tasks:
 ```
 
 **Resolution Phase:**
+
 1. Load root module
 2. Load `std/log` from `lib/qwl/builtins/std/log.yaml`
 3. Build env_tree:
+
 ```python
 {
   "color": "blue",
@@ -2732,6 +2841,7 @@ tasks:
 ```
 
 **Compilation Phase:**
+
 1. BFS: Start from `greet`
 2. Detect deps: `{{ log.debug }}` → `("log", "debug")`
 3. Enqueue `("log", "debug")`
@@ -2741,17 +2851,20 @@ tasks:
 7. Generate help function
 
 **Rendering Phase:**
+
 1. No qx blocks, skip preprocessing
 2. Jinja render:
    - `{{ log.debug }}` → `log:debug`
    - `{{ color }}` → `blue`
 3. Final bash:
+
 ```bash
 log:debug "Hello"
 echo "Color: blue"
 ```
 
 **Output BashScript IR:**
+
 ```python
 BashScript(
   functions=[
@@ -2793,12 +2906,14 @@ BashScript(
 ### Differences from Original Plan
 
 **Original Plan (from earlier discussions):**
+
 - Single-pass compilation
 - Nested environment tree only
 - No hash-indexed maps
 - No builtin module resolution
 
 **Current Implementation:**
+
 - ✅ Two-pass: resolution + compilation
 - ✅ Dual indexing: nested tree (compatibility) + flat maps (performance)
 - ✅ Hash-based deduplication (source + env)
@@ -2807,6 +2922,7 @@ BashScript(
 - ✅ AST-based dependency detection
 
 **Why These Changes?**
+
 - Hash maps enable future lazy loading
 - Builtin resolution makes stdlib "just work"
 - qx preprocessing enables remote execution patterns
@@ -2864,7 +2980,7 @@ $root:
 
 ## Week 14: Dec 19, 2025, The Computer Science Project
 
-- programming language 
+- programming language
 - algo
 - mlops
 - nlp/llm
@@ -2952,8 +3068,10 @@ tasks[ssh]:
 QWL (Qwex Workflow Language) is a YAML-based task runner that compiles module definitions into executable bash scripts. The pipeline consists of 5 stages:
 
 ```
+
 Loader → Parser → Resolver → Renderer → Emitter
-```
+
+````
 
 ### Pipeline Stages
 
@@ -3003,7 +3121,7 @@ type ModuleTemplate = { vars: ...; tasks: ...; modules: ...; __meta__: { used: S
 // Render output
 type TaskNode = { name: string; cmd: string; hash: string; desc?: string };
 type RenderResult = { main: TaskNode[]; deps: TaskNode[]; graph: Map<string, Set<string>> };
-```
+````
 
 ### Nunjucks Proxy System
 
@@ -3018,6 +3136,7 @@ The renderer uses JavaScript Proxies to intercept template variable access:
 ### Test Coverage
 
 57 tests across 7 files covering:
+
 - Loader: file loading, canonicalization, error handling
 - Parser: YAML parsing, variable ordering
 - Resolver: inheritance, inline modules, cycle detection
@@ -3035,6 +3154,7 @@ The renderer uses JavaScript Proxies to intercept template variable access:
 Conditional inclusion based on `[featurename]` suffix syntax. Only checked at root module level.
 
 **Syntax:**
+
 ```yaml
 vars[ssh]:
   host: "user@server"
@@ -3049,6 +3169,7 @@ modules[kubernetes]:
 ```
 
 **Implementation Plan:**
+
 1. Create `src/resolver/features.ts` with feature filtering utilities
 2. Add `features: Set<string>` to pipeline config
 3. Filter vars/tasks/modules in resolver based on `[feature]` suffix
@@ -3056,6 +3177,7 @@ modules[kubernetes]:
 5. Key matching: `key[feature]` → extract `key` and `feature`
 
 **Not Supported:**
+
 - Nested feature flags: `vars.key.nested[feature]`
 - Feature flags inside task definitions
 
@@ -3066,6 +3188,7 @@ Shell environment preservation across nested execution contexts (SSH, Slurm, etc
 **Problem:** When nesting SSH or Slurm commands, functions and variables are lost in the new shell.
 
 **Proposed Syntax:**
+
 ```yaml
 tasks:
   remote:
@@ -3079,6 +3202,7 @@ tasks:
 ```
 
 **Implementation Plan:**
+
 1. Create `declare` nunjucks filter that outputs `declare -f funcname` for a task
 2. The filter also includes all dependencies of that task
 3. Implement `{% context %}` block that:
@@ -3087,6 +3211,7 @@ tasks:
    - Handles heredoc escaping challenges
 
 **Challenges:**
+
 - Heredoc nesting with proper escaping
 - Detecting which tasks are referenced inside context block
 - May need custom nunjucks extension to inspect block content
@@ -3096,6 +3221,7 @@ tasks:
 Include file content directly in templates using `$uses()`.
 
 **Syntax:**
+
 ```yaml
 vars:
   script: $uses(./helper.sh)
@@ -3108,12 +3234,14 @@ tasks:
 ```
 
 **Implementation Plan:**
+
 1. Use same resolver as loader for path resolution
 2. `$uses(path)` returns file content as string
 3. Support in: `vars`, `tasks.*.vars`, `cmd` templates
 4. Special syntax `$uses` differentiates from module `uses:`
 
 **Future Enhancement:**
+
 - Parse included file as YAML and use as structured data
 - Would require type annotation: `$uses(file.yaml, type: module)`
 
@@ -3126,4 +3254,7 @@ tasks:
 3. **Bash-native output**: Generated scripts are readable, debuggable bash
 4. **Zero runtime**: QWL is a compiler, not a runtime
 5. **Progressive complexity**: Simple use cases stay simple
+
+```
+
 ```

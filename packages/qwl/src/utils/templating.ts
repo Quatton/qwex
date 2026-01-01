@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import nunjucks from "nunjucks";
+
 import { hash } from "./hash";
 
 export function escapeQuotes(str: string): string {
@@ -165,36 +166,58 @@ nj.addGlobal("uses", (filePath: string): string => {
   }
 });
 
+nj.addGlobal("env", process.env);
+
+const color = (text: string, colorInput: string): string => {
+  const colorCode = Bun.color(colorInput, "ansi");
+  const resetCode = Bun.color("#ffffff", "ansi");
+  if (!colorCode) {
+    return text;
+  }
+  return `${colorCode}${text}${resetCode}`;
+}
+
+nj.addFilter("color", color);
+
 export { nj };
 
+// if (import.meta.main) {
+//   // Test 1: Simple context without render context (should just pass through)
+//   console.log("=== Test 1: No render context ===");
+//   const template1 = nj.renderString(`{% context %}Hello {{ name }}{% endcontext %}`, {
+//     name: "World",
+//   });
+//   console.log("Output:", template1);
+
+//   // Test 2: With mock render context
+//   console.log("\n=== Test 2: With mock render context ===");
+//   const mockRenderContext = {
+//     currentDeps: new Set<string>(),
+//     renderedTasks: new Map(),
+//     graph: new Map(),
+//   };
+
+//   // Mock a task ref that adds to currentDeps when toString is called
+//   const mockTaskRef = {
+//     toString() {
+//       mockRenderContext.currentDeps.add("myTask");
+//       return "myTask";
+//     },
+//   };
+
+//   const template2 = nj.renderString(`{% context %}Task: {{ task }}{% endcontext %}`, {
+//     __renderContext: mockRenderContext,
+//     task: mockTaskRef,
+//   });
+//   console.log("Output:", template2);
+//   console.log("Deps after:", [...mockRenderContext.currentDeps]);
+// }
+
+
 if (import.meta.main) {
-  // Test 1: Simple context without render context (should just pass through)
-  console.log("=== Test 1: No render context ===");
-  const template1 = nj.renderString(`{% context %}Hello {{ name }}{% endcontext %}`, {
-    name: "World",
-  });
-  console.log("Output:", template1);
+  console.log(color("This is green text", "green"));
 
-  // Test 2: With mock render context
-  console.log("\n=== Test 2: With mock render context ===");
-  const mockRenderContext = {
-    currentDeps: new Set<string>(),
-    renderedTasks: new Map(),
-    graph: new Map(),
-  };
+  const template = `{{ "Hello, {{ name }}!" | color("blue") }}`;
 
-  // Mock a task ref that adds to currentDeps when toString is called
-  const mockTaskRef = {
-    toString() {
-      mockRenderContext.currentDeps.add("myTask");
-      return "myTask";
-    },
-  };
-
-  const template2 = nj.renderString(`{% context %}Task: {{ task }}{% endcontext %}`, {
-    __renderContext: mockRenderContext,
-    task: mockTaskRef,
-  });
-  console.log("Output:", template2);
-  console.log("Deps after:", [...mockRenderContext.currentDeps]);
+  console.log(nj.renderString(template, { name: "Alice" }));
 }

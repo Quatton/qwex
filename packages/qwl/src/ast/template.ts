@@ -49,8 +49,9 @@ export function resolveTaskDefs(taskDefs: Record<string, TaskDef> | undefined) {
     return tasks;
   }
   for (const [taskName, taskDef] of Object.entries(taskDefs)) {
+    const cmdStr = Array.isArray(taskDef.cmd) ? taskDef.cmd.join("\n") : taskDef.cmd;
     tasks[taskName] = {
-      cmd: createTemplate(taskDef.cmd),
+      cmd: createTemplate(cmdStr),
       vars: resolveVariableDefs(taskDef.vars),
       desc: taskDef.desc,
     };

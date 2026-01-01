@@ -3,15 +3,15 @@ kind: ClusterQueue
 metadata:
   name: qwex-cluster-queue
 spec:
-  namespaceSelector: {} 
+  namespaceSelector: {}
   resourceGroups:
-  - coveredResources: ["cpu", "memory", "storage"]
-    flavors:
-    - name: default-flavor
-      resources:
-      - name: "cpu"
-        nominalQuota: 4
-      - name: "memory"
-        nominalQuota: 8Gi
-      - name: "storage"
-        nominalQuota: 100Gi
+    - coveredResources: ["cpu", "memory", "storage"]
+      flavors:
+        - name: default-flavor
+          resources:
+            - name: "cpu"
+              nominalQuota: 4
+            - name: "memory"
+              nominalQuota: 8Gi
+            - name: "storage"
+              nominalQuota: 100Gi

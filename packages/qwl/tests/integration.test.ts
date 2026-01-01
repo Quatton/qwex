@@ -10,7 +10,7 @@ describe("Pipeline Integration", () => {
   describe("simple module", () => {
     it("generates expected bash script", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "simple.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "simple.yaml"),
       });
 
       const result = await pipeline.run();
@@ -26,7 +26,7 @@ describe("Pipeline Integration", () => {
 
     it("returns correct task count", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "simple.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "simple.yaml"),
       });
 
       const result = await pipeline.run();
@@ -38,7 +38,7 @@ describe("Pipeline Integration", () => {
   describe("nested modules", () => {
     it("renders inline tasks correctly", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "nested.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "nested.yaml"),
       });
 
       const result = await pipeline.run();
@@ -53,7 +53,7 @@ describe("Pipeline Integration", () => {
   describe("variable precedence", () => {
     it("task vars override module vars", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "var-precedence.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "var-precedence.yaml"),
       });
 
       const result = await pipeline.run();
@@ -68,7 +68,7 @@ describe("Pipeline Integration", () => {
   describe("complex inheritance", () => {
     it("renders nested module tasks with correct prefixes", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
       });
 
       const result = await pipeline.run();
@@ -85,7 +85,7 @@ describe("Pipeline Integration", () => {
 
     it("uses bash-safe function names (colon separator)", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
       });
 
       const result = await pipeline.run();
@@ -101,7 +101,7 @@ describe("Pipeline Integration", () => {
 
     it("deduplicates tasks referenced multiple times", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
       });
 
       const result = await pipeline.run();
@@ -113,7 +113,7 @@ describe("Pipeline Integration", () => {
 
     it("inlines tasks without creating dependencies", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
       });
 
       const result = await pipeline.run();
@@ -126,7 +126,7 @@ describe("Pipeline Integration", () => {
   describe("uses() function", () => {
     it("includes file content in task", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "uses-function.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "uses-function.yaml"),
       });
 
       const result = await pipeline.run();
@@ -138,7 +138,7 @@ describe("Pipeline Integration", () => {
 
     it("inlines task with uses('tasks.taskName')", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "uses-task-inline.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "uses-task-inline.yaml"),
       });
 
       const result = await pipeline.run();
@@ -150,7 +150,7 @@ describe("Pipeline Integration", () => {
 
     it("inlines module task with uses('modules.sub.tasks.taskName')", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "uses-module-task-inline.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "uses-module-task-inline.yaml"),
       });
 
       const result = await pipeline.run();
@@ -163,7 +163,7 @@ describe("Pipeline Integration", () => {
   describe("eof tag", () => {
     it("wraps content in heredoc syntax with unique delimiter", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "eof-tag.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "eof-tag.yaml"),
       });
 
       const result = await pipeline.run();
@@ -180,7 +180,7 @@ describe("Pipeline Integration", () => {
   describe("context tag", () => {
     it("outputs declare -f for task references in context block", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "context-tag.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "context-tag.yaml"),
       });
 
       const result = await pipeline.run();

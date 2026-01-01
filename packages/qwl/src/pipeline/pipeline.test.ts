@@ -9,7 +9,7 @@ describe("Pipeline", () => {
   describe("constructor", () => {
     it("accepts entry path option", () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "simple.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "simple.yaml"),
       });
       expect(pipeline).toBeDefined();
     });
@@ -18,7 +18,7 @@ describe("Pipeline", () => {
   describe("run", () => {
     it("returns EmitResult with script and count", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "simple.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "simple.yaml"),
       });
 
       const result = await pipeline.run();
@@ -33,7 +33,7 @@ describe("Pipeline", () => {
       const originalCwd = process.cwd();
       try {
         process.chdir(FIXTURES_DIR);
-        const pipeline = new Pipeline({ entryPath: "simple.yaml" });
+        const pipeline = new Pipeline({ sourcePath: "simple.yaml" });
         const result = await pipeline.run();
         expect(result.count).toBeGreaterThan(0);
       } finally {
@@ -43,7 +43,7 @@ describe("Pipeline", () => {
 
     it("throws QwlError for non-existent file", async () => {
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "non-existent.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "non-existent.yaml"),
       });
 
       await expect(pipeline.run()).rejects.toThrow();
@@ -53,7 +53,7 @@ describe("Pipeline", () => {
       // Create a test that would have circular deps
       // For now, just verify the pipeline works
       const pipeline = new Pipeline({
-        entryPath: path.join(FIXTURES_DIR, "simple.yaml"),
+        sourcePath: path.join(FIXTURES_DIR, "simple.yaml"),
       });
 
       const result = await pipeline.run();

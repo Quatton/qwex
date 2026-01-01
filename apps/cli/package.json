@@ -1,24 +1,25 @@
 {
-  "name": "qwl",
+  "name": "qwexcli",
+  "bin": {
+    "qwex": "./src/index.ts"
+  },
   "type": "module",
   "module": "src/index.ts",
-  "exports": {
-    ".": {
-      "import": "./src/index.ts"
-    }
-  },
   "scripts": {
-    "test": "bun test",
+    "cli": "bun run src/index.ts",
     "lint": "oxlint .",
     "format": "oxfmt . -c ../../.oxfmtrc.jsonc"
   },
   "dependencies": {
+    "@clack/prompts": "^0.11.0",
+    "arkenv": "^0.8.1",
     "arktype": "^2.1.29",
-    "nunjucks": "^3.2.4"
+    "citty": "^0.1.6",
+    "consola": "^3.4.2",
+    "qwl": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/nunjucks": "^3.2.6",
     "oxfmt": "^0.21.0",
     "oxlint": "^1.36.0"
   },
