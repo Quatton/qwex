@@ -4,7 +4,7 @@ import scriptTemplate from "./script.sh.njk" with { type: "text" };
 
 export interface EmitResult {
   script: string;
-  taskCount: number;
+  count: number;
 }
 
 export class Emitter {
@@ -27,7 +27,7 @@ export class Emitter {
 
     return {
       script,
-      taskCount: result.main.length + result.deps.length,
+      count: result.main.length + result.deps.length,
     };
   }
 }

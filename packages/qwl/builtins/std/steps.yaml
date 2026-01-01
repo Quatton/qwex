@@ -32,7 +32,7 @@ tasks:
 
   compose:
     vars:
-      steps: "[]"
+      steps: []
     cmd: |
       for step in "${steps[@]}"; do
         IFS='|' read -r step_name step_command <<< "$step"

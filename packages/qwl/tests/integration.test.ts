@@ -30,7 +30,7 @@ describe("Pipeline Integration", () => {
 
       const result = await pipeline.run();
 
-      expect(result.taskCount).toBe(3);
+      expect(result.count).toBe(3);
     });
   });
 

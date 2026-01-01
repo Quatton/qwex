@@ -50,12 +50,19 @@ export class Resolver {
     if (def.vars) Object.assign(template.vars, resolveVariableDefs(def.vars));
     if (def.tasks) Object.assign(template.tasks, resolveTaskDefs(def.tasks));
     if (def.modules)
-      await this.resolveInlineModules(template.modules, def.modules, currentPath);
+      await this.resolveInlineModules(
+        template.modules,
+        def.modules,
+        currentPath
+      );
 
     return template;
   }
 
-  private async resolveBase(uses: string, currentPath: string): Promise<ModuleTemplate> {
+  private async resolveBase(
+    uses: string,
+    currentPath: string
+  ): Promise<ModuleTemplate> {
     const parent = await this.resolve(uses, currentPath);
     return {
       vars: { ...parent.vars },
@@ -78,7 +85,7 @@ export class Resolver {
 
 if (import.meta.main) {
   const { hash } = await import("../utils/hash");
-  
+
   const module: ModuleDef = {
     uses: "base",
     vars: {

@@ -15,7 +15,7 @@ describe("Pipeline", () => {
   });
 
   describe("run", () => {
-    it("returns EmitResult with script and taskCount", async () => {
+    it("returns EmitResult with script and count", async () => {
       const pipeline = new Pipeline({
         entryPath: path.join(FIXTURES_DIR, "simple.yaml"),
       });
@@ -23,9 +23,9 @@ describe("Pipeline", () => {
       const result = await pipeline.run();
 
       expect(result).toHaveProperty("script");
-      expect(result).toHaveProperty("taskCount");
+      expect(result).toHaveProperty("count");
       expect(typeof result.script).toBe("string");
-      expect(typeof result.taskCount).toBe("number");
+      expect(typeof result.count).toBe("number");
     });
 
     it("resolves relative paths from cwd", async () => {
@@ -34,7 +34,7 @@ describe("Pipeline", () => {
         process.chdir(FIXTURES_DIR);
         const pipeline = new Pipeline({ entryPath: "simple.yaml" });
         const result = await pipeline.run();
-        expect(result.taskCount).toBeGreaterThan(0);
+        expect(result.count).toBeGreaterThan(0);
       } finally {
         process.chdir(originalCwd);
       }

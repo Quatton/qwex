@@ -21,6 +21,7 @@
     }
   ],
   "settings": {
-    "python.defaultInterpreterPath": "${workspaceFolder:root}/.venv/bin/python"
+    "python.defaultInterpreterPath": "${workspaceFolder:root}/.venv/bin/python",
+    "typescript.tsdk": "qwl/node_modules/typescript/lib"
   }
 }
