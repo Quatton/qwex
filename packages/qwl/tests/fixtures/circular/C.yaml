@@ -1,0 +1,31 @@
+# Module C - standalone module
+# Has submodule D (inline) with a task
+# Has its own tasks that can be inlined or referenced
+
+vars:
+  origin: "from-C"
+
+modules:
+  D:
+    vars:
+      origin: "from-D"
+    tasks:
+      d1:
+        desc: "D1 from inline module D"
+        cmd: 'echo "d1: origin={{ vars.origin }}"'
+
+tasks:
+  c1:
+    desc: "C1 basic task"
+    cmd: 'echo "c1: origin={{ vars.origin }}"'
+
+  c2:
+    desc: "C2 uses D's d1"
+    cmd: |
+      echo "c2 calling d1"
+      {{ modules.D.tasks.d1 }}
+
+  c3:
+    desc: "C3 inlines D's d1"
+    cmd: |
+      {{ modules.D.tasks.d1.inline() }}

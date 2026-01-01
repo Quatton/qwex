@@ -62,7 +62,7 @@ export function resolveTaskDefs(taskDefs: Record<string, TaskDef> | undefined) {
   for (const [taskName, taskDef] of Object.entries(taskDefs)) {
     tasks[taskName] = {
       cmd: createTemplate(taskDef.cmd),
-      vars: resolveVariableDefs(taskDef.vars ?? {}),
+      vars: resolveVariableDefs(taskDef.vars),
       desc: taskDef.desc,
     };
   }
@@ -70,14 +70,14 @@ export function resolveTaskDefs(taskDefs: Record<string, TaskDef> | undefined) {
 }
 
 export function resolveVariableDefs(
-  varDefs: Record<string, VariableDef> | undefined
+  varDefs: Record<string, unknown> | undefined
 ) {
   const vars: Record<string, VariableTemplate> = {};
   if (!varDefs) {
     return vars;
   }
   for (const [varName, varDef] of Object.entries(varDefs)) {
-    vars[varName] = createTemplateRecord(varDef);
+    vars[varName] = createTemplateRecord(varDef as VariableDef);
   }
   return vars;
 }

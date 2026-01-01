@@ -1,0 +1,34 @@
+# Entry point for complex inheritance test
+# Uses A.yaml and exercises module nesting and deduplication
+
+uses: ./A.yaml
+
+vars:
+  origin: "from-entry"
+
+tasks:
+  main:
+    desc: "Main entry task"
+    cmd: |
+      echo "=== Testing complex inheritance ==="
+      # Call a1 (inherited from A) - should use entry's vars
+      {{ tasks.a1 }}
+      # Call B's c1 through submodule chain
+      {{ modules.B.tasks.c1 }}
+      # Call B's c2 (which references D's d1)
+      {{ modules.B.tasks.c2 }}
+
+  testDedup:
+    desc: "Test task deduplication - reference same task twice"
+    cmd: |
+      # Both reference a1, but a1 should only appear once in deps
+      {{ tasks.a1 }}
+      echo "between calls"
+      {{ tasks.a1 }}
+
+  testInlineDedup:
+    desc: "Test inline doesn't create duplicate deps"
+    cmd: |
+      # Inline a1 twice - no deps created
+      {{ tasks.a1.inline() }}
+      {{ tasks.a1.inline() }}

@@ -95,7 +95,8 @@ function createTaskCallable(
     toString() {
       const depName = renderTask(ctx, module, taskName, prefix);
       ctx.currentDeps.add(depName);
-      return depName;
+      // Return bash-safe function name (replace dots with double underscores)
+      return depName.replace(/\./g, "__");
     },
     inline: inlineMethod,
     // DISCUSS: what about these instead?

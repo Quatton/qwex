@@ -63,6 +63,66 @@ describe("Pipeline Integration", () => {
       expect(result.script).toContain('echo "task-level"');
     });
   });
+
+  describe("complex inheritance", () => {
+    it("renders nested module tasks with correct prefixes", async () => {
+      const pipeline = new Pipeline({
+        entryPath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
+      });
+
+      const result = await pipeline.run();
+
+      // Entry's a1 uses entry's vars (origin=from-entry)
+      expect(result.script).toContain('echo "a1: origin=from-entry"');
+
+      // B's c1 uses B's vars (origin=from-B)
+      expect(result.script).toContain('echo "c1: origin=from-B"');
+
+      // B.D's d1 uses D's vars (origin=from-D)
+      expect(result.script).toContain('echo "d1: origin=from-D"');
+    });
+
+    it("uses bash-safe function names (double underscores)", async () => {
+      const pipeline = new Pipeline({
+        entryPath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
+      });
+
+      const result = await pipeline.run();
+
+      // Function definitions use double underscores
+      expect(result.script).toContain("B__c1()");
+      expect(result.script).toContain("B__D__d1()");
+
+      // Function calls also use double underscores
+      expect(result.script).toContain("B__c1");
+      expect(result.script).toContain("B__c2");
+    });
+
+    it("deduplicates tasks referenced multiple times", async () => {
+      const pipeline = new Pipeline({
+        entryPath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
+      });
+
+      const result = await pipeline.run();
+
+      // Count occurrences of a1() function definition
+      const a1Defs = result.script.match(/^a1\(\)/gm);
+      expect(a1Defs?.length).toBe(1);
+    });
+
+    it("inlines tasks without creating dependencies", async () => {
+      const pipeline = new Pipeline({
+        entryPath: path.join(FIXTURES_DIR, "circular/entry.yaml"),
+      });
+
+      const result = await pipeline.run();
+
+      // testInlineDedup inlines a1 twice, check both are present
+      expect(result.script).toContain(
+        'echo "a1: origin=from-entry"\necho "a1: origin=from-entry"'
+      );
+    });
+  });
 });
 
 function normalizeScript(script: string): string {

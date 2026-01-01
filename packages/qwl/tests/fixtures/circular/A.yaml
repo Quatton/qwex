@@ -1,0 +1,17 @@
+# Module A - base module
+# Has task a1 that can be inlined or referenced
+# Has submodule B that uses C.yaml
+
+vars:
+  origin: "from-A"
+
+modules:
+  B:
+    uses: ./C.yaml
+    vars:
+      origin: "from-B"
+
+tasks:
+  a1:
+    desc: "Original a1 from A"
+    cmd: 'echo "a1: origin={{ vars.origin }}"'

@@ -234,7 +234,8 @@ describe("createRenderProxy", () => {
         toString: () => string;
       };
 
-      expect(taskRef.toString()).toBe("sub.subTask");
+      // Returns bash-safe function name (dots replaced with double underscores)
+      expect(taskRef.toString()).toBe("sub__subTask");
     });
 
     it("returns undefined for non-existent modules", () => {
@@ -274,7 +275,8 @@ describe("createRenderProxy", () => {
         toString: () => string;
       };
 
-      expect(taskRef.toString()).toBe("myprefix.greet");
+      // Returns bash-safe function name (dots replaced with double underscores)
+      expect(taskRef.toString()).toBe("myprefix__greet");
     });
   });
 
@@ -314,7 +316,8 @@ describe("createRenderProxy", () => {
       const subProxy = proxy.sub as Record<string, unknown>;
       const taskFn = subProxy.subTask as { toString: () => string };
 
-      expect(taskFn.toString()).toBe("sub.subTask");
+      // Returns bash-safe function name (dots replaced with double underscores)
+      expect(taskFn.toString()).toBe("sub__subTask");
     });
 
     it("{{ sub.subTask.inline() }} inlines the task", () => {
