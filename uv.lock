@@ -15,4 +15,4 @@ source = { virtual = "." }
 [[package]]
 name = "uv-workspace-demo"
 version = "0.1.0"
-source = { virtual = "playground/lifecycle/uv-workspace-demo" }
+source = { virtual = "playground/uv-workspace/uv-workspace-demo" }

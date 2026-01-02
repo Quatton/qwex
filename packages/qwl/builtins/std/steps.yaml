@@ -25,13 +25,7 @@ tasks:
           "$(echo "$PWD" | sed "s|^$HOME|~|")" "" >&2
       fi
 
-      local truncated_command="${command:0:60}"
-
-      if [ "${#command}" -gt 60 ]; then
-        truncated_command="${truncated_command}..."
-      fi
-
-      {{ log.tasks.debug }} "${__STEP_INDENT}{{ "│ Executing:" | color("#808080") }} $truncated_command"
+      {{ log.tasks.debug }} "${__STEP_INDENT}{{ "│ Executing:" | color("#808080") }} $command"
 
       local start_time=$(date +%s)
 

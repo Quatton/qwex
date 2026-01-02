@@ -14,12 +14,17 @@ tasks:
     vars:
       steps:
         - desc: "Create temp directory"
-          cmd: "mkdir -p {{ vars.demo_dir }}"
+          cmd: |
+            cd {{ __dir__ }}
+            mkdir -p {{ vars.demo_dir }}
         - desc: "Initialize uv project"
           cmd: |
+            cd {{ __dir__ }}
             uv init {{ vars.demo_dir }}
         - desc: "Copy ./config/* to demo_dir"
-          cmd: "cp -r ./config/* {{ vars.demo_dir }}"
+          cmd: |
+            cd {{ __dir__ }}
+            cp -r ./config/* {{ vars.demo_dir }}
         - desc: "Check if qwex is installed"
           cmd: |
             if ! command -v qwex &> /dev/null; then
@@ -34,6 +39,7 @@ tasks:
             qwex run uv run hello.py
         - desc: "Modify hello.py to say other message"
           cmd: |
+            cd {{ vars.demo_dir }}
             echo 'print("Hello from modified hello.py!")' > {{ vars.demo_dir }}/hello.py
         - desc: "Run `qwex run uv run hello.py` again to see modified output"
           cmd: |

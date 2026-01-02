@@ -8,12 +8,12 @@ tasks:
   clean:
     cmd: |
       {{ modules["uv-workspace"].tasks.clean }}
-      # {{ modules["lifecycle"].tasks.clean }}
+      {{ modules["lifecycle"].tasks.clean }}
   all:
     cmd: |
       {{ modules["uv-workspace"].tasks.all }}
-      # {{ modules["lifecycle"].tasks.all }}
+      {{ modules["lifecycle"].tasks.all }}
   test:
     cmd: |
       {{ modules["uv-workspace"].tasks.test }}  
-      # {{ modules["lifecycle"].tasks.test }}
+      {{ modules["lifecycle"].tasks.test }}
