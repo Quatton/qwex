@@ -18,14 +18,16 @@ export class Emitter {
   }
 
   emit(result: RenderResult): EmitResult {
+    const tasks = [...result.deps, ...result.main];
     const script = this.template.render({
+      tasks,
       main: result.main,
       deps: result.deps,
     });
 
     return {
       script,
-      count: result.main.length + result.deps.length,
+      count: tasks.length,
     };
   }
 }

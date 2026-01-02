@@ -20,7 +20,7 @@ tasks:
 
       if {{ log.tasks.should_log }} "INFO"; then
         printf '%s %s %s %s\n' \
-          "${__STEP_INDENT}{{ "┌──" | color("#808080") }} {{ "Step:" | color("blue") }} $description" \
+          "${__STEP_INDENT}{{ "┌──" | color("#808080") }} {{ "Step:" | blue }} $description" \
           "{{ "in" | color("#808080") }}" \
           "$(echo "$PWD" | sed "s|^$HOME|~|")" "" >&2
       fi

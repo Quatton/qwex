@@ -46,8 +46,7 @@ const main = defineCommand({
 
     const configPath = resolve(args.config);
     const features = args.features ? args.features.split(",") : undefined;
-
-    const bashArgs = args._;
+    const bashArgs = args._ || [];
 
     try {
       const pipeline = new Pipeline({

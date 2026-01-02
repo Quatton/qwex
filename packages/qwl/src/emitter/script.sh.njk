@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-QWEX_PREAMBLE="set -euo{{ "x" if env.DEBUG }} pipefail
+QWEX_PREAMBLE="set -euo{{ 'x' if env.DEBUG }} pipefail
 shopt -s expand_aliases
-{{ "export DEBUG=1" if env.DEBUG else "" }}
+{{ 'export DEBUG=1' if env.DEBUG else '' }}
 ORIGINAL_PWD=\$(pwd)"
 
 source <(echo "$QWEX_PREAMBLE")
@@ -10,59 +10,77 @@ source <(echo "$QWEX_PREAMBLE")
 @source() {
   declare -p QWEX_PREAMBLE
   echo "source <(echo \"$QWEX_PREAMBLE\")"
-  declare -f {% for task in deps %}{{ task.name }} {% endfor %} {% for task in main %}{{ task.name }} {% endfor %} @main @help @source
+  declare -f {% for task in tasks %}{{ task.name }} {% endfor %} @main @help @source @repl
   echo "@main \$@"
 }
 
 @help() {
   echo "Available tasks:"
 {% for task in main %}
-  echo "  {{ task.name }}{% if task.desc %} - {{ task.desc }}{% endif %}"
+  echo "  {{ task.name }}{{ ' - ' + task.desc if task.desc else '' }}"
 {% endfor %}
+  echo ""
+  echo "Special commands:"
+  echo "  @help        - Show this help message"
+  echo "  @source      - Output the full script with all task definitions"
+  echo "  @repl [task] - Enter interactive QWEX REPL for a specific task or general commands"
 }
 
-{% for task in deps %}
-{% if task.desc %}
-# {{ task.desc }}
-{% endif %}
+{% for task in tasks %}
 # Hash: {{ task.hash }}
 {{ task.name }}() {
   {{ task.cmd | trim }}
 }
 {% endfor %}
-{% for task in main %}
-{% if task.desc %}
-# {{ task.desc }}
-{% endif %}
-# Hash: {{ task.hash }}
-{{ task.name }}() {
-  {{ task.cmd | trim }}
+
+@repl() {
+  echo "Entering QWEX REPL. Type 'exit' to quit."
+  local task="${1:-}"
+  while true; do
+    read -rp "qwex ${task:+($task)}> " input
+    if [[ "$input" == "exit" ]]; then
+      break
+    fi
+    if [[ -n "$task" ]]; then
+      input="{{ prefix }}$task $input"
+    fi
+    @main $input || true
+  done
 }
-{% endfor %}
 
 @main() {
-  local task="{{ prefix }}${1:-}"
-  case "$task" in
-{% for task in main %}
-    "{{ task.name }}")
-      shift
-      {{ task.name }} "$@"
-      ;;
-{% endfor %}
-    *)
-      if declare -f "$task" > /dev/null; then
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      @help)
         shift
-        "$task" "$@"
-      else
-        "$@"
-      fi
-      ;;
-  esac
-}
+        @help
+        return 0
+        ;;
+      @source)
+        shift
+        @source
+        return 0
+        ;;
+      @repl)
+        shift
+        @repl "$@"
+        return 0
+        ;;
+      *) break ;;
+    esac
+  done
 
-if [[ $# -eq 0 || $1 == "--help" || $1 == "-h" || $1 == "help" ]]; then
-  @help
-  exit 0
-fi
+  [[ $# -eq 0 ]] && { @help; return 0; }
+
+  local task="{{ prefix }}$1"
+  if declare -f "$task" > /dev/null; then
+    shift
+    "$task" "$@"
+  elif [[ "$1" == *"="* ]]; then
+    exec env "$@" # Fixes the "command not found" for LOG_LEVEL=DEBUG
+  else
+    "$@"
+  fi
+}
 
 @main "$@"

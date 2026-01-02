@@ -1,5 +1,5 @@
 modules:
-  uv-workspace:
+  uvworkspace:
     uses: ./uv-workspace/qwex.yaml
   lifecycle:
     uses: ./lifecycle/qwex.yaml
@@ -7,13 +7,13 @@ modules:
 tasks:
   clean:
     cmd: |
-      {{ modules["uv-workspace"].tasks.clean }}
+      {{ modules["uvworkspace"].tasks.clean }}
       {{ modules["lifecycle"].tasks.clean }}
   all:
     cmd: |
-      {{ modules["uv-workspace"].tasks.all }}
+      {{ modules["uvworkspace"].tasks.all }}
       {{ modules["lifecycle"].tasks.all }}
   test:
     cmd: |
-      {{ modules["uv-workspace"].tasks.test }}  
+      {{ modules["uvworkspace"].tasks.test }}  
       {{ modules["lifecycle"].tasks.test }}

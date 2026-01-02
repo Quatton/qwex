@@ -4,10 +4,6 @@ import nunjucks from "nunjucks";
 import { TASK_FN_PREFIX } from "../constants";
 import { getCwd, resolvePath as resolvePathUtil } from "./path";
 
-export function escapeQuotes(str: string): string {
-  return str.replace(/"/g, '\\"').replace(/'/g, "\\'");
-}
-
 /**
  * Custom extension for {% uses "./path" %}
  *
@@ -94,8 +90,6 @@ nj.addFilter("brightBlack", (text: string) => color(text, "brightBlack"));
 nj.addFilter("escape", (text: string) =>
   text.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\$/g, "\\$").replace(/`/g, "\\`"),
 );
-// do not add bash_escape! just use escape. also you likely not need it trim already exists
-nj.addFilter("multiline", (text: string) => text.trim().replace(/(?<!\\)\n/g, " \\\n"));
 nj.addFilter("red", (text: string) => color(text, "red"));
 nj.addFilter("green", (text: string) => color(text, "green"));
 nj.addFilter("yellow", (text: string): string => color(text, "yellow"));
