@@ -56,7 +56,7 @@ tasks:
       {% for step in vars.steps %}
       # Step: {{ step.desc }}
       if [ "$failed" = false ] || [ "{{ step.always | default(false) }}" = "true" ]; then
-        if ! {{ tasks.step }} "{{ step.desc }} {{ "(always)" if step.always }}" "{{ step.cmd }}";
+        if ! {{ tasks.step }} "{{ step.desc | escape }} {{ "(always)" if step.always }}" "{{ step.cmd }}";
 
         then
           failed=true

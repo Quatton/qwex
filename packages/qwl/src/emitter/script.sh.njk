@@ -54,14 +54,13 @@ source <(echo "$QWEX_PREAMBLE")
         shift
         "$task" "$@"
       else
-        # Fallback to eval for raw shell commands
-        eval "$@"
+        "$@"
       fi
       ;;
   esac
 }
 
-if [[ $1 == "--help" || $1 == "-h" || $1 == "help" || $# -eq 0 ]]; then
+if [[ $# -eq 0 || $1 == "--help" || $1 == "-h" || $1 == "help" ]]; then
   @help
   exit 0
 fi

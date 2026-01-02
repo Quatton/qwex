@@ -32,14 +32,11 @@ tasks:
             else
               {{ log.tasks.info }} "qwex is installed."
             fi
-        # - desc: "Run `qwex -o > compiled.sh`"
-        #   cmd: |
-        #     cd {{ vars.demo_dir }}
-        #     qwex -o compiled.sh
         - desc: "Run `qwex run uv run hello.py` in demo_dir"
           cmd: |
             cd {{ vars.demo_dir }}
-            DEBUG=1 qwex help
+            qwex -o compiled.sh
+            bash compiled.sh uv run hello.py
 
   clean:
     desc: "Clean up temp directory created during test"

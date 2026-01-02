@@ -64,6 +64,7 @@ const main = defineCommand({
         }
         await writeFile(args.output, script);
         consola.info(`Script written to ${args.output}`);
+        process.exit(0);
       }
 
       const proc = spawn("bash", ["-c", script, "--", ...bashArgs], {
