@@ -295,6 +295,101 @@ describe("Renderer", () => {
       const childTask = result.deps.find((t) => t.key === "child.childTask");
       expect(childTask?.cmd).toBe('echo "child value"');
     });
+
+    it("resolves various module/task path forms", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          fullPath: {
+            cmd: 'echo "callingA {{ modules.child.tasks.childTask }}"',
+          },
+          dottedPath: {
+            cmd: 'echo "callingB {{ child.childTask }}"',
+          },
+          nestedTasksPath: {
+            cmd: 'echo "callingC {{ child.tasks.childTask }}"',
+          },
+        }),
+        modules: {
+          child: {
+            vars: resolveVariableDefs({
+              childVar: "child value",
+            }),
+            tasks: resolveTaskDefs({
+              childTask: {
+                cmd: 'echo "{{ vars.childVar }}"',
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const expectedRef = `${TASK_FN_PREFIX}child:childTask`;
+
+      const find = (name: string) => [...result.main, ...result.deps].find((t) => t.key === name);
+
+      const full = find("fullPath");
+      const dotted = find("dottedPath");
+      const nested = find("nestedTasksPath");
+
+      const fullCmd = `echo "callingA ${expectedRef}"`;
+      const dottedCmd = `echo "callingB ${expectedRef}"`;
+      const nestedCmd = `echo "callingC ${expectedRef}"`;
+
+      expect(full?.cmd).toBe(fullCmd);
+      expect(dotted?.cmd).toBe(dottedCmd);
+      expect(nested?.cmd).toBe(nestedCmd);
+    });
+
+    it("resolves module variable path forms", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          varFull: {
+            cmd: 'echo "varA {{ modules.child.vars.childVar }}"',
+          },
+          // SHOULD NOT WORK?
+          // varDotted: {
+          //   cmd: 'echo "varB {{ child.childVar }}"',
+          // },
+          varNested: {
+            cmd: 'echo "varC {{ child.vars.childVar }}"',
+          },
+        }),
+        modules: {
+          child: {
+            vars: resolveVariableDefs({
+              childVar: "child value",
+            }),
+            tasks: resolveTaskDefs({}),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const find = (name: string) => [...result.main, ...result.deps].find((t) => t.key === name);
+
+      const full = find("varFull");
+      // SHOULD NOT WORK?
+      // const dotted = find("varDotted");
+      const nested = find("varNested");
+
+      expect(full?.cmd).toBe('echo "varA child value"');
+      // SHOULD NOT WORK?
+      // expect(dotted?.cmd).toBe('echo "varB child value"');
+      expect(nested?.cmd).toBe('echo "varC child value"');
+    });
   });
 
   describe("deduplication", () => {
