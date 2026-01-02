@@ -1,9 +1,0 @@
-tasks:
-  run:
-    cmd: |
-      local command=${@:-""}
-      if [ -z "$command" ]; then
-        {{ log.tasks.error }} "No command provided to run task."
-        return 1
-      fi
-      bash -c "$command"

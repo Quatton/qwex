@@ -25,7 +25,6 @@ export interface RenderResult {
 export class Renderer {
   private ctx!: RenderContext;
   private proxyFactory!: RenderProxyFactory;
-  private rootModule!: ModuleTemplate;
 
   /**
    * Extract the module prefix from a uses path like "modules.steps.tasks.compose" -> "steps"
@@ -43,7 +42,6 @@ export class Renderer {
   }
 
   renderAllTasks(module: ModuleTemplate): RenderResult {
-    this.rootModule = module;
     this.ctx = new RenderContext();
     this.proxyFactory = new RenderProxyFactory(this.ctx, {
       renderVar: (ctx, mod, name, prefix) => this.renderVar(mod, name, prefix),
@@ -129,7 +127,8 @@ export class Renderer {
 
       if (task.uses) {
         const usesPath = task.uses.split(".");
-        let currentModule: ModuleTemplate = this.rootModule;
+
+        let currentModule: ModuleTemplate = module;
 
         // Navigate to the correct module/task
         // Path format: "modules.moduleName.tasks.taskName"
@@ -236,7 +235,7 @@ export class Renderer {
 
       if (task.uses) {
         const usesPath = task.uses.split(".");
-        let currentModule: ModuleTemplate = this.rootModule;
+        let currentModule: ModuleTemplate = module;
 
         // Navigate to the correct module/task
         // Path format: "modules.moduleName.tasks.taskName"
