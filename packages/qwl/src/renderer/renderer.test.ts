@@ -381,13 +381,9 @@ describe("Renderer", () => {
       const find = (name: string) => [...result.main, ...result.deps].find((t) => t.key === name);
 
       const full = find("varFull");
-      // SHOULD NOT WORK?
-      // const dotted = find("varDotted");
       const nested = find("varNested");
 
       expect(full?.cmd).toBe('echo "varA child value"');
-      // SHOULD NOT WORK?
-      // expect(dotted?.cmd).toBe('echo "varB child value"');
       expect(nested?.cmd).toBe('echo "varC child value"');
     });
   });
