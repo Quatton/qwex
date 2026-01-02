@@ -14,7 +14,7 @@ vars:
     esac
 
 tasks:
-  _should_log:
+  should_log:
     cmd: |
       local msg_level="${1:-INFO}"
       local current_level="${LOG_LEVEL:-INFO}"
@@ -23,7 +23,6 @@ tasks:
         {{ vars.level_to_num }}
       }
 
-      # Now we can call it cleanly
       local msg_num=$(_to_num "$msg_level")
       local current_num=$(_to_num "$current_level")
 
@@ -35,30 +34,30 @@ tasks:
 
   trace:
     cmd: |
-      if {{ tasks._should_log }} 1; then
+      if {{ tasks.should_log }} 1; then
         printf '%s {{ "[TRACE]" | color("#808080") }} %s\n' "$({{ tasks._timestamp }})" "$1" >&2
       fi
 
   debug:
     cmd: |
-      if {{ tasks._should_log }} 2; then
+      if {{ tasks.should_log }} 2; then
         printf '%s {{ "[DEBUG]" | color("#808080") }} %s\n' "$({{ tasks._timestamp }})" "$1" >&2
       fi
 
   info:
     cmd: |
-      if {{ tasks._should_log }} 3; then
+      if {{ tasks.should_log }} 3; then
         printf '%s {{ "ℹ" | color("blue") }} %s\n' "$({{ tasks._timestamp }})" "$1" >&2
       fi
 
   warn:
     cmd: |
-      if {{ tasks._should_log }} 4; then
+      if {{ tasks.should_log }} 4; then
         printf '%s {{ "⚠" | color("yellow") }} %s\n' "$({{ tasks._timestamp }})" "$1" >&2
       fi
 
   error:
     cmd: |
-      if {{ tasks._should_log }} 5; then
+      if {{ tasks.should_log }} 5; then
         printf '%s {{ "✘" | color("red") }} %s\n' "$({{ tasks._timestamp }})" "$1" >&2
       fi

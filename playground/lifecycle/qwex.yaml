@@ -18,10 +18,6 @@ tasks:
         - desc: "Initialize uv project"
           cmd: |
             uv init {{ vars.demo_dir }}
-        - desc: "Run hello.py"
-          cmd: |
-            cd {{ vars.demo_dir }}
-            uv run hello.py
         - desc: "Copy ./config/* to demo_dir"
           cmd: "cp -r ./config/* {{ vars.demo_dir }}"
         - desc: "Check if qwex is installed"
@@ -33,6 +29,13 @@ tasks:
               {{ log.tasks.info }} "qwex is installed."
             fi
         - desc: "Run `qwex run uv run hello.py` in demo_dir"
+          cmd: |
+            cd {{ vars.demo_dir }}
+            qwex run uv run hello.py
+        - desc: "Modify hello.py to say other message"
+          cmd: |
+            echo 'print("Hello from modified hello.py!")' > {{ vars.demo_dir }}/hello.py
+        - desc: "Run `qwex run uv run hello.py` again to see modified output"
           cmd: |
             cd {{ vars.demo_dir }}
             qwex run uv run hello.py

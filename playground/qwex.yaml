@@ -1,8 +1,19 @@
 modules:
   uv-workspace:
     uses: ./uv-workspace/qwex.yaml
+  lifecycle:
+    uses: ./lifecycle/qwex.yaml
 
 tasks:
-  clean-all:
+  clean:
     cmd: |
       {{ modules["uv-workspace"].tasks.clean }}
+      # {{ modules["lifecycle"].tasks.clean }}
+  all:
+    cmd: |
+      {{ modules["uv-workspace"].tasks.all }}
+      # {{ modules["lifecycle"].tasks.all }}
+  test:
+    cmd: |
+      {{ modules["uv-workspace"].tasks.test }}  
+      # {{ modules["lifecycle"].tasks.test }}
