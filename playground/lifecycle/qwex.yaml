@@ -9,7 +9,7 @@ modules:
 
 tasks:
   test:
-    desc: "Test uv workspace creation and execution with steps.compose"
+    desc: "UV workspace with lifecycle using qwex"
     uses: modules.steps.tasks.compose
     vars:
       steps:
@@ -35,8 +35,7 @@ tasks:
         - desc: "Run `qwex run uv run hello.py` in demo_dir"
           cmd: |
             cd {{ vars.demo_dir }}
-            qwex -o compiled.sh
-            bash compiled.sh uv run hello.py
+            qwex run uv run hello.py
 
   clean:
     desc: "Clean up temp directory created during test"

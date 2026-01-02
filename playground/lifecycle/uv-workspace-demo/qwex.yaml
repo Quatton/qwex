@@ -1,6 +1,0 @@
-tasks:
-  run:
-    cmd: |
-      local command=${@:-"uv run main.py"}
-      echo "Running command: $command"
-      bash -c "$command"
