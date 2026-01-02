@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-QWEX_PREAMBLE="set -euo pipefail
+
+QWEX_PREAMBLE="set -euo{{ "x" if env.DEBUG }} pipefail
 shopt -s expand_aliases
+{{ "export DEBUG=1" if env.DEBUG else "" }}
 ORIGINAL_PWD=\$(pwd)"
 
 source <(echo "$QWEX_PREAMBLE")
@@ -25,7 +27,7 @@ source <(echo "$QWEX_PREAMBLE")
 {% endif %}
 # Hash: {{ task.hash }}
 {{ task.name | replace(".", ":") }}() {
-  {{ task.cmd | chomp }}
+  {{ task.cmd | trim }}
 }
 {% endfor %}
 {% for task in main %}
@@ -34,12 +36,13 @@ source <(echo "$QWEX_PREAMBLE")
 {% endif %}
 # Hash: {{ task.hash }}
 {{ task.name | replace(".", ":") }}() {
-  {{ task.cmd | chomp }}
+  {{ task.cmd | trim }}
 }
 {% endfor %}
 
 @main() {
-  case "${1:-}" in
+  local task="${1:-}"
+  case "$task" in
     ""|"-h"|"--help"|"help")
       @help
       ;;
@@ -50,8 +53,13 @@ source <(echo "$QWEX_PREAMBLE")
       ;;
 {% endfor %}
     *)
-      echo "Unknown task: $@. Executing as a script." >&2
-      eval "$@"
+      if declare -f "$task" > /dev/null; then
+        shift
+        "$task" "$@"
+      else
+        # Fallback to eval for raw shell commands
+        eval "$@"
+      fi
       ;;
   esac
 }

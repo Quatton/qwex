@@ -14,7 +14,10 @@ tasks:
       shift
       local command=${*:-"{{ vars.command }}"}
 
-      printf '%s\n' "{{ "┌──" | color("#808080") }} {{ "Step:" | color("blue") }} $description" >&2
+      printf '%s %s %s\n' \
+        "{{ "┌──" | color("#808080") }} {{ "Step:" | color("blue") }} $description" \
+        "{{ "in" | color("#808080") }}" \
+        "$(echo "$PWD" | sed "s|^$HOME|~|")" >&2
 
       local truncated_command="${command:0:60}"
 

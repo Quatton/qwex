@@ -5,6 +5,11 @@ import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Pipeline, QwlError } from "qwl";
 
+consola.options = {
+  ...consola.options,
+  stdout: process.stderr,
+};
+
 const main = defineCommand({
   meta: {
     name: "qwex",
@@ -35,6 +40,10 @@ const main = defineCommand({
     },
   },
   async run({ args }) {
+    if (Bun.env.DEBUG) {
+      consola.info("Compiled with DEBUG mode enabled");
+    }
+
     const configPath = resolve(args.config);
     const features = args.features ? args.features.split(",") : undefined;
 

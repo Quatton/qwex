@@ -7,4 +7,4 @@ requires-python = ">=3.12"
 dependencies = []
 
 [tool.uv.workspace]
-members = ["apps/qwexcli", "lib/qwl", "playground/uv-workspace/uv-workspace-demo"]
+members = ["apps/qwexcli", "lib/qwl", "playground/uv-workspace/uv-workspace-demo", "playground/lifecycle/uv-workspace-demo"]

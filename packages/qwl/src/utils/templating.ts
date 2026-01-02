@@ -70,7 +70,7 @@ const nj = new nunjucks.Environment(null, {
 // Register extensions
 nj.addExtension("UsesExtension", new UsesExtension());
 
-nj.addGlobal("env", process.env);
+nj.addGlobal("env", Bun.env);
 nj.addFilter("resolvePath", (input: string, baseDir?: string) => {
   if (typeof input !== "string") return input;
   const base = typeof baseDir === "string" ? baseDir : getCwd();

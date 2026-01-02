@@ -22,6 +22,25 @@ tasks:
           cmd: |
             cd {{ vars.demo_dir }}
             uv run hello.py
+        - desc: "Copy ./config/* to demo_dir"
+          cmd: "cp -r ./config/* {{ vars.demo_dir }}"
+        - desc: "Check if qwex is installed"
+          cmd: |
+            if ! command -v qwex &> /dev/null; then
+              {{ log.tasks.error }} "qwex could not be found. Please install qwex to proceed."
+              exit 1
+            else
+              {{ log.tasks.info }} "qwex is installed."
+            fi
+        # - desc: "Run `qwex -o > compiled.sh`"
+        #   cmd: |
+        #     cd {{ vars.demo_dir }}
+        #     qwex -o compiled.sh
+        - desc: "Run `qwex run uv run hello.py` in demo_dir"
+          cmd: |
+            cd {{ vars.demo_dir }}
+            DEBUG=1 qwex run uv run hello.py
+
   clean:
     desc: "Clean up temp directory created during test"
     cmd: |
