@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import nunjucks from "nunjucks";
 
+import { TASK_FN_PREFIX } from "../constants";
 import { getCwd, resolvePath as resolvePathUtil } from "./path";
 
 export function escapeQuotes(str: string): string {
@@ -69,7 +70,7 @@ const nj = new nunjucks.Environment(null, {
 
 // Register extensions
 nj.addExtension("UsesExtension", new UsesExtension());
-
+nj.addGlobal("prefix", `${TASK_FN_PREFIX}`);
 nj.addGlobal("env", Bun.env);
 nj.addFilter("resolvePath", (input: string, baseDir?: string) => {
   if (typeof input !== "string") return input;

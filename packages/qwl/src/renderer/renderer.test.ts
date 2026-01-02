@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { resolveTaskDefs, resolveVariableDefs, type ModuleTemplate } from "../ast";
+import { TASK_FN_PREFIX } from "../constants";
 import { Renderer } from "./renderer";
 
 function createRootModule(): ModuleTemplate {
@@ -89,7 +90,7 @@ describe("Renderer", () => {
       const renderer = new Renderer();
       const result = renderer.renderAllTasks(module);
 
-      const greetTask = result.main.find((t) => t.name === "greet");
+      const greetTask = result.main.find((t) => t.key === "greet");
       expect(greetTask?.cmd).toBe('echo "Hello, World!"');
     });
 
@@ -111,7 +112,7 @@ describe("Renderer", () => {
       const renderer = new Renderer();
       const result = renderer.renderAllTasks(module);
 
-      const testTask = result.main.find((t) => t.name === "test");
+      const testTask = result.main.find((t) => t.key === "test");
       expect(testTask?.cmd).toBe('echo "Hello, World"');
     });
 
@@ -155,8 +156,8 @@ describe("Renderer", () => {
       const renderer = new Renderer();
       const result = renderer.renderAllTasks(module);
 
-      const secondTask = result.main.find((t) => t.name === "second");
-      expect(secondTask?.cmd).toBe('echo "ref: first"');
+      const secondTask = result.main.find((t) => t.key === "second");
+      expect(secondTask?.cmd).toBe(`echo "ref: ${TASK_FN_PREFIX}first"`);
     });
 
     it("inlines task with .inline()", () => {
@@ -179,7 +180,7 @@ describe("Renderer", () => {
       const renderer = new Renderer();
       const result = renderer.renderAllTasks(module);
 
-      const wrapperTask = result.main.find((t) => t.name === "wrapper");
+      const wrapperTask = result.main.find((t) => t.key === "wrapper");
       expect(wrapperTask?.cmd).toBe('start; echo "Hello"; end');
     });
 
@@ -189,7 +190,7 @@ describe("Renderer", () => {
       const result = renderer.renderAllTasks(module);
 
       // Main tasks are top-level
-      const mainNames = result.main.map((t) => t.name);
+      const mainNames = result.main.map((t) => t.key);
       expect(mainNames).toContain("sayHello");
       expect(mainNames).toContain("callingSayHello");
       expect(mainNames).toContain("baseTask");
@@ -210,7 +211,7 @@ describe("Renderer", () => {
       const renderer = new Renderer();
       const result = renderer.renderAllTasks(module);
 
-      const testTask = result.main.find((t) => t.name === "test");
+      const testTask = result.main.find((t) => t.key === "test");
       expect(testTask?.hash).toBeDefined();
       expect(typeof testTask?.hash).toBe("string");
       expect(testTask?.hash.length).toBeGreaterThan(0);
@@ -287,11 +288,11 @@ describe("Renderer", () => {
       const result = renderer.renderAllTasks(module);
 
       // Main task should reference child.childTask as bash-safe name (colon)
-      const mainTask = result.main.find((t) => t.name === "main");
-      expect(mainTask?.cmd).toBe('echo "calling child:childTask"');
+      const mainTask = result.main.find((t) => t.key === "main");
+      expect(mainTask?.cmd).toBe(`echo "calling ${TASK_FN_PREFIX}child:childTask"`);
 
       // Child task should be in deps with prefixed name
-      const childTask = result.deps.find((t) => t.name === "child.childTask");
+      const childTask = result.deps.find((t) => t.key === "child.childTask");
       expect(childTask?.cmd).toBe('echo "child value"');
     });
   });
@@ -320,7 +321,7 @@ describe("Renderer", () => {
 
       // shared should appear exactly once
       const allTasks = [...result.main, ...result.deps];
-      const sharedTasks = allTasks.filter((t) => t.name === "shared");
+      const sharedTasks = allTasks.filter((t) => t.key === "shared");
       expect(sharedTasks.length).toBe(1);
     });
 
@@ -354,7 +355,7 @@ describe("Renderer", () => {
       const result = renderer.renderAllTasks(module);
 
       // sub.helper should appear exactly once in deps
-      const helperTasks = result.deps.filter((t) => t.name === "sub.helper");
+      const helperTasks = result.deps.filter((t) => t.key === "sub.helper");
       expect(helperTasks.length).toBe(1);
     });
 
@@ -407,11 +408,11 @@ describe("Renderer", () => {
       const result = renderer.renderAllTasks(module);
 
       const emitted = [...result.main, ...result.deps].filter(
-        (t) => t.name === "steps.logs.error" || t.name === "logs.error",
+        (t) => t.key === "steps.logs.error" || t.key === "logs.error",
       );
       expect(emitted.length).toBe(1);
 
-      const mainTask = result.main.find((t) => t.name === "main");
+      const mainTask = result.main.find((t) => t.key === "main");
       expect(mainTask?.cmd).toBeDefined();
 
       const cmd = mainTask?.cmd ?? "";

@@ -39,7 +39,7 @@ tasks:
         - desc: "Run `qwex run uv run hello.py` in demo_dir"
           cmd: |
             cd {{ vars.demo_dir }}
-            DEBUG=1 qwex run uv run hello.py
+            DEBUG=1 qwex help
 
   clean:
     desc: "Clean up temp directory created during test"

@@ -123,12 +123,12 @@ describe("Pipeline Integration", () => {
       const result = await pipeline.run();
 
       // Function definitions use colons for module hierarchy
-      expect(result.script).toContain("B:c1()");
-      expect(result.script).toContain("B:D:d1()");
+      expect(result.script).toContain("task:B:c1()");
+      expect(result.script).toContain("task:B:D:d1()");
 
       // Function calls also use colons
-      expect(result.script).toContain("B:c1");
-      expect(result.script).toContain("B:c2");
+      expect(result.script).toContain("task:B:c1");
+      expect(result.script).toContain("task:B:c2");
     });
 
     it("defines each task function only once despite multiple references", async () => {
@@ -137,7 +137,7 @@ describe("Pipeline Integration", () => {
       const result = await pipeline.run();
 
       // Count occurrences of a1() function definition - should be exactly 1
-      const a1Defs = result.script.match(/^a1\(\)/gm);
+      const a1Defs = result.script.match(/^task:a1\(\)/gm);
       expect(a1Defs).toBeDefined();
       expect(a1Defs?.length).toBe(1);
     });

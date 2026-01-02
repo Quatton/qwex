@@ -2,12 +2,14 @@ import { Template } from "nunjucks";
 
 import type { ModuleTemplate, TaskTemplate, VariableTemplate, VariableTemplateValue } from "../ast";
 
+import { TASK_FN_PREFIX } from "../constants";
 import { QwlError } from "../errors";
 import { hash } from "../utils/hash";
 import { getCwd, getDirFromSourcePath, resolvePath as resolvePathUtil } from "../utils/path";
 import { RenderContext, RenderProxyFactory, type TaskRef } from "./proxy";
 
 export interface TaskNode {
+  key: string;
   name: string;
   cmd: string;
   hash: string;
@@ -69,7 +71,13 @@ export class Renderer {
       // Only emit the function if this is the canonical (first) name for this hash
       if (dedupName === name && !emittedHashes.has(cmdHash)) {
         emittedHashes.add(cmdHash);
-        const node: TaskNode = { name, cmd, hash: `0x${cmdHash.toString(16)}`, desc };
+        const node: TaskNode = {
+          key: name,
+          name: this.toBashName(dedupName),
+          cmd,
+          hash: `0x${cmdHash.toString(16)}`,
+          desc,
+        };
         if (this.ctx.mainTasks.has(name)) {
           main.push(node);
         } else {
@@ -90,7 +98,7 @@ export class Renderer {
       const dedupName = this.ctx.nameToDedup.get(canonicalName) ?? canonicalName;
       return {
         canonicalName,
-        bashName: dedupName.replace(/\./g, ":"),
+        bashName: this.toBashName(dedupName),
         hash: `0x${hash(rendered.cmd).toString(16)}`,
       };
     }
@@ -193,13 +201,18 @@ export class Renderer {
 
       return {
         canonicalName,
-        bashName: dedupName.replace(/\./g, ":"),
+        bashName: this.toBashName(dedupName),
         hash: `0x${cmdHash.toString(16)}`,
       };
     } finally {
       this.ctx.pendingTasks.delete(canonicalName);
       this.ctx.currentDeps = savedDeps;
     }
+  }
+
+  private toBashName(name: string): string {
+    const normalized = name.replace(/\./g, ":");
+    return `${TASK_FN_PREFIX}${normalized}`;
   }
 
   private renderTaskInline(

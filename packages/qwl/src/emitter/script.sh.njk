@@ -10,7 +10,7 @@ source <(echo "$QWEX_PREAMBLE")
 @source() {
   declare -p QWEX_PREAMBLE
   echo "source <(echo \"$QWEX_PREAMBLE\")"
-  declare -f {% for task in deps %}{{ task.name | replace(".", ":") }} {% endfor %} {% for task in main %}{{ task.name | replace(".", ":") }} {% endfor %} @main @help @source
+  declare -f {% for task in deps %}{{ task.name }} {% endfor %} {% for task in main %}{{ task.name }} {% endfor %} @main @help @source
   echo "@main \$@"
 }
 
@@ -26,7 +26,7 @@ source <(echo "$QWEX_PREAMBLE")
 # {{ task.desc }}
 {% endif %}
 # Hash: {{ task.hash }}
-{{ task.name | replace(".", ":") }}() {
+{{ task.name }}() {
   {{ task.cmd | trim }}
 }
 {% endfor %}
@@ -35,21 +35,18 @@ source <(echo "$QWEX_PREAMBLE")
 # {{ task.desc }}
 {% endif %}
 # Hash: {{ task.hash }}
-{{ task.name | replace(".", ":") }}() {
+{{ task.name }}() {
   {{ task.cmd | trim }}
 }
 {% endfor %}
 
 @main() {
-  local task="${1:-}"
+  local task="{{ prefix }}${1:-}"
   case "$task" in
-    ""|"-h"|"--help"|"help")
-      @help
-      ;;
 {% for task in main %}
     "{{ task.name }}")
       shift
-      {{ task.name | replace(".", ":") }} "$@"
+      {{ task.name }} "$@"
       ;;
 {% endfor %}
     *)
@@ -63,5 +60,10 @@ source <(echo "$QWEX_PREAMBLE")
       ;;
   esac
 }
+
+if [[ $1 == "--help" || $1 == "-h" || $1 == "help" || $# -eq 0 ]]; then
+  @help
+  exit 0
+fi
 
 @main "$@"
