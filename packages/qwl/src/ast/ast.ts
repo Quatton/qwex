@@ -14,14 +14,12 @@ const $ = scope({
     "desc?": "string",
     "vars?": "ValidRecord<VariableDef>",
   },
-  PartialModuleDef: {
+  // Recursive module definition - modules can contain modules
+  ModuleDef: {
     "uses?": "string",
     "vars?": "ValidRecord<VariableDef>",
     "tasks?": "ValidRecord<TaskDef>",
-  },
-  ModuleDef: {
-    "...": "PartialModuleDef",
-    "modules?": "ValidRecord<PartialModuleDef>",
+    "modules?": "ValidRecord<ModuleDef>",
   },
 });
 

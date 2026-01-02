@@ -20,11 +20,20 @@ tasks:
         - desc: "Initialize uv project"
           cmd: |
             cd {{ __dir__ }}
-            uv init {{ vars.demo_dir }}
-        - desc: "Run hello.py"
+            uv init --no-workspace {{ vars.demo_dir }}
+        - desc: "Check if qwex is installed"
+          cmd: |
+            if ! command -v qwex &> /dev/null; then
+              {{ log.tasks.error }} "qwex could not be found. Please install qwex to proceed."
+              exit 1
+            else
+              {{ log.tasks.info }} "qwex is installed."
+            fi
+        - desc: "Run `uv run hello.py` in demo_dir"
           cmd: |
             cd {{ vars.demo_dir }}
             uv run hello.py
+
   clean:
     desc: "Clean up temp directory created during test"
     cmd: |

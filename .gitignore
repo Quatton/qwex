@@ -65,3 +65,6 @@ _version.py
 compiled.sh
 
 target/
+
+# demo dir
+*-demo/

@@ -1,4 +1,31 @@
 modules:
+  parallel:
+    modules:
+      log:
+        uses: std/log
+    tasks:
+      compose:
+        vars:
+          tasks:
+            - cmd: ""
+              name: ""
+        cmd: |
+          pids=()
+          {% for task in vars.tasks %}
+          (
+            exec 1> >(sed "s/^/[{{ task.name | escape }}] /" >&2)
+            exec 2> >(sed "s/^/[{{ task.name | escape }}] /" >&2)
+            {{ log.info }} "Starting task: {{ task.name | escape }}"
+            {{ task.cmd }} 
+            {{ log.info }} "Completed task: {{ task.name | escape }}"
+          ) &
+          pids+=($!)
+          {% endfor %}
+
+          for pid in "${pids[@]}"; do
+            wait $pid
+          done
+
   uvworkspace:
     uses: ./uv-workspace/qwex.yaml
   lifecycle:
@@ -7,13 +34,21 @@ modules:
 tasks:
   clean:
     cmd: |
-      {{ modules["uvworkspace"].tasks.clean }}
-      {{ modules["lifecycle"].tasks.clean }}
+      {{ uvworkspace.clean }}
+      {{ lifecycle.clean }}
   all:
-    cmd: |
-      {{ modules["uvworkspace"].tasks.all }}
-      {{ modules["lifecycle"].tasks.all }}
+    uses: modules.parallel.tasks.compose
+    vars:
+      tasks:
+        - name: "UV Workspace"
+          cmd: "cd {{ __dir__ }}/uv-workspace && qwex all"
+        - name: "Lifecycle"
+          cmd: "cd {{ __dir__ }}/lifecycle && qwex all"
   test:
-    cmd: |
-      {{ modules["uvworkspace"].tasks.test }}  
-      {{ modules["lifecycle"].tasks.test }}
+    uses: modules.parallel.tasks.compose
+    vars:
+      tasks:
+        - name: "UV Workspace"
+          cmd: "cd {{ __dir__ }}/uv-workspace && qwex test"
+        - name: "Lifecycle"
+          cmd: "cd {{ __dir__ }}/lifecycle && qwex test"

@@ -1,5 +1,5 @@
 vars:
-  demo_dir: "{{ './uv-workspace-demo' | resolvePath(__dir__) }}"
+  demo_dir: "{{ './lifecycle-demo' | resolvePath(__dir__) }}"
 
 modules:
   steps:
@@ -20,11 +20,11 @@ tasks:
         - desc: "Initialize uv project"
           cmd: |
             cd {{ __dir__ }}
-            uv init {{ vars.demo_dir }}
-        - desc: "Copy ./config/* to demo_dir"
+            uv init --no-workspace {{ vars.demo_dir }}
+        - desc: "Symlink ./config/* to demo_dir"
           cmd: |
             cd {{ __dir__ }}
-            cp -r ./config/* {{ vars.demo_dir }}
+            ln -s {{ __dir__ }}/config/* {{ vars.demo_dir }}
         - desc: "Check if qwex is installed"
           cmd: |
             if ! command -v qwex &> /dev/null; then
@@ -36,7 +36,7 @@ tasks:
         - desc: "Run `qwex run uv run hello.py` in demo_dir"
           cmd: |
             cd {{ vars.demo_dir }}
-            qwex run uv run hello.py
+            QWEX_JOB_NAME="original" qwex run uv run hello.py
         - desc: "Modify hello.py to say other message"
           cmd: |
             cd {{ vars.demo_dir }}
@@ -44,7 +44,7 @@ tasks:
         - desc: "Run `qwex run uv run hello.py` again to see modified output"
           cmd: |
             cd {{ vars.demo_dir }}
-            qwex run uv run hello.py
+            QWEX_JOB_NAME="modified" qwex run uv run hello.py
 
   clean:
     desc: "Clean up temp directory created during test"

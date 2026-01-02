@@ -283,7 +283,8 @@ export class Renderer {
       // Merge vars: pre-rendered task vars override resolved task's vars
       const mergedVars = { ...resolvedTask.vars, ...preRenderedTaskVars };
       const modifiedTask: TaskTemplate = { ...resolvedTask, vars: mergedVars };
-      const proxy = this.proxyFactory.createForTask(module, modifiedTask, prefix);
+      const resolvedPrefix = task.uses ? this.getModulePrefix(task.uses) : prefix;
+      const proxy = this.proxyFactory.createForTask(_resolvedModule, modifiedTask, resolvedPrefix);
 
       const proxyWithOverrides = {
         ...proxy,

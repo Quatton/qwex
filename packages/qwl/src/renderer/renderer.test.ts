@@ -184,6 +184,47 @@ describe("Renderer", () => {
       expect(wrapperTask?.cmd).toBe('start; echo "Hello"; end');
     });
 
+    it("inlines submodule task that uses its own sibling modules", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          main: {
+            cmd: "{{ modules.parallel.tasks.compose.inline() }}",
+          },
+        }),
+        modules: {
+          parallel: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({
+              compose: {
+                cmd: '{{ log.info }} "hello"',
+              },
+            }),
+            modules: {
+              log: {
+                vars: resolveVariableDefs({}),
+                tasks: resolveTaskDefs({
+                  info: {
+                    cmd: "echo INFO:",
+                  },
+                }),
+                modules: {},
+                __meta__: { used: new Set() },
+              },
+            },
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const mainTask = result.main.find((t) => t.key === "main");
+      expect(mainTask?.cmd).toBe(`${TASK_FN_PREFIX}parallel:log:info "hello"`);
+    });
+
     it("separates main and dep tasks", () => {
       const module = createRootModule();
       const renderer = new Renderer();
@@ -513,6 +554,374 @@ describe("Renderer", () => {
       const hasStandaloneLogs = /(^|[^:])logs:error/.test(cmd);
       expect(hasSteps && hasStandaloneLogs).toBe(false);
       expect(hasSteps || hasStandaloneLogs).toBe(true);
+    });
+  });
+
+  describe("super keyword", () => {
+    it("allows submodule to access parent module tasks via super", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          parentTask: {
+            cmd: "echo parent",
+          },
+          main: {
+            cmd: "{{ modules.child.tasks.childTask }}",
+          },
+        }),
+        modules: {
+          child: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({
+              childTask: {
+                cmd: 'echo "calling {{ super.tasks.parentTask }}"',
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const childTask = result.deps.find((t) => t.key === "child.childTask");
+      expect(childTask?.cmd).toBe(`echo "calling ${TASK_FN_PREFIX}parentTask"`);
+    });
+
+    it("allows submodule to access parent module vars via super", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({
+          parentVar: "hello from parent",
+        }),
+        tasks: resolveTaskDefs({
+          main: {
+            cmd: "{{ modules.child.tasks.childTask }}",
+          },
+        }),
+        modules: {
+          child: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({
+              childTask: {
+                cmd: 'echo "{{ super.vars.parentVar }}"',
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const childTask = result.deps.find((t) => t.key === "child.childTask");
+      expect(childTask?.cmd).toBe('echo "hello from parent"');
+    });
+
+    it("allows submodule to access sibling module via super.modules", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          main: {
+            cmd: "{{ modules.worker.tasks.run }}",
+          },
+        }),
+        modules: {
+          log: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({
+              info: {
+                cmd: 'echo "[INFO]"',
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+          worker: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({
+              run: {
+                cmd: '{{ super.modules.log.tasks.info }} && echo "working"',
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const workerTask = result.deps.find((t) => t.key === "worker.run");
+      expect(workerTask?.cmd).toBe(`${TASK_FN_PREFIX}log:info && echo "working"`);
+    });
+
+    it("allows shorthand access to sibling module via super.sibling", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          main: {
+            cmd: "{{ modules.worker.tasks.run }}",
+          },
+        }),
+        modules: {
+          log: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({
+              info: {
+                cmd: 'echo "[INFO]"',
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+          worker: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({
+              run: {
+                cmd: '{{ super.log.info }} && echo "working"',
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const workerTask = result.deps.find((t) => t.key === "worker.run");
+      expect(workerTask?.cmd).toBe(`${TASK_FN_PREFIX}log:info && echo "working"`);
+    });
+
+    it("allows deeply nested modules to access ancestors via super chain", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({
+          rootVar: "root-value",
+        }),
+        tasks: resolveTaskDefs({
+          rootTask: {
+            cmd: "echo root",
+          },
+          main: {
+            cmd: "{{ modules.level1.modules.level2.tasks.deepTask }}",
+          },
+        }),
+        modules: {
+          level1: {
+            vars: resolveVariableDefs({
+              level1Var: "level1-value",
+            }),
+            tasks: resolveTaskDefs({}),
+            modules: {
+              level2: {
+                vars: resolveVariableDefs({}),
+                tasks: resolveTaskDefs({
+                  deepTask: {
+                    cmd: 'echo "root={{ super.super.vars.rootVar }}" && {{ super.super.tasks.rootTask }}',
+                  },
+                }),
+                modules: {},
+                __meta__: { used: new Set() },
+              },
+            },
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const deepTask = result.deps.find((t) => t.key === "level1.level2.deepTask");
+      expect(deepTask?.cmd).toBe(`echo "root=root-value" && ${TASK_FN_PREFIX}rootTask`);
+    });
+
+    it("allows super.super to access grandparent level1 var", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          main: {
+            cmd: "{{ modules.level1.modules.level2.tasks.test }}",
+          },
+        }),
+        modules: {
+          level1: {
+            vars: resolveVariableDefs({
+              level1Var: "from-level1",
+            }),
+            tasks: resolveTaskDefs({}),
+            modules: {
+              level2: {
+                vars: resolveVariableDefs({}),
+                tasks: resolveTaskDefs({
+                  test: {
+                    cmd: 'echo "{{ super.vars.level1Var }}"',
+                  },
+                }),
+                modules: {},
+                __meta__: { used: new Set() },
+              },
+            },
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const testTask = result.deps.find((t) => t.key === "level1.level2.test");
+      expect(testTask?.cmd).toBe('echo "from-level1"');
+    });
+
+    it("super is undefined at root level (no parent)", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          rootTask: {
+            cmd: 'echo "{{ super }}"',
+          },
+        }),
+        modules: {},
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const rootTask = result.main.find((t) => t.key === "rootTask");
+      // super should render as empty/undefined at root
+      expect(rootTask?.cmd).toBe('echo ""');
+    });
+
+    it("nested modules can have their own submodules (recursive modules)", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          main: {
+            cmd: "{{ modules.outer.modules.inner.modules.deepest.tasks.deepTask }}",
+          },
+        }),
+        modules: {
+          outer: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({}),
+            modules: {
+              inner: {
+                vars: resolveVariableDefs({}),
+                tasks: resolveTaskDefs({}),
+                modules: {
+                  deepest: {
+                    vars: resolveVariableDefs({
+                      deep: "very deep",
+                    }),
+                    tasks: resolveTaskDefs({
+                      deepTask: {
+                        cmd: 'echo "{{ vars.deep }}"',
+                      },
+                    }),
+                    modules: {},
+                    __meta__: { used: new Set() },
+                  },
+                },
+                __meta__: { used: new Set() },
+              },
+            },
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const deepTask = result.deps.find((t) => t.key === "outer.inner.deepest.deepTask");
+      expect(deepTask?.cmd).toBe('echo "very deep"');
+    });
+
+    it("can reference deeply nested submodule task from parent", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          main: {
+            cmd: "{{ modules.outer.modules.inner.tasks.innerTask }}",
+          },
+        }),
+        modules: {
+          outer: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({}),
+            modules: {
+              inner: {
+                vars: resolveVariableDefs({}),
+                tasks: resolveTaskDefs({
+                  innerTask: {
+                    cmd: "echo inner",
+                  },
+                }),
+                modules: {},
+                __meta__: { used: new Set() },
+              },
+            },
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const mainTask = result.main.find((t) => t.key === "main");
+      expect(mainTask?.cmd).toBe(`${TASK_FN_PREFIX}outer:inner:innerTask`);
+    });
+
+    it("super.inline() works for inlining parent task", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({
+          msg: "hello",
+        }),
+        tasks: resolveTaskDefs({
+          parentTask: {
+            cmd: 'echo "{{ vars.msg }}"',
+          },
+          main: {
+            cmd: "{{ modules.child.tasks.childTask.inline() }}",
+          },
+        }),
+        modules: {
+          child: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({
+              childTask: {
+                cmd: "start; {{ super.tasks.parentTask.inline() }}; end",
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const mainTask = result.main.find((t) => t.key === "main");
+      expect(mainTask?.cmd).toBe('start; echo "hello"; end');
     });
   });
 });

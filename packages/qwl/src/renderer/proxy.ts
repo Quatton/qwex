@@ -30,6 +30,8 @@ export class RenderContext {
   readonly hashToName = new Map<bigint, string>();
   /** Maps canonical task name -> deduplicated bash name */
   readonly nameToDedup = new Map<string, string>();
+  /** Maps module prefix -> parent proxy for super keyword support */
+  readonly prefixToParentProxy = new Map<string, Record<string, unknown>>();
 }
 
 export interface ProxyCallbacks {
@@ -65,71 +67,90 @@ export class RenderProxyFactory {
     module: ModuleTemplate,
     task: TaskTemplate | null,
     prefix: string,
+    parentProxy?: Record<string, unknown>,
   ): Record<string, unknown> {
     const { __src__, __srcdir__ } = this.getSourceInfo(module, task);
     const varsProxy = this.createVarsProxy(module, task, prefix);
     const tasksProxy = this.createTasksProxy(module, prefix);
-    const modulesProxy = this.createModulesProxy(module, prefix);
     const usesFunction = this.createUsesFunction(module, prefix, __srcdir__);
     const resolvePathFunction = this.createResolvePathFunction(__srcdir__);
     const __cwd__ = getCwd();
     const __dir__ = __srcdir__;
     const __renderContext = this.ctx;
 
-    return new Proxy(
-      {
-        vars: varsProxy,
-        tasks: tasksProxy,
-        modules: modulesProxy,
-        uses: usesFunction,
-        resolvePath: resolvePathFunction,
-        __cwd__,
-        __src__,
-        __srcdir__,
-        __dir__,
-        __renderContext,
+    // Look up parent proxy from context if not provided
+    const resolvedParentProxy = parentProxy ?? this.ctx.prefixToParentProxy.get(prefix);
+
+    // Create the current proxy first (without modules/super to avoid circular reference)
+    const currentProxy: Record<string, unknown> = {
+      vars: varsProxy,
+      tasks: tasksProxy,
+      modules: {}, // placeholder, will be replaced
+      uses: usesFunction,
+      resolvePath: resolvePathFunction,
+      __cwd__,
+      __src__,
+      __srcdir__,
+      __dir__,
+      __renderContext,
+    };
+
+    // Add super reference to parent module's proxy
+    if (resolvedParentProxy) {
+      currentProxy.super = resolvedParentProxy;
+    }
+
+    // Now create the full proxy with proper module access
+    const fullProxy = new Proxy(currentProxy, {
+      get: (target, key: string | symbol) => {
+        if (typeof key === "symbol") return undefined;
+        if (key === "modules") {
+          // Lazy create modules proxy with fullProxy as parent
+          return this.createModulesProxy(module, prefix, fullProxy);
+        }
+        if (key in target) return target[key as keyof typeof target];
+        if (Object.hasOwn(module.tasks, key)) return this.createTaskRef(module, key, prefix);
+        const subModule = module.modules[key];
+        if (subModule) {
+          const newPrefix = prefix ? `${prefix}.${key}` : key;
+          // Register parent proxy for the submodule prefix
+          this.ctx.prefixToParentProxy.set(newPrefix, fullProxy);
+          // Pass fullProxy as parentProxy for sub-modules
+          return this.create(subModule, null, newPrefix, fullProxy);
+        }
+        return undefined;
       },
-      {
-        get: (target, key: string | symbol) => {
-          if (typeof key === "symbol") return undefined;
-          if (key in target) return target[key as keyof typeof target];
-          if (Object.hasOwn(module.tasks, key)) return this.createTaskRef(module, key, prefix);
-          const subModule = module.modules[key];
-          if (subModule) {
-            const newPrefix = prefix ? `${prefix}.${key}` : key;
-            return this.create(subModule, null, newPrefix);
-          }
-          return undefined;
-        },
-        has: (target, key: string) => {
-          if (key in target) return true;
-          if (Object.hasOwn(module.tasks, key)) return true;
-          if (Object.hasOwn(module.modules, key)) return true;
-          return false;
-        },
-        ownKeys: (target) => {
-          return [
-            ...Object.keys(target),
-            ...Object.keys(module.tasks),
-            ...Object.keys(module.modules),
-          ];
-        },
-        getOwnPropertyDescriptor: (target, key: string) => {
-          if (key in target || key in module.tasks || key in module.modules) {
-            return { enumerable: true, configurable: true };
-          }
-          return undefined;
-        },
+      has: (target, key: string) => {
+        if (key in target) return true;
+        if (Object.hasOwn(module.tasks, key)) return true;
+        if (Object.hasOwn(module.modules, key)) return true;
+        return false;
       },
-    );
+      ownKeys: (target) => {
+        return [
+          ...Object.keys(target),
+          ...Object.keys(module.tasks),
+          ...Object.keys(module.modules),
+        ];
+      },
+      getOwnPropertyDescriptor: (target, key: string) => {
+        if (key in target || key in module.tasks || key in module.modules) {
+          return { enumerable: true, configurable: true };
+        }
+        return undefined;
+      },
+    });
+
+    return fullProxy;
   }
 
   createForTask(
     module: ModuleTemplate,
     task: TaskTemplate,
     prefix: string,
+    parentProxy?: Record<string, unknown>,
   ): Record<string, unknown> {
-    return this.create(module, task, prefix);
+    return this.create(module, task, prefix, parentProxy);
   }
 
   private createVarsProxy(
@@ -192,7 +213,11 @@ export class RenderProxyFactory {
     );
   }
 
-  private createModulesProxy(module: ModuleTemplate, prefix: string): object {
+  private createModulesProxy(
+    module: ModuleTemplate,
+    prefix: string,
+    parentProxy?: Record<string, unknown>,
+  ): object {
     return new Proxy(
       {},
       {
@@ -200,7 +225,11 @@ export class RenderProxyFactory {
           const subModule = module.modules[modName];
           if (!subModule) return undefined;
           const newPrefix = prefix ? `${prefix}.${modName}` : modName;
-          return this.create(subModule, null, newPrefix);
+          // Register parent proxy for the submodule prefix
+          if (parentProxy) {
+            this.ctx.prefixToParentProxy.set(newPrefix, parentProxy);
+          }
+          return this.create(subModule, null, newPrefix, parentProxy);
         },
       },
     );

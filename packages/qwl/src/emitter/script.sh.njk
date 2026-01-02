@@ -76,8 +76,6 @@ source <(echo "$QWEX_PREAMBLE")
   if declare -f "$task" > /dev/null; then
     shift
     "$task" "$@"
-  elif [[ "$1" == *"="* ]]; then
-    exec env "$@" # Fixes the "command not found" for LOG_LEVEL=DEBUG
   else
     "$@"
   fi
