@@ -21,10 +21,15 @@ tasks:
           cmd: |
             cd {{ __dir__ }}
             uv init --no-workspace {{ vars.demo_dir }}
-        - desc: "Symlink all ./config/* to demo_dir"
+        - desc: "Initialize git repo in demo_dir"
           cmd: |
-            cd {{ __dir__ }}
-            ln -s {{ __dir__ }}/config/* {{ vars.demo_dir }}
+            cd {{ vars.demo_dir }}
+            git init
+            git add -A
+            git commit -m "Initial commit"
+        - desc: "Copy necessary files to demo_dir"
+          cmd: |
+            cp {{ __dir__ }}/config/* {{ vars.demo_dir }}
         - desc: "Check if qwex is installed"
           cmd: |
             if ! command -v qwex &> /dev/null; then
@@ -33,36 +38,9 @@ tasks:
             else
               {{ log.tasks.info }} "qwex is installed."
             fi
-        - desc: "Setup Docker services with docker-compose"
-          cmd: |
-            cd {{ __dir__ }}/config && docker-compose up -d
-        - desc: "Check if kind is installed"
-          cmd: |
-            if ! command -v kind &> /dev/null; then
-              {{ log.tasks.error }} "kind could not be found. Please install kind to proceed."
-              exit 1
-            else
-              {{ log.tasks.info }} "kind is installed."
-            fi
-        - desc: "Create local k8s cluster with kind"
-          cmd: |
-            if kind get clusters | grep qwex-cluster; then
-              {{ log.tasks.info }} "k8s cluster 'qwex-cluster' already exists."
-            else
-              {{ log.tasks.info }} "Creating k8s cluster 'qwex-cluster' with kind."
-              kind create cluster --name qwex-cluster
-            fi
-        - desc: "Export KUBECONFIG to {{ vars.demo_dir }}/kubeconfig"
-          cmd: |
-            kind get kubeconfig --name="qwex-cluster" > {{ vars.demo_dir }}/kubeconfig
 
-            export KUBECONFIG={{ vars.demo_dir }}/kubeconfig
-        - desc: "Verify k8s cluster is running"
-          cmd: |
-            kubectl cluster-info
-
-  test:
-    desc: "UV workspace with lifecycle executed with k8s, docker, and ssh using qwex"
+  test_normal:
+    desc: "Test uv workspace creation and execution using qwex"
     uses: modules.steps.tasks.compose
     vars:
       steps:
@@ -78,6 +56,11 @@ tasks:
           cmd: |
             cd {{ vars.demo_dir }}
             QWEX_JOB_NAME="modified" qwex run uv run hello.py
+
+  test-docker:
+    uses: modules.steps.tasks.compose
+    vars:
+      steps:
         - desc: "Modify hello.py to say a Docker message"
           cmd: |
             cd {{ vars.demo_dir }}
@@ -85,15 +68,19 @@ tasks:
         - desc: "Run `qwex run uv run hello.py` again to see Dockerized output"
           cmd: |
             cd {{ vars.demo_dir }}
-            QWEX_JOB_NAME="dockerized" qwex run uv run hello.py
-        - desc: "Modify hello.py to say an SSH message"
+            QWEX_JOB_NAME="dockerized" qwex -f docker run uv run hello.py
+
+  test:
+    desc: "UV workspace with lifecycle executed with docker using qwex"
+    uses: modules.steps.tasks.compose
+    vars:
+      steps:
+        - desc: "Run normal test"
           cmd: |
-            cd {{ vars.demo_dir }}
-            echo 'print("Hello from SSH hello.py!")' > {{ vars.demo_dir }}/hello.py
-        - desc: "Run `qwex run uv run hello.py` again to see SSH output"
+            {{ tasks.test_normal }}
+        - desc: "Run Docker test"
           cmd: |
-            cd {{ vars.demo_dir }}
-            QWEX_JOB_NAME="ssh" qwex run uv run hello.py
+            {{ tasks['test-docker'] }}
 
   clean:
     desc: "Clean up temp directory created during test"
@@ -103,16 +90,6 @@ tasks:
         {{ log.tasks.info }} "{{ vars.demo_dir }}: Cleaned up temp directory"
       else
         {{ log.tasks.warn }} "{{ vars.demo_dir }}: No temp directory info found for cleanup."
-      fi
-
-      cd {{ __dir__ }}/config && docker-compose down
-      {{ log.tasks.info }} "Stopped and removed Docker containers via docker-compose."
-
-      if kind get clusters | grep qwex-cluster; then
-        kind delete cluster --name qwex-cluster
-        {{ log.tasks.info }} "Deleted k8s cluster 'qwex-cluster'."
-      else
-        {{ log.tasks.warn }} "No k8s cluster 'qwex-cluster' found for cleanup."
       fi
 
   all:

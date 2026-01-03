@@ -35,8 +35,8 @@ tasks:
           cmd: "cd {{ __dir__ }}/uv-workspace && qwex clean"
         - name: "Lifecycle"
           cmd: "cd {{ __dir__ }}/lifecycle && qwex clean"
-        - name: "SSH Docker K8s"
-          cmd: "cd {{ __dir__ }}/ssh-docker-k8s && qwex clean"
+        - name: "Docker"
+          cmd: "cd {{ __dir__ }}/docker && qwex clean"
 
   all:
     uses: modules.parallel.tasks.compose
@@ -46,8 +46,8 @@ tasks:
           cmd: "cd {{ __dir__ }}/uv-workspace && qwex all"
         - name: "Lifecycle"
           cmd: "cd {{ __dir__ }}/lifecycle && qwex all"
-        - name: "SSH Docker K8s"
-          cmd: "cd {{ __dir__ }}/ssh-docker-k8s && qwex all"
+        - name: "Docker"
+          cmd: "cd {{ __dir__ }}/docker && qwex all"
   test:
     uses: modules.parallel.tasks.compose
     vars:
@@ -56,5 +56,5 @@ tasks:
           cmd: "cd {{ __dir__ }}/uv-workspace && qwex test"
         - name: "Lifecycle"
           cmd: "cd {{ __dir__ }}/lifecycle && qwex test"
-        - name: "SSH Docker K8s"
-          cmd: "cd {{ __dir__ }}/ssh-docker-k8s && qwex test"
+        - name: "Docker"
+          cmd: "cd {{ __dir__ }}/docker && qwex test"

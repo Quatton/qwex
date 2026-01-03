@@ -1,0 +1,155 @@
+modules:
+  steps:
+    uses: std/steps
+  log:
+    uses: std/log
+  tracing:
+    tasks:
+      generate_run_id:
+        desc: "Generate a unique run ID with timestamp and random suffix"
+        cmd: |
+          local timestamp
+          timestamp=$(date +"%Y%m%d%H%M%S")
+          local random_suffix
+          random_suffix=$(openssl rand -hex 4)
+          local qwex_job_name=${QWEX_JOB_NAME:-job}
+          echo "${timestamp}-${random_suffix}-${qwex_job_name}"
+
+  adapter:
+    modules:
+      log:
+        uses: std/log
+
+    vars:
+      image: "ghcr.io/astral-sh/uv:python3.12-bookworm"
+
+    tasks:
+      docker:
+        vars:
+          init: ""
+          main: ""
+          cleanup: ""
+        cmd: |
+          docker run --rm -it \
+            -v "$(pwd)":/workspace \
+            -w /workspace \
+            -e QWEX_JOB_NAME="${QWEX_JOB_NAME:-}" \
+            -e QWEX_INIT_CMD="{{ vars.init | default('') }}" \
+            -e QWEX_MAIN_CMD="{{ vars.main | default('') }}" \
+            -e QWEX_CLEANUP_CMD="{{ vars.cleanup | default('') }}" \
+            -e SOURCE="$(@source | base64)" \
+            {{ vars.image }} /bin/bash -c '
+              source <(echo "$SOURCE" | base64 --decode)
+              
+              {{
+                 tasks.local.inline({
+                   init: "${QWEX_INIT_CMD:-}",
+                   main: "${QWEX_MAIN_CMD:-}",
+                   cleanup: "${QWEX_CLEANUP_CMD:-}"
+                 })
+              }}
+            '
+
+      local:
+        vars:
+          init: ""
+          main: ""
+          cleanup: ""
+        cmd: |
+          {% if vars.cleanup %}
+          trap '{{ vars.cleanup }}' EXIT
+          {% endif %}
+
+          {% if vars.init  %}
+            {{ vars.init }}
+          {% endif %}
+
+          {% if vars.main %}
+            if [ -n "${QWEX_RUN_DIR}" ]; then
+              {{ vars.main }} | tee "$QWEX_RUN_DIR/logs/main.log"
+            else
+              {{ log.tasks.info }} "QWEX_RUN_DIR not set, running main command without logging to QWEX run directory."
+              {{ vars.main }}
+            fi
+          {% else %}
+            {{ log.tasks.warn }} "No main command provided to adapter.run.task.run. Nothing to execute."
+          {% endif %}
+
+tasks[docker]:
+  adapt:
+    uses: modules.adapter.tasks.docker
+    vars:
+      init: "{{ vars.init | default('') }}"
+      main: "{{ vars.main | default('') }}"
+      cleanup: "{{ vars.cleanup | default('') }}"
+
+tasks:
+  adapt:
+    uses: modules.adapter.tasks.local
+    vars:
+      init: "{{ vars.init | default('') }}"
+      main: "{{ vars.main | default('') }}"
+      cleanup: "{{ vars.cleanup | default('') }}"
+  init:
+    uses: modules.steps.tasks.compose
+    vars:
+      steps:
+        - desc: "Generate run ID if not already set"
+          cmd: |
+            if [ -z "${QWEX_RUN_ID:-}" ]; then
+              export QWEX_RUN_ID=$( {{ modules.tracing.tasks.generate_run_id }} )
+              {{ log.tasks.info }} "Generated QWEX_RUN_ID: $QWEX_RUN_ID"
+            else
+              {{ log.tasks.info }} "Using existing QWEX_RUN_ID: $QWEX_RUN_ID"
+            fi
+        - desc: "Set QWEX_HOME"
+          cmd: |
+            export QWEX_HOME=".qwex"
+        - desc: "Make .qwex/runs directory"
+          cmd: |
+            mkdir -p ".qwex/runs"
+        - desc: "Make run directory"
+          cmd: |
+            export QWEX_RUN_DIR=".qwex/runs/$QWEX_RUN_ID"
+            mkdir -p "$QWEX_RUN_DIR"
+            {{ log.tasks.info }} "Created QWEX run directory at $QWEX_RUN_DIR"
+        - desc: "Make meta directory"
+          cmd: |
+            mkdir -p "$QWEX_RUN_DIR/meta"
+        - desc: "Make created_at and status files"
+          cmd: |
+            date +"%Y-%m-%d %H:%M:%S" > "$QWEX_RUN_DIR/meta/created_at"
+            {{ log.info }} "created" > "$QWEX_RUN_DIR/meta/status"
+        - desc: "Create logs directory"
+          cmd: |
+            mkdir -p "$QWEX_RUN_DIR/logs"
+        - desc: "Make sure venv is created"
+          cmd: |
+            if [ ! -d ".venv" ]; then
+              uv venv
+            fi
+        - desc: "Activate venv"
+          cmd: |
+            source .venv/bin/activate
+        - desc: "Install dependencies"
+          cmd: |
+            uv sync
+        - desc: "Log initialization complete"
+          cmd: |
+            {{ log.tasks.info }} "QWEX initialization complete."
+            date +"%Y-%m-%d %H:%M:%S" > "$QWEX_RUN_DIR/meta/initialized_at"
+            {{ log.info }} "initialized" > "$QWEX_RUN_DIR/meta/status"
+
+  run:
+    cmd: |
+      local command="${*:-}"
+      if [ -z "$command" ]; then
+        {{ log.tasks.error }} "No command provided to run task."
+        return 1
+      fi
+
+      {{ tasks.adapt.inline({
+        init: tasks.init,
+        main: "$command",
+        cleanup: ""
+      }) }}
