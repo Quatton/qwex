@@ -300,9 +300,8 @@ export class Renderer {
       if (!varTemplate) return undefined;
 
       const __src__ = varTemplate.__meta__.sourcePath ?? module.__meta__.sourcePath;
-      const __srcdir__ = getDirFromSourcePath(__src__);
+      const __dir__ = getDirFromSourcePath(__src__);
       const __cwd__ = process.cwd();
-      const __dir__ = __srcdir__;
 
       const proxy = {
         vars: new Proxy({}, { get: (_, key: string) => this.renderVar(module, key, prefix) }),
@@ -310,9 +309,8 @@ export class Renderer {
         modules: {},
         __cwd__,
         __src__,
-        __srcdir__,
         __dir__,
-        resolvePath: (filePath: string) => resolvePath(__srcdir__, filePath),
+        resolvePath: (filePath: string) => resolvePath(__dir__, filePath),
       };
 
       const value = renderVariableTemplateValue(varTemplate.value, proxy);

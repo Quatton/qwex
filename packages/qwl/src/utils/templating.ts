@@ -11,7 +11,7 @@ import { resolvePath } from "./path";
  *
  * Resolution rules:
  * - Absolute paths are used as-is.
- * - Relative paths resolve against __srcdir__ (directory of the current module source).
+ * - Relative paths resolve against __dir__ (directory of the current module source).
  */
 class UsesExtension implements nunjucks.Extension {
   tags = ["uses"];

@@ -70,14 +70,12 @@ export class RenderProxyFactory {
     prefix: string,
     parentProxy?: Record<string, unknown>,
   ): Record<string, unknown> {
-    const { __src__, __srcdir__ } = this.getSourceInfo(module, task);
+    const { __src__, __dir__ } = this.getSourceInfo(module, task);
     const varsProxy = this.createVarsProxy(module, task, prefix);
     const tasksProxy = this.createTasksProxy(module, prefix);
-    const usesFunction = this.createUsesFunction(module, prefix, __srcdir__);
-    const resolvePathFunction = (filePath: string, dir = __srcdir__) => resolvePath(dir, filePath);
+    const usesFunction = this.createUsesFunction(module, prefix, __dir__);
+    const resolvePathFunction = (filePath: string, dir = __dir__) => resolvePath(dir, filePath);
     const __cwd__ = process.cwd();
-    const __dir__ = __srcdir__;
-    const __renderContext = this.ctx;
 
     // Look up parent proxy from context if not provided
     const resolvedParentProxy = parentProxy ?? this.ctx.prefixToParentProxy.get(prefix);
@@ -91,9 +89,7 @@ export class RenderProxyFactory {
       resolvePath: resolvePathFunction,
       __cwd__,
       __src__,
-      __srcdir__,
       __dir__,
-      __renderContext,
     };
 
     // Add super reference to parent module's proxy
@@ -159,7 +155,7 @@ export class RenderProxyFactory {
     task: TaskTemplate | null,
     prefix: string,
   ): object {
-    const { __src__, __srcdir__ } = this.getSourceInfo(module, task);
+    const { __src__, __dir__ } = this.getSourceInfo(module, task);
     const __cwd__ = process.cwd();
 
     return new Proxy(
@@ -176,7 +172,6 @@ export class RenderProxyFactory {
               modules: {},
               __cwd__,
               __src__: varSrc,
-              __srcdir__: varDir,
               __dir__: varDir,
               resolvePath: (filePath: string, dir = varDir) => resolvePath(dir, filePath),
             });
@@ -254,9 +249,9 @@ export class RenderProxyFactory {
   private getSourceInfo(
     module: ModuleTemplate,
     task: TaskTemplate | null,
-  ): { __src__: string | null; __srcdir__: string } {
+  ): { __src__: string | null; __dir__: string } {
     const src = task?.__meta__?.sourcePath ?? module.__meta__.sourcePath;
-    return { __src__: src ?? null, __srcdir__: getDirFromSourcePath(src) };
+    return { __src__: src ?? null, __dir__: getDirFromSourcePath(src) };
   }
 
   private createUsesFunction(
