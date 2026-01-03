@@ -24,7 +24,7 @@ tasks:
         - desc: "Symlink ./config/* to demo_dir"
           cmd: |
             cd {{ __dir__ }}
-            ln -s {{ __dir__ }}/config/* {{ vars.demo_dir }}
+            ln -s {{ vars.demo_dir }}/config/* {{ vars.demo_dir }}
         - desc: "Check if qwex is installed"
           cmd: |
             if ! command -v qwex &> /dev/null; then
@@ -35,13 +35,53 @@ tasks:
             fi
         - desc: "Setup docker with ssh capabilities"
           cmd: |
-            docker run -d \
-              -e USER_NAME=qwex_user \
-              -e USER_PASSWORD=qwex_pass \
-              -e PASSWORD_ACCESS=true \
-              -p 2222:2222 \
-              --name qwex-ssh-server \
-              linuxserver/openssh-server
+            if docker ps -a | grep qwex-ssh-server; then
+              {{ log.tasks.info }} "qwex-ssh-server Docker container already exists."
+            else
+              {{ log.tasks.info }} "Creating qwex-ssh-server Docker container."
+              docker run -d \
+                  -e USER_NAME=qwex_user \
+                  -e USER_PASSWORD=qwex_pass \
+                  -e PASSWORD_ACCESS=true \
+                  -p 2222:2222 \
+                  --name qwex-ssh-server \
+                  linuxserver/openssh-server
+            fi
+        - desc: "Setup minio service in Docker"
+          cmd: |
+            if docker ps -a | grep qwex-minio; then
+              {{ log.tasks.info }} "qwex-minio Docker container already exists."
+            else
+              {{ log.tasks.info }} "Creating qwex-minio Docker container."
+              docker run -d -p 9000:9000 -p 9001:9001 --name qwex-minio \
+                  -e "MINIO_ROOT_USER=admin" \
+                  -e "MINIO_ROOT_PASSWORD=password" \
+                  minio/minio server /data --console-address ":9001"
+            fi
+        - desc: "Check if kind is installed"
+          cmd: |
+            if ! command -v kind &> /dev/null; then
+              {{ log.tasks.error }} "kind could not be found. Please install kind to proceed."
+              exit 1
+            else
+              {{ log.tasks.info }} "kind is installed."
+            fi
+        - desc: "Create local k8s cluster with kind"
+          cmd: |
+            if kind get clusters | grep qwex-cluster; then
+              {{ log.tasks.info }} "k8s cluster 'qwex-cluster' already exists."
+            else
+              {{ log.tasks.info }} "Creating k8s cluster 'qwex-cluster' with kind."
+              kind create cluster --name qwex-cluster
+            fi
+        - desc: "Export KUBECONFIG to {{ vars.demo_dir }}/kubeconfig"
+          cmd: |
+            kind get kubeconfig --name="qwex-cluster" > {{ vars.demo_dir }}/kubeconfig
+
+            export KUBECONFIG={{ vars.demo_dir }}/kubeconfig
+        - desc: "Verify k8s cluster is running"
+          cmd: |
+            kubectl cluster-info
 
   test:
     desc: "UV workspace with lifecycle executed with k8s, docker, and ssh using qwex"
@@ -68,6 +108,14 @@ tasks:
           cmd: |
             cd {{ vars.demo_dir }}
             QWEX_JOB_NAME="dockerized" qwex run uv run hello.py
+        - desc: "Modify hello.py to say an SSH message"
+          cmd: |
+            cd {{ vars.demo_dir }}
+            echo 'print("Hello from SSH hello.py!")' > {{ vars.demo_dir }}/hello.py
+        - desc: "Run `qwex run uv run hello.py` again to see SSH output"
+          cmd: |
+            cd {{ vars.demo_dir }}
+            QWEX_JOB_NAME="ssh" qwex run uv run hello.py
 
   clean:
     desc: "Clean up temp directory created during test"
@@ -85,6 +133,20 @@ tasks:
         {{ log.tasks.info }} "Stopped and removed qwex-ssh-server Docker container."
       else
         {{ log.tasks.warn }} "No qwex-ssh-server Docker container found for cleanup."
+      fi
+
+      if kind get clusters | grep qwex-cluster; then
+        kind delete cluster --name qwex-cluster
+        {{ log.tasks.info }} "Deleted k8s cluster 'qwex-cluster'."
+      else
+        {{ log.tasks.warn }} "No k8s cluster 'qwex-cluster' found for cleanup."
+      fi
+
+      if [ -f "{{ vars.demo_dir }}/config/kubeconfig" ]; then
+        rm "{{ vars.demo_dir }}/config/kubeconfig"
+        {{ log.tasks.info }} "Removed kubeconfig file."
+      else
+        {{ log.tasks.warn }} "No kubeconfig file found for cleanup."
       fi
 
   all:
