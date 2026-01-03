@@ -1,17 +1,10 @@
 import fs from "node:fs";
-import { Template } from "nunjucks";
 
-import type { ModuleTemplate, TaskTemplate, VariableTemplateValue } from "../ast";
+import type { ModuleTemplate, TaskTemplate } from "../ast";
 
 import { QwlError } from "../errors";
-import { getCwd, getDirFromSourcePath } from "../utils/path";
-import {
-  normalizeUsesPath,
-  resolveModulePath,
-  renderVariableTemplateValue,
-  resolveFromBaseDir,
-  createResolvePathFunction,
-} from "./normalize";
+import { getDirFromSourcePath, resolvePath } from "../utils/path";
+import { normalizeUsesPath, renderVariableTemplateValue, resolveModulePath } from "./normalize";
 
 export interface RenderedTask {
   cmd: string;
@@ -81,8 +74,8 @@ export class RenderProxyFactory {
     const varsProxy = this.createVarsProxy(module, task, prefix);
     const tasksProxy = this.createTasksProxy(module, prefix);
     const usesFunction = this.createUsesFunction(module, prefix, __srcdir__);
-    const resolvePathFunction = createResolvePathFunction(__srcdir__);
-    const __cwd__ = getCwd();
+    const resolvePathFunction = (filePath: string, dir = __srcdir__) => resolvePath(dir, filePath);
+    const __cwd__ = process.cwd();
     const __dir__ = __srcdir__;
     const __renderContext = this.ctx;
 
@@ -167,7 +160,7 @@ export class RenderProxyFactory {
     prefix: string,
   ): object {
     const { __src__, __srcdir__ } = this.getSourceInfo(module, task);
-    const __cwd__ = getCwd();
+    const __cwd__ = process.cwd();
 
     return new Proxy(
       {},
@@ -185,7 +178,7 @@ export class RenderProxyFactory {
               __src__: varSrc,
               __srcdir__: varDir,
               __dir__: varDir,
-              resolvePath: createResolvePathFunction(varDir),
+              resolvePath: (filePath: string, dir = varDir) => resolvePath(dir, filePath),
             });
           }
           const moduleVarTemplate = module.vars[key];
@@ -284,7 +277,7 @@ export class RenderProxyFactory {
         );
       }
 
-      const resolvedPath = resolveFromBaseDir(baseDir, path);
+      const resolvedPath = resolvePath(baseDir, path);
       try {
         return fs.readFileSync(resolvedPath, "utf8");
       } catch (e) {

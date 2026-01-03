@@ -2,7 +2,7 @@ import fs from "node:fs";
 import nunjucks from "nunjucks";
 
 import { TASK_FN_PREFIX } from "../constants";
-import { getCwd, resolvePath as resolvePathUtil } from "./path";
+import { resolvePath } from "./path";
 
 /**
  * Custom extension for {% uses "./path" %}
@@ -37,8 +37,8 @@ class UsesExtension implements nunjucks.Extension {
           ? context.ctx.__srcdir__
           : undefined;
 
-    const baseDir = typeof ctxDir === "string" ? ctxDir : getCwd();
-    const resolvedPath = resolvePathUtil(baseDir, filePath);
+    const baseDir = typeof ctxDir === "string" ? ctxDir : process.cwd();
+    const resolvedPath = resolvePath(baseDir, filePath);
 
     try {
       const content = fs.readFileSync(resolvedPath, "utf8");
@@ -68,18 +68,16 @@ const nj = new nunjucks.Environment(null, {
 nj.addExtension("UsesExtension", new UsesExtension());
 nj.addGlobal("prefix", `${TASK_FN_PREFIX}`);
 nj.addGlobal("env", Bun.env);
+// Filter receives (input, baseDir) but our function takes (baseDir, filePath)
 nj.addFilter("resolvePath", (input: string, baseDir?: string) => {
-  if (typeof input !== "string") return input;
-  const base = typeof baseDir === "string" ? baseDir : getCwd();
-  return resolvePathUtil(base, input);
+  const base = typeof baseDir === "string" ? baseDir : process.cwd();
+  return resolvePath(base, input);
 });
 
 const color = (text: string, colorInput: string): string => {
   const colorCode = Bun.color(colorInput, "ansi");
   const resetCode = Bun.color("#ffffff", "ansi");
-  if (!colorCode) {
-    return text;
-  }
+  if (!colorCode) return text;
   return `${colorCode}${text}${resetCode}`;
 };
 

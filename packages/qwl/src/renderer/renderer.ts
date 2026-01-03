@@ -5,9 +5,9 @@ import type { ModuleTemplate, TaskTemplate, VariableTemplate, VariableTemplateVa
 import { TASK_FN_PREFIX } from "../constants";
 import { QwlError } from "../errors";
 import { hash } from "../utils/hash";
-import { getCwd, getDirFromSourcePath, resolvePath as resolvePathUtil } from "../utils/path";
+import { getDirFromSourcePath, resolvePath } from "../utils/path";
+import { normalizeUsesPath, renderVariableTemplateValue, resolveModulePath } from "./normalize";
 import { RenderContext, RenderProxyFactory, type TaskRef } from "./proxy";
-import { normalizeUsesPath, resolveModulePath, renderVariableTemplateValue } from "./normalize";
 
 export interface TaskNode {
   key: string;
@@ -28,9 +28,6 @@ export class Renderer {
   private proxyFactory!: RenderProxyFactory;
   private rootModule!: ModuleTemplate;
 
-  /**
-   * Extract the module prefix from a uses path like "modules.steps.tasks.compose" -> "steps"
-   */
   private getModulePrefix(usesPath: string): string {
     const parts = usesPath.split(".");
     const moduleParts: string[] = [];
@@ -47,15 +44,113 @@ export class Renderer {
     return `${TASK_FN_PREFIX}${name.replace(/\./g, ":")}`;
   }
 
+  /**
+   * Resolves a task through its uses chain and merges variable layers.
+   * Returns the final resolved task, module, prefix, and merged vars.
+   */
+  private resolveTaskChain(
+    module: ModuleTemplate,
+    name: string,
+    prefix: string,
+  ): {
+    resolvedTask: TaskTemplate;
+    resolvedModule: ModuleTemplate;
+    resolvedPrefix: string;
+    mergedVars: Record<string, VariableTemplate>;
+    desc?: string;
+  } {
+    let task = module.tasks[name];
+    if (!task) {
+      throw new QwlError({
+        code: "RENDERER_ERROR",
+        message: `Task not found: ${name}`,
+      });
+    }
+
+    const desc = task.desc;
+    let resolvedTask = task;
+    let resolvedModule = module;
+    let varLayers: Array<{
+      vars: Record<string, VariableTemplate>;
+      module: ModuleTemplate;
+      prefix: string;
+    }> = [{ vars: task.vars, module, prefix }];
+
+    if (task.uses) {
+      const normalizedUsesPath = normalizeUsesPath(task.uses);
+      const resolved = resolveModulePath(this.rootModule, module, normalizedUsesPath, prefix);
+      resolvedTask = resolved.module.tasks[resolved.taskName]!;
+      resolvedModule = resolved.module;
+      varLayers.push({
+        vars: resolvedTask.vars,
+        module: resolvedModule,
+        prefix: resolved.prefix,
+      });
+    }
+
+    let currentResolvedPrefix = task.uses
+      ? this.getModulePrefix(task.uses.startsWith("modules") ? task.uses : `modules.${task.uses}`)
+      : prefix;
+
+    while (resolvedTask.uses) {
+      const normalizedUsesPath = normalizeUsesPath(resolvedTask.uses);
+      const resolved = resolveModulePath(
+        this.rootModule,
+        resolvedModule,
+        normalizedUsesPath,
+        currentResolvedPrefix,
+      );
+      resolvedTask = resolved.module.tasks[resolved.taskName]!;
+      resolvedModule = resolved.module;
+      currentResolvedPrefix = resolved.prefix;
+      varLayers.push({
+        vars: resolvedTask.vars,
+        module: resolvedModule,
+        prefix: currentResolvedPrefix,
+      });
+    }
+
+    // Merge vars by resolving templates in order
+    const resolvedVarLayers: Array<Record<string, VariableTemplate>> = [];
+    let currentVars: Record<string, VariableTemplate> = {};
+    for (const layer of varLayers) {
+      const tempTask: TaskTemplate = { ...resolvedTask, vars: currentVars };
+      const tempProxy = this.proxyFactory.createForTask(layer.module, tempTask, layer.prefix);
+      const resolvedLayer: Record<string, VariableTemplate> = {};
+      for (const [key, varTemplate] of Object.entries(layer.vars)) {
+        resolvedLayer[key] = this.preRenderVariableTemplate(varTemplate, tempProxy);
+      }
+      resolvedVarLayers.push(resolvedLayer);
+      Object.assign(currentVars, resolvedLayer);
+    }
+
+    const mergedVars: Record<string, VariableTemplate> = {};
+    for (let i = resolvedVarLayers.length - 1; i >= 0; i--) {
+      Object.assign(mergedVars, resolvedVarLayers[i]);
+    }
+
+    return {
+      resolvedTask,
+      resolvedModule,
+      resolvedPrefix: currentResolvedPrefix,
+      mergedVars,
+      desc,
+    };
+  }
+
   renderAllTasks(module: ModuleTemplate): RenderResult {
     this.rootModule = module;
     this.ctx = new RenderContext();
-    this.proxyFactory = new RenderProxyFactory(this.ctx, {
-      renderVar: (ctx, mod, name, prefix) => this.renderVar(mod, name, prefix),
-      renderTask: (ctx, mod, name, prefix) => this.renderTask(mod, name, prefix),
-      renderTaskInline: (ctx, mod, name, prefix, vars) =>
-        this.renderTaskInline(mod, name, prefix, vars),
-    }, module);
+    this.proxyFactory = new RenderProxyFactory(
+      this.ctx,
+      {
+        renderVar: (ctx, mod, name, prefix) => this.renderVar(mod, name, prefix),
+        renderTask: (ctx, mod, name, prefix) => this.renderTask(mod, name, prefix),
+        renderTaskInline: (ctx, mod, name, prefix, vars) =>
+          this.renderTaskInline(mod, name, prefix, vars),
+      },
+      module,
+    );
 
     for (const taskName of Object.keys(module.tasks)) {
       this.ctx.mainTasks.add(taskName);
@@ -102,7 +197,11 @@ export class Renderer {
       const dedupName = this.ctx.nameToDedup.get(fullName) ?? fullName;
       const { cmd } = this.ctx.renderedTasks.get(fullName)!;
       const cmdHash = hash(cmd);
-      return { canonicalName: fullName, bashName: this.toBashName(dedupName), hash: `0x${cmdHash.toString(16)}` };
+      return {
+        canonicalName: fullName,
+        bashName: this.toBashName(dedupName),
+        hash: `0x${cmdHash.toString(16)}`,
+      };
     }
 
     if (this.ctx.pendingTasks.has(fullName)) {
@@ -115,92 +214,17 @@ export class Renderer {
     this.ctx.pendingTasks.add(fullName);
 
     try {
-      let task = module.tasks[name];
-      if (!task) {
-        throw new QwlError({
-          code: "RENDERER_ERROR",
-          message: `Task not found: ${name}`,
-        });
-      }
+      const { resolvedTask, resolvedModule, resolvedPrefix, mergedVars, desc } =
+        this.resolveTaskChain(module, name, prefix);
 
-      let desc = task.desc;
-      let resolvedTask = task;
-      let _resolvedModule = module;
-      let varLayers: Array<{ vars: Record<string, VariableTemplate>, module: ModuleTemplate, prefix: string }> = [
-        { vars: task.vars, module, prefix }
-      ];
-
-      if (task.uses) {
-        let usesPath = task.uses;
-        const normalizedUsesPath = normalizeUsesPath(usesPath);
-        const resolved = resolveModulePath(this.rootModule, module, normalizedUsesPath, prefix);
-        resolvedTask = resolved.module.tasks[resolved.taskName]!;
-        _resolvedModule = resolved.module;
-        varLayers.push({
-          vars: resolvedTask.vars,
-          module: _resolvedModule,
-          prefix: resolved.prefix,
-        });
-      }
-
-      // Recursively resolve uses if the resolved task also has uses
-      let currentResolvedPrefix = task.uses
-        ? this.getModulePrefix(task.uses.startsWith("modules") ? task.uses : `modules.${task.uses}`)
-        : prefix;
-
-      while (resolvedTask.uses) {
-        let usesPath = resolvedTask.uses;
-        const normalizedUsesPath = normalizeUsesPath(usesPath);
-        const resolved = resolveModulePath(
-          this.rootModule,
-          _resolvedModule,
-          normalizedUsesPath,
-          currentResolvedPrefix,
-        );
-        resolvedTask = resolved.module.tasks[resolved.taskName]!;
-        _resolvedModule = resolved.module;
-        currentResolvedPrefix = resolved.prefix;
-        varLayers.push({
-          vars: resolvedTask.vars,
-          module: _resolvedModule,
-          prefix: currentResolvedPrefix,
-        });
-      }
-
-      // Merge vars by resolving templates in order
-      const resolvedVarLayers: Array<Record<string, VariableTemplate>> = [];
-      let currentVars: Record<string, VariableTemplate> = {};
-      for (const layer of varLayers) {
-        // Create proxy with current resolved vars
-        const tempTask: TaskTemplate = { ...resolvedTask, vars: currentVars };
-        const tempProxy = this.proxyFactory.createForTask(layer.module, tempTask, layer.prefix);
-        const resolvedLayer: Record<string, VariableTemplate> = {};
-        for (const [key, varTemplate] of Object.entries(layer.vars)) {
-          resolvedLayer[key] = this.preRenderVariableTemplate(varTemplate, tempProxy);
-        }
-        resolvedVarLayers.push(resolvedLayer);
-        // Add to currentVars for next layer
-        Object.assign(currentVars, resolvedLayer);
-      }
-
-      // Now merge all resolved layers, with later layers overriding
-      const mergedVars: Record<string, VariableTemplate> = {};
-      for (let i = resolvedVarLayers.length - 1; i >= 0; i--) {
-        const layer = resolvedVarLayers[i];
-        Object.assign(mergedVars, layer);
-      }
       const modifiedTask: TaskTemplate = { ...resolvedTask, vars: mergedVars };
-
-      // Use the resolved module for the proxy so task references resolve correctly
-      const resolvedPrefix = currentResolvedPrefix;
-      const proxy = this.proxyFactory.createForTask(_resolvedModule, modifiedTask, resolvedPrefix);
+      const proxy = this.proxyFactory.createForTask(resolvedModule, modifiedTask, resolvedPrefix);
       const cmd = resolvedTask.cmd.render(proxy);
       const cmdHash = hash(cmd);
 
       // Deduplication: check if we've seen this exact content before
       let dedupName: string;
       if (this.ctx.hashToName.has(cmdHash)) {
-        // Reuse existing task name for this content
         dedupName = this.ctx.hashToName.get(cmdHash)!;
       } else {
         dedupName = fullName;
@@ -217,7 +241,11 @@ export class Renderer {
         this.ctx.graph.get(fullName)!.add(dep);
       }
 
-      return { canonicalName: fullName, bashName: this.toBashName(dedupName), hash: `0x${cmdHash.toString(16)}` };
+      return {
+        canonicalName: fullName,
+        bashName: this.toBashName(dedupName),
+        hash: `0x${cmdHash.toString(16)}`,
+      };
     } finally {
       this.ctx.pendingTasks.delete(fullName);
     }
@@ -229,83 +257,14 @@ export class Renderer {
     prefix: string,
     overrideVars: Record<string, unknown>,
   ): string {
-    let task = module.tasks[name];
-    if (!task) {
-      throw new QwlError({
-        code: "RENDERER_ERROR",
-        message: `Task not found: ${name}`,
-      });
-    }
+    const { resolvedTask, resolvedModule, resolvedPrefix, mergedVars } = this.resolveTaskChain(
+      module,
+      name,
+      prefix,
+    );
 
-    let resolvedTask = task;
-    let _resolvedModule = module;
-    let varLayers: Array<{ vars: Record<string, VariableTemplate>, module: ModuleTemplate, prefix: string }> = [
-      { vars: task.vars, module, prefix }
-    ];
-
-    if (task.uses) {
-      let usesPath = task.uses;
-      const normalizedUsesPath = normalizeUsesPath(usesPath);
-      const resolved = resolveModulePath(this.rootModule, module, normalizedUsesPath, prefix);
-      resolvedTask = resolved.module.tasks[resolved.taskName]!;
-      _resolvedModule = resolved.module;
-      varLayers.push({
-        vars: resolvedTask.vars,
-        module: _resolvedModule,
-        prefix: resolved.prefix,
-      });
-    }
-
-    // Recursively resolve uses if the resolved task also has uses
-    let currentResolvedPrefix = task.uses
-      ? this.getModulePrefix(task.uses.startsWith("modules") ? task.uses : `modules.${task.uses}`)
-      : prefix;
-
-    while (resolvedTask.uses) {
-      let usesPath = resolvedTask.uses;
-      const normalizedUsesPath = normalizeUsesPath(usesPath);
-      const resolved = resolveModulePath(
-        this.rootModule,
-        _resolvedModule,
-        normalizedUsesPath,
-        currentResolvedPrefix,
-      );
-      resolvedTask = resolved.module.tasks[resolved.taskName]!;
-      _resolvedModule = resolved.module;
-      currentResolvedPrefix = resolved.prefix;
-      varLayers.push({
-        vars: resolvedTask.vars,
-        module: _resolvedModule,
-        prefix: currentResolvedPrefix,
-      });
-    }
-
-    // Merge vars by resolving templates in order
-    const resolvedVarLayers: Array<Record<string, VariableTemplate>> = [];
-    let currentVars: Record<string, VariableTemplate> = {};
-    for (const layer of varLayers) {
-      // Create proxy with current resolved vars
-      const tempTask: TaskTemplate = { ...resolvedTask, vars: currentVars };
-      const tempProxy = this.proxyFactory.createForTask(layer.module, tempTask, layer.prefix);
-
-      const resolvedLayer: Record<string, VariableTemplate> = {};
-      for (const [key, varTemplate] of Object.entries(layer.vars)) {
-        resolvedLayer[key] = this.preRenderVariableTemplate(varTemplate, tempProxy);
-      }
-      resolvedVarLayers.push(resolvedLayer);
-      // Add to currentVars for next layer
-      Object.assign(currentVars, resolvedLayer);
-    }
-
-    // Now merge all resolved layers, with later layers overriding
-    const mergedVars: Record<string, VariableTemplate> = {};
-    for (let i = resolvedVarLayers.length - 1; i >= 0; i--) {
-      const layer = resolvedVarLayers[i];
-      Object.assign(mergedVars, layer);
-    }
     const modifiedTask: TaskTemplate = { ...resolvedTask, vars: mergedVars };
-    const resolvedPrefix = currentResolvedPrefix;
-    const proxy = this.proxyFactory.createForTask(_resolvedModule, modifiedTask, resolvedPrefix);
+    const proxy = this.proxyFactory.createForTask(resolvedModule, modifiedTask, resolvedPrefix);
 
     const proxyWithOverrides = {
       ...proxy,
@@ -342,9 +301,8 @@ export class Renderer {
 
       const __src__ = varTemplate.__meta__.sourcePath ?? module.__meta__.sourcePath;
       const __srcdir__ = getDirFromSourcePath(__src__);
-      const __cwd__ = getCwd();
+      const __cwd__ = process.cwd();
       const __dir__ = __srcdir__;
-      const resolvePath = (filePath: string) => resolvePathUtil(__srcdir__, filePath);
 
       const proxy = {
         vars: new Proxy({}, { get: (_, key: string) => this.renderVar(module, key, prefix) }),
@@ -354,7 +312,7 @@ export class Renderer {
         __src__,
         __srcdir__,
         __dir__,
-        resolvePath,
+        resolvePath: (filePath: string) => resolvePath(__srcdir__, filePath),
       };
 
       const value = renderVariableTemplateValue(varTemplate.value, proxy);

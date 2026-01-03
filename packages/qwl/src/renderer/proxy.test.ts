@@ -75,7 +75,7 @@ describe("RenderProxyFactory", () => {
     const module = createTestModule();
     const ctx = new RenderContext();
     const callbacks = createMockCallbacks();
-    const factory = new RenderProxyFactory(ctx, callbacks);
+    const factory = new RenderProxyFactory(ctx, callbacks, module);
     const task = module.tasks.sayHello!;
 
     const proxy = factory.createForTask(module, task, "");
@@ -90,7 +90,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
@@ -103,7 +103,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
@@ -118,7 +118,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
@@ -133,7 +133,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
@@ -150,7 +150,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
@@ -167,7 +167,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
@@ -184,7 +184,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
@@ -199,7 +199,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
@@ -214,7 +214,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
@@ -228,7 +228,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
@@ -244,7 +244,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
@@ -259,7 +259,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "myprefix");
@@ -272,7 +272,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "myprefix");
@@ -289,7 +289,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -302,7 +302,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -315,7 +315,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -329,7 +329,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -347,7 +347,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -363,7 +363,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -378,7 +378,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -392,7 +392,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -406,7 +406,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -419,7 +419,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -435,7 +435,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -450,7 +450,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -464,7 +464,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;
@@ -478,7 +478,7 @@ describe("RenderProxyFactory", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
-      const factory = new RenderProxyFactory(ctx, callbacks);
+      const factory = new RenderProxyFactory(ctx, callbacks, module);
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "") as Record<string, unknown>;

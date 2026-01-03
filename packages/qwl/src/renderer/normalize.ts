@@ -3,7 +3,6 @@ import { Template } from "nunjucks";
 import type { ModuleTemplate, VariableTemplateValue } from "../ast";
 
 import { QwlError } from "../errors";
-import { resolvePath as resolvePathUtil } from "../utils/path";
 
 /**
  * Normalizes a uses path by expanding shorthand forms to full paths.
@@ -95,18 +94,4 @@ export function renderVariableTemplateValue(
     return result;
   }
   return template;
-}
-
-/**
- * Resolves a file path relative to a base directory.
- */
-export function resolveFromBaseDir(baseDir: string, filePath: string): string {
-  return resolvePathUtil(baseDir, filePath);
-}
-
-/**
- * Creates a function that resolves paths relative to a base directory.
- */
-export function createResolvePathFunction(baseDir: string): (filePath: string) => string {
-  return (filePath: string): string => resolveFromBaseDir(baseDir, filePath);
 }

@@ -6,7 +6,7 @@ import stdSteps from "../../builtins/std/steps.yaml" with { type: "text" };
 import stdTest from "../../builtins/std/test.yaml" with { type: "text" };
 import stdUtils from "../../builtins/std/utils.yaml" with { type: "text" };
 import { QwlError } from "../errors";
-import { getCwd, resolveFromParentOrCwd } from "../utils/path";
+import { resolveFromParentOrCwd } from "../utils/path";
 
 const BUILTINS: Record<string, string> = {
   "std/utils": stdUtils,
@@ -93,7 +93,7 @@ export async function resolveModulePath(specifier: string, parentPath?: string):
   if (found instanceof QwlError) {
     throw new QwlError({
       code: "LOADER_ERROR",
-      message: `Module not found: ${specifier} (searched from ${parentPath ?? getCwd()})`,
+      message: `Module not found: ${specifier} (searched from ${parentPath ?? process.cwd()})`,
     });
   }
   return found;
