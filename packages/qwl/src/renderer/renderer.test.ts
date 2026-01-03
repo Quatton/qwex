@@ -297,6 +297,115 @@ describe("Renderer", () => {
 
       expect(() => renderer.renderAllTasks(module)).toThrow(/[Cc]ircular/);
     });
+
+    it("task uses shorthand path", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          myTask: {
+            uses: "sub.subTask",
+          },
+        }),
+        modules: {
+          sub: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({
+              subTask: {
+                cmd: 'echo "sub task"',
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const myTask = result.main.find((t) => t.key === "myTask");
+      expect(myTask?.cmd).toBe('echo "sub task"');
+    });
+
+    it("task uses with vars merges correctly", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          myTask: {
+            uses: "sub.subTask",
+            vars: {
+              message: "overridden",
+            },
+          },
+        }),
+        modules: {
+          sub: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({
+              subTask: {
+                vars: {
+                  message: "default",
+                },
+                cmd: 'echo "{{ vars.message }}"',
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const myTask = result.main.find((t) => t.key === "myTask");
+      expect(myTask?.cmd).toBe('echo "overridden"');
+    });
+
+    it("nested uses with vars", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          outerTask: {
+            uses: "sub.middleTask",
+            vars: {
+              outerVar: "outer value",
+            },
+          },
+        }),
+        modules: {
+          sub: {
+            vars: resolveVariableDefs({}),
+            tasks: resolveTaskDefs({
+              middleTask: {
+                uses: "sub.innerTask",
+                vars: {
+                  middleVar: "middle {{ vars.outerVar }}",
+                },
+                cmd: 'echo "middle: {{ vars.middleVar }}"',
+              },
+              innerTask: {
+                vars: {
+                  innerVar: "inner {{ vars.middleVar }}",
+                },
+                cmd: 'echo "inner: {{ vars.innerVar }}"',
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const outerTask = result.main.find((t) => t.key === "outerTask");
+      expect(outerTask?.cmd).toBe('echo "inner: inner middle outer value"');
+    });
   });
 
   describe("submodule tasks", () => {

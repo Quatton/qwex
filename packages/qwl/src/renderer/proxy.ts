@@ -4,7 +4,14 @@ import { Template } from "nunjucks";
 import type { ModuleTemplate, TaskTemplate, VariableTemplateValue } from "../ast";
 
 import { QwlError } from "../errors";
-import { getCwd, getDirFromSourcePath, resolvePath as resolvePathUtil } from "../utils/path";
+import { getCwd, getDirFromSourcePath } from "../utils/path";
+import {
+  normalizeUsesPath,
+  resolveModulePath,
+  renderVariableTemplateValue,
+  resolveFromBaseDir,
+  createResolvePathFunction,
+} from "./normalize";
 
 export interface RenderedTask {
   cmd: string;
@@ -61,6 +68,7 @@ export class RenderProxyFactory {
   constructor(
     private ctx: RenderContext,
     private callbacks: ProxyCallbacks,
+    private rootModule: ModuleTemplate,
   ) {}
 
   create(
@@ -73,7 +81,7 @@ export class RenderProxyFactory {
     const varsProxy = this.createVarsProxy(module, task, prefix);
     const tasksProxy = this.createTasksProxy(module, prefix);
     const usesFunction = this.createUsesFunction(module, prefix, __srcdir__);
-    const resolvePathFunction = this.createResolvePathFunction(__srcdir__);
+    const resolvePathFunction = createResolvePathFunction(__srcdir__);
     const __cwd__ = getCwd();
     const __dir__ = __srcdir__;
     const __renderContext = this.ctx;
@@ -169,7 +177,7 @@ export class RenderProxyFactory {
           if (taskVarTemplate !== undefined) {
             const varSrc = taskVarTemplate.__meta__.sourcePath ?? __src__;
             const varDir = getDirFromSourcePath(varSrc);
-            return this.renderVariableTemplateValue(taskVarTemplate.value, {
+            return renderVariableTemplateValue(taskVarTemplate.value, {
               vars: this.createVarsProxy(module, task, prefix),
               tasks: {},
               modules: {},
@@ -177,7 +185,7 @@ export class RenderProxyFactory {
               __src__: varSrc,
               __srcdir__: varDir,
               __dir__: varDir,
-              resolvePath: this.createResolvePathFunction(varDir),
+              resolvePath: createResolvePathFunction(varDir),
             });
           }
           const moduleVarTemplate = module.vars[key];
@@ -250,57 +258,14 @@ export class RenderProxyFactory {
     };
   }
 
-  /**
-   * Traverses a dotted path to find a module and task.
-   * e.g., "tasks.myTask" or "modules.sub.tasks.subTask"
-   */
-  private resolveModulePath(
-    startModule: ModuleTemplate,
-    path: string,
-    startPrefix: string,
-  ): { module: ModuleTemplate; taskName: string; prefix: string } {
-    const parts = path.split(".");
-    let currentModule = startModule;
-    let currentPrefix = startPrefix;
-    let i = 0;
-
-    // Skip leading "modules" keyword
-    if (parts[i] === "modules") i++;
-
-    // Navigate through module hierarchy until we hit "tasks" or run out of parts
-    while (i < parts.length && parts[i] !== "tasks") {
-      const part = parts[i]!;
-      const subModule = currentModule.modules[part];
-      if (!subModule) {
-        throw new QwlError({
-          code: "RENDERER_ERROR",
-          message: `Module not found: ${part} in path ${path}`,
-        });
-      }
-      currentModule = subModule;
-      currentPrefix = currentPrefix ? `${currentPrefix}.${part}` : part;
-      i++;
-    }
-
-    // Skip "tasks" keyword
-    if (parts[i] === "tasks") i++;
-
-    const taskName = parts[i];
-    if (!taskName || !currentModule.tasks[taskName]) {
-      throw new QwlError({
-        code: "RENDERER_ERROR",
-        message: `Task not found: ${taskName} in path ${path}`,
-      });
-    }
-
-    return { module: currentModule, taskName, prefix: currentPrefix };
+  private getSourceInfo(
+    module: ModuleTemplate,
+    task: TaskTemplate | null,
+  ): { __src__: string | null; __srcdir__: string } {
+    const src = task?.__meta__?.sourcePath ?? module.__meta__.sourcePath;
+    return { __src__: src ?? null, __srcdir__: getDirFromSourcePath(src) };
   }
 
-  /**
-   * Creates a uses() function that can:
-   * 1. Inline a task: uses("tasks.taskName") or uses("modules.sub.tasks.taskName")
-   * 2. Read a file: uses("./path/to/file.sh") - delegated to global uses()
-   */
   private createUsesFunction(
     module: ModuleTemplate,
     prefix: string,
@@ -308,7 +273,8 @@ export class RenderProxyFactory {
   ): (path: string, overrideVars?: Record<string, unknown>) => string {
     return (path: string, overrideVars: Record<string, unknown> = {}): string => {
       if (path.startsWith("tasks.") || path.startsWith("modules.")) {
-        const resolved = this.resolveModulePath(module, path, prefix);
+        const normalizedPath = normalizeUsesPath(path);
+        const resolved = resolveModulePath(this.rootModule, module, normalizedPath, prefix);
         return this.callbacks.renderTaskInline(
           this.ctx,
           resolved.module,
@@ -318,7 +284,7 @@ export class RenderProxyFactory {
         );
       }
 
-      const resolvedPath = this.resolveFromBaseDir(baseDir, path);
+      const resolvedPath = resolveFromBaseDir(baseDir, path);
       try {
         return fs.readFileSync(resolvedPath, "utf8");
       } catch (e) {
@@ -328,39 +294,5 @@ export class RenderProxyFactory {
         });
       }
     };
-  }
-
-  private getSourceInfo(
-    module: ModuleTemplate,
-    task: TaskTemplate | null,
-  ): { __src__: string | null; __srcdir__: string } {
-    const src = task?.__meta__?.sourcePath ?? module.__meta__.sourcePath;
-    return { __src__: src ?? null, __srcdir__: getDirFromSourcePath(src) };
-  }
-
-  private resolveFromBaseDir(baseDir: string, filePath: string): string {
-    return resolvePathUtil(baseDir, filePath);
-  }
-
-  private createResolvePathFunction(baseDir: string): (filePath: string) => string {
-    return (filePath: string): string => this.resolveFromBaseDir(baseDir, filePath);
-  }
-
-  private renderVariableTemplateValue(
-    template: VariableTemplateValue,
-    ctx: Record<string, unknown>,
-  ): unknown {
-    if (typeof template === "string") return template;
-    if (template instanceof Template) return template.render(ctx);
-    if (Array.isArray(template))
-      return template.map((item) => this.renderVariableTemplateValue(item, ctx));
-    if (typeof template === "object" && template !== null) {
-      const result: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(template)) {
-        result[key] = this.renderVariableTemplateValue(value as VariableTemplateValue, ctx);
-      }
-      return result;
-    }
-    return template;
   }
 }

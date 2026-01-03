@@ -1,0 +1,137 @@
+modules:
+  steps:
+    uses: std/steps
+  log:
+    uses: std/log
+  tracing:
+    tasks:
+      generate_run_id:
+        desc: "Generate a unique run ID with timestamp and random suffix"
+        cmd: |
+          local timestamp
+          timestamp=$(date +"%Y%m%d%H%M%S")
+          local random_suffix
+          random_suffix=$(openssl rand -hex 4)
+          local qwex_job_name=${QWEX_JOB_NAME:-job}
+          echo "${timestamp}-${random_suffix}-${qwex_job_name}"
+
+  adapter:
+    vars:
+      image: "ghcr.io/astral-sh/uv:python3.12-bookworm"
+    tasks:
+      docker:
+        vars:
+          init: ""
+          main: ""
+          cleanup: ""
+        cmd: |
+          SOURCE=$(@source)
+
+          docker run --rm -it \
+            -v "$(pwd)":/workspace \
+            -w /workspace \
+            {{ adapter.vars.image }} /bin/bash -c "
+              ${SOURCE}
+
+              {{ tasks.local.inline({
+                init: vars.init,
+                main: vars.main,
+                cleanup: vars.cleanup
+              }) }}
+            "
+
+      local:
+        vars:
+          init: ""
+          main: ""
+          cleanup: ""
+        cmd: |
+          {% if vars.cleanup %}
+          trap '{{ vars.cleanup }}' EXIT
+          {% endif %}
+
+          {% if vars.init %}
+            if [ -n "${QWEX_RUN_DIR+set}" ]; then
+              {{ vars.init }}
+            else
+              {{ vars.init }}
+            fi
+          {% endif %}
+
+          {% if vars.main %}
+            if [ -n "${QWEX_RUN_DIR+set}" ]; then
+              {{ vars.main }} | tee "$QWEX_RUN_DIR/logs/main.log"
+            else
+              {{ vars.main }}
+            fi
+          {% else %}
+            {{ log.tasks.warn }} "No main command provided to adapter.run.task.run. Nothing to execute."
+          {% endif %}
+
+tasks:
+  adapt:
+    uses: modules.adapter.tasks.local
+    vars:
+      init: "{{ vars.init | default('') }}"
+      main: "{{ vars.main | default('') }}"
+      cleanup: "{{ vars.cleanup | default('') }}"
+
+  init:
+    uses: modules.steps.tasks.compose
+    vars:
+      steps:
+        - desc: "Generate run ID if not already set"
+          cmd: |
+            if [ -z "${QWEX_RUN_ID+set}" ]; then
+              export QWEX_RUN_ID=$( {{ modules.tracing.tasks.generate_run_id }} )
+              {{ log.tasks.info }} "Generated QWEX_RUN_ID: $QWEX_RUN_ID"
+            else
+              {{ log.tasks.info }} "Using existing QWEX_RUN_ID: $QWEX_RUN_ID"
+            fi
+        - desc: "Make .qwex/runs directory"
+          cmd: |
+            mkdir -p .qwex/runs
+        - desc: "Make run directory"
+          cmd: |
+            export QWEX_RUN_DIR=".qwex/runs/$QWEX_RUN_ID"
+            mkdir -p "$QWEX_RUN_DIR"
+            {{ log.tasks.info }} "Created QWEX run directory at $QWEX_RUN_DIR"
+        - desc: "Make meta directory"
+          cmd: |
+            mkdir -p "$QWEX_RUN_DIR/meta"
+        - desc: "Make created_at and status files"
+          cmd: |
+            date +"%Y-%m-%d %H:%M:%S" > "$QWEX_RUN_DIR/meta/created_at"
+            echo "created" > "$QWEX_RUN_DIR/meta/status"
+        - desc: "Create logs directory"
+          cmd: |
+            mkdir -p "$QWEX_RUN_DIR/logs"
+        - desc: "Make sure venv is created"
+          cmd: |
+            if [ ! -d ".venv" ]; then
+              uv venv
+            fi
+        - desc: "Activate venv"
+          cmd: |
+            source .venv/bin/activate
+        - desc: "Install dependencies"
+          cmd: |
+            uv sync
+        - desc: "Log initialization complete"
+          cmd: |
+            {{ log.tasks.info }} "QWEX initialization complete."
+            date +"%Y-%m-%d %H:%M:%S" > "$QWEX_RUN_DIR/meta/initialized_at"
+            echo "initialized" > "$QWEX_RUN_DIR/meta/status"
+
+  run:
+    cmd: |
+      local command=${@:-""}
+      if [ -z "$command" ]; then
+        {{ log.tasks.error }} "No command provided to run task."
+        return 1
+      fi
+      {{ tasks.adapt.inline({
+        init: tasks.init,
+        main: "$command",
+        cleanup: ""
+      }) }}

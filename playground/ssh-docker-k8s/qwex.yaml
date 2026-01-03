@@ -1,0 +1,68 @@
+vars:
+  demo_dir: "{{ './lifecycle-demo' | resolvePath(__dir__) }}"
+
+modules:
+  steps:
+    uses: std/steps
+  log:
+    uses: std/log
+
+tasks:
+  test:
+    desc: "UV workspace with lifecycle using qwex"
+    uses: modules.steps.tasks.compose
+    vars:
+      steps:
+        - desc: "Create temp directory"
+          cmd: |
+            cd {{ __dir__ }}
+            mkdir -p {{ vars.demo_dir }}
+        - desc: "Initialize uv project"
+          cmd: |
+            cd {{ __dir__ }}
+            uv init --no-workspace {{ vars.demo_dir }}
+        - desc: "Symlink ./config/* to demo_dir"
+          cmd: |
+            cd {{ __dir__ }}
+            ln -s {{ __dir__ }}/config/* {{ vars.demo_dir }}
+        - desc: "Check if qwex is installed"
+          cmd: |
+            if ! command -v qwex &> /dev/null; then
+              {{ log.tasks.error }} "qwex could not be found. Please install qwex to proceed."
+              exit 1
+            else
+              {{ log.tasks.info }} "qwex is installed."
+            fi
+        - desc: "Run `qwex run uv run hello.py` in demo_dir"
+          cmd: |
+            cd {{ vars.demo_dir }}
+            QWEX_JOB_NAME="original" qwex run uv run hello.py
+        - desc: "Modify hello.py to say other message"
+          cmd: |
+            cd {{ vars.demo_dir }}
+            echo 'print("Hello from modified hello.py!")' > {{ vars.demo_dir }}/hello.py
+        - desc: "Run `qwex run uv run hello.py` again to see modified output"
+          cmd: |
+            cd {{ vars.demo_dir }}
+            QWEX_JOB_NAME="modified" qwex run uv run hello.py
+
+  clean:
+    desc: "Clean up temp directory created during test"
+    cmd: |
+      if [ -d "{{ vars.demo_dir }}" ]; then
+        rm -rf "{{ vars.demo_dir }}"
+        {{ log.tasks.info }} "{{ vars.demo_dir }}: Cleaned up temp directory"
+      else
+        {{ log.tasks.warn }} "{{ vars.demo_dir }}: No temp directory info found for cleanup."
+      fi
+  all:
+    desc: "Test from clean state"
+    uses: modules.steps.tasks.compose
+    vars:
+      steps:
+        - desc: "Clean up"
+          cmd: "{{ tasks.clean }}"
+        - desc: "Run tests"
+          cmd: "{{ tasks.test }}"
+        - desc: "All done"
+          cmd: "{{ log.tasks.info }} 'UV workspace test completed.'"
