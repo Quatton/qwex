@@ -1,5 +1,5 @@
 vars:
-  demo_dir: "{{ './uv-workspace-demo' | resolvePath(__dir__) }}"
+  demo_dir: "{{ './demo' | resolvePath(__dir__) }}"
 
 modules:
   steps:

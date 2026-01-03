@@ -11,6 +11,28 @@ export function parseFeatureKey(key: string): {
   return { base: key, feature: null };
 }
 
+/**
+ * Merge top-level feature keys into a single record for filtering.
+ * E.g., { tasks: {...}, "tasks[docker]": {...} } => { tasks: {...all merged...} }
+ */
+export function mergeFeatureKeys<T>(def: Record<string, T>, baseKey: string): T | undefined {
+  const merged: Record<string, unknown> = {};
+
+  // Find all variants of this key
+  for (const [key, value] of Object.entries(def)) {
+    const { base, feature } = parseFeatureKey(key);
+    if (base === baseKey && value && typeof value === "object") {
+      // Create feature-suffixed keys for nested items
+      for (const [itemKey, itemValue] of Object.entries(value as Record<string, unknown>)) {
+        const mergedKey = feature ? `${itemKey}[${feature}]` : itemKey;
+        merged[mergedKey] = itemValue;
+      }
+    }
+  }
+
+  return Object.keys(merged).length > 0 ? (merged as T) : undefined;
+}
+
 export function filterByFeatures<T>(
   record: Record<string, T> | undefined,
   features: Set<string>,

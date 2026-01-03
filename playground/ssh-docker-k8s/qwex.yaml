@@ -1,5 +1,5 @@
 vars:
-  demo_dir: "{{ './lifecycle-demo' | resolvePath(__dir__) }}"
+  demo_dir: "{{ './demo' | resolvePath(__dir__) }}"
 
 modules:
   steps:
@@ -8,8 +8,8 @@ modules:
     uses: std/log
 
 tasks:
-  test:
-    desc: "UV workspace with lifecycle using qwex"
+  setup:
+    desc: "Setup task to ensure prerequisites are met"
     uses: modules.steps.tasks.compose
     vars:
       steps:
@@ -33,6 +33,21 @@ tasks:
             else
               {{ log.tasks.info }} "qwex is installed."
             fi
+        - desc: "Setup docker with ssh capabilities"
+          cmd: |
+            docker run -d \
+              -e USER_NAME=qwex_user \
+              -e USER_PASSWORD=qwex_pass \
+              -e PASSWORD_ACCESS=true \
+              -p 2222:2222 \
+              --name qwex-ssh-server \
+              linuxserver/openssh-server
+
+  test:
+    desc: "UV workspace with lifecycle executed with k8s, docker, and ssh using qwex"
+    uses: modules.steps.tasks.compose
+    vars:
+      steps:
         - desc: "Run `qwex run uv run hello.py` in demo_dir"
           cmd: |
             cd {{ vars.demo_dir }}
@@ -45,6 +60,14 @@ tasks:
           cmd: |
             cd {{ vars.demo_dir }}
             QWEX_JOB_NAME="modified" qwex run uv run hello.py
+        - desc: "Modify hello.py to say a Docker message"
+          cmd: |
+            cd {{ vars.demo_dir }}
+            echo 'print("Hello from Dockerized hello.py!")' > {{ vars.demo_dir }}/hello.py
+        - desc: "Run `qwex run uv run hello.py` again to see Dockerized output"
+          cmd: |
+            cd {{ vars.demo_dir }}
+            QWEX_JOB_NAME="dockerized" qwex run uv run hello.py
 
   clean:
     desc: "Clean up temp directory created during test"
@@ -55,6 +78,15 @@ tasks:
       else
         {{ log.tasks.warn }} "{{ vars.demo_dir }}: No temp directory info found for cleanup."
       fi
+
+      if docker ps -a | grep qwex-ssh-server; then
+        docker stop qwex-ssh-server
+        docker rm qwex-ssh-server
+        {{ log.tasks.info }} "Stopped and removed qwex-ssh-server Docker container."
+      else
+        {{ log.tasks.warn }} "No qwex-ssh-server Docker container found for cleanup."
+      fi
+
   all:
     desc: "Test from clean state"
     uses: modules.steps.tasks.compose
@@ -62,6 +94,8 @@ tasks:
       steps:
         - desc: "Clean up"
           cmd: "{{ tasks.clean }}"
+        - desc: "Setup prerequisites"
+          cmd: "{{ tasks.setup }}"
         - desc: "Run tests"
           cmd: "{{ tasks.test }}"
         - desc: "All done"

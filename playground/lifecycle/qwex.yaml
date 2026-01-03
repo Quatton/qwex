@@ -1,5 +1,5 @@
 vars:
-  demo_dir: "{{ './lifecycle-demo' | resolvePath(__dir__) }}"
+  demo_dir: "{{ './demo' | resolvePath(__dir__) }}"
 
 modules:
   steps:

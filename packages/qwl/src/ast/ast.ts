@@ -4,7 +4,7 @@ type _VariableDef = string | number | boolean | _VariableDef[] | { [key: string]
 
 const $ = scope({
   "ValidRecord<t>": {
-    "[/^[A-Za-z_][A-Za-z0-9_]*$/]": "t",
+    "[/^[A-Za-z_][A-Za-z0-9_]*(?:\\[[A-Za-z_][A-Za-z0-9_]*\\])?$/]": "t",
   },
   VariableDef:
     "string | number | boolean | unknown[] | ValidRecord<unknown>" as type.cast<_VariableDef>,

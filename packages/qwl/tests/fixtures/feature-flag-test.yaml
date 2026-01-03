@@ -1,0 +1,7 @@
+tasks:
+  test:
+    cmd: "echo 'default task'"
+
+tasks[docker]:
+  test:
+    cmd: "echo 'docker task'"

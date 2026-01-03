@@ -67,4 +67,4 @@ compiled.sh
 target/
 
 # demo dir
-*-demo/
+playground/*/**/demo/

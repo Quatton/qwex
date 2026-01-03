@@ -9,7 +9,7 @@ import {
   type TaskDef,
 } from "../ast";
 import { QwlError } from "../errors";
-import { filterByFeatures, selectUses } from "./features";
+import { filterByFeatures, mergeFeatureKeys, selectUses } from "./features";
 
 export type ModuleLoader = (
   path: string,
@@ -65,15 +65,22 @@ export class Resolver {
     // Set source path for uses() function
     template.__meta__.sourcePath = currentPath;
 
-    const vars = filterByFeatures(def.vars as Record<string, unknown> | undefined, this.features);
+    // Merge feature-keyed top-level entries (e.g., vars and vars[docker])
+    const mergedVars = mergeFeatureKeys(def as Record<string, unknown>, "vars");
+    const vars = filterByFeatures(mergedVars as Record<string, unknown> | undefined, this.features);
     Object.assign(template.vars, resolveVariableDefs(vars, currentPath));
 
-    const tasks = filterByFeatures(def.tasks as Record<string, TaskDef> | undefined, this.features);
+    const mergedTasks = mergeFeatureKeys(def as Record<string, unknown>, "tasks");
+    const tasks = filterByFeatures(
+      mergedTasks as Record<string, TaskDef> | undefined,
+      this.features,
+    );
     Object.assign(template.tasks, resolveTaskDefs(tasks, currentPath));
 
     // Filter modules by features
+    const mergedModules = mergeFeatureKeys(def as Record<string, unknown>, "modules");
     const modules = filterByFeatures(
-      def.modules as Record<string, ModuleDef> | undefined,
+      mergedModules as Record<string, ModuleDef> | undefined,
       this.features,
     );
     if (Object.keys(modules).length > 0) {

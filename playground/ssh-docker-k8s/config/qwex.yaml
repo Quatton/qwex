@@ -19,6 +19,41 @@ modules:
     vars:
       image: "ghcr.io/astral-sh/uv:python3.12-bookworm"
     tasks:
+      ssh:
+        vars:
+          init: ""
+          main: ""
+          cleanup: ""
+        cmd: |
+          SOURCE=$(@source)
+
+          ssh -o StrictHostKeyChecking=no -p 2222 qwex_user@localhost /bin/bash -c '
+            '"${SOURCE}"'
+
+            {% if vars.cleanup %}
+            trap "${QWEX_CLEANUP_CMD@Q}" EXIT
+            {% endif %}
+
+            {% if vars.init %}
+              if [ -n "${QWEX_RUN_DIR+set}" ]; then
+                {{ vars.init }}
+              else
+                {{ vars.init }}
+              fi
+            {% endif %}
+
+            {% if vars.main %}
+            if [ -n "${QWEX_RUN_DIR+set}" ]; then
+              {{ vars.main }} | tee "$QWEX_RUN_DIR/logs/main.log"
+            else
+              {{ log.tasks.info }} "QWEX_RUN_DIR not set, running main command without logging to QWEX run directory."
+              {{ vars.main }}
+            fi
+            {% else %}
+            {{ log.tasks.warn }} "No main command provided to adapter.run.task.run. Nothing to execute."
+            {% endif %}
+          '
+
       docker:
         vars:
           init: ""
@@ -30,15 +65,23 @@ modules:
           docker run --rm -it \
             -v "$(pwd)":/workspace \
             -w /workspace \
-            {{ adapter.vars.image }} /bin/bash -c "
-              ${SOURCE}
+            -e QWEX_RUN_DIR="${QWEX_RUN_DIR:-}" \
+            -e QWEX_JOB_NAME="${QWEX_JOB_NAME:-}" \
+            -e QWEX_RUN_ID="${QWEX_RUN_ID:-}" \
+            {{ "-e QWEX_INIT_CMD=\"" + vars.init + "\"" if vars.init else "" }} \
+            -e QWEX_MAIN_CMD="{{ vars.main }}" \
+            {{ "-e QWEX_CLEANUP_CMD=\"" + vars.cleanup + "\"" if vars.cleanup else "" }} \
+            {{ vars.image }} /bin/bash -c '
+              '"${SOURCE}"'
 
-              {{ tasks.local.inline({
-                init: vars.init,
-                main: vars.main,
-                cleanup: vars.cleanup
-              }) }}
-            "
+              {{
+                 tasks.local.inline({
+                   init: "${QWEX_INIT_CMD@Q}",
+                   main: "${QWEX_MAIN_CMD@Q}",
+                   cleanup: "${QWEX_CLEANUP_CMD@Q}"
+                 })
+              }}
+            '
 
       local:
         vars:
@@ -51,22 +94,28 @@ modules:
           {% endif %}
 
           {% if vars.init %}
-            if [ -n "${QWEX_RUN_DIR+set}" ]; then
-              {{ vars.init }}
-            else
-              {{ vars.init }}
-            fi
+            {{ vars.init }}
           {% endif %}
 
           {% if vars.main %}
             if [ -n "${QWEX_RUN_DIR+set}" ]; then
               {{ vars.main }} | tee "$QWEX_RUN_DIR/logs/main.log"
             else
+              {{ log.tasks.info }} "QWEX_RUN_DIR not set, running main command without logging to QWEX run directory."
               {{ vars.main }}
             fi
           {% else %}
             {{ log.tasks.warn }} "No main command provided to adapter.run.task.run. Nothing to execute."
           {% endif %}
+
+tasks[docker]:
+  adapt:
+    uses: modules.adapter.tasks.docker
+    vars:
+      image: "ghcr.io/astral-sh/uv:python3.12-bookworm"
+      init: "{{ vars.init | default('') }}"
+      main: "{{ vars.main | default('') }}"
+      cleanup: "{{ vars.cleanup | default('') }}"
 
 tasks:
   adapt:
@@ -130,8 +179,9 @@ tasks:
         {{ log.tasks.error }} "No command provided to run task."
         return 1
       fi
-      {{ tasks.adapt.inline({
-        init: tasks.init,
-        main: "$command",
-        cleanup: ""
-      }) }}
+
+      QWEX_INIT_CMD="{{ tasks.init }}"
+      QWEX_MAIN_CMD="$command"
+      QWEX_CLEANUP_CMD=""
+
+      {{ tasks.adapt.inline() }}

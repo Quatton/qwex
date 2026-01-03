@@ -110,7 +110,6 @@ export class Renderer {
       });
     }
 
-    // Merge vars by resolving templates in order
     const resolvedVarLayers: Array<Record<string, VariableTemplate>> = [];
     let currentVars: Record<string, VariableTemplate> = {};
     for (const layer of varLayers) {

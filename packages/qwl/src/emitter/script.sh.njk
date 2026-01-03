@@ -11,7 +11,6 @@ source <(echo "$QWEX_PREAMBLE")
   declare -p QWEX_PREAMBLE
   echo "source <(echo \"$QWEX_PREAMBLE\")"
   declare -f {% for task in tasks %}{{ task.name }} {% endfor %} @main @help @source @repl
-  echo "@main \$@"
 }
 
 @help() {
