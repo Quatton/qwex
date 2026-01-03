@@ -21,10 +21,10 @@ tasks:
           cmd: |
             cd {{ __dir__ }}
             uv init --no-workspace {{ vars.demo_dir }}
-        - desc: "Symlink ./config/* to demo_dir"
+        - desc: "Symlink all ./config/* to demo_dir"
           cmd: |
             cd {{ __dir__ }}
-            ln -s {{ vars.demo_dir }}/config/* {{ vars.demo_dir }}
+            ln -s {{ __dir__ }}/config/* {{ vars.demo_dir }}
         - desc: "Check if qwex is installed"
           cmd: |
             if ! command -v qwex &> /dev/null; then
@@ -33,31 +33,9 @@ tasks:
             else
               {{ log.tasks.info }} "qwex is installed."
             fi
-        - desc: "Setup docker with ssh capabilities"
+        - desc: "Setup Docker services with docker-compose"
           cmd: |
-            if docker ps -a | grep qwex-ssh-server; then
-              {{ log.tasks.info }} "qwex-ssh-server Docker container already exists."
-            else
-              {{ log.tasks.info }} "Creating qwex-ssh-server Docker container."
-              docker run -d \
-                  -e USER_NAME=qwex_user \
-                  -e USER_PASSWORD=qwex_pass \
-                  -e PASSWORD_ACCESS=true \
-                  -p 2222:2222 \
-                  --name qwex-ssh-server \
-                  linuxserver/openssh-server
-            fi
-        - desc: "Setup minio service in Docker"
-          cmd: |
-            if docker ps -a | grep qwex-minio; then
-              {{ log.tasks.info }} "qwex-minio Docker container already exists."
-            else
-              {{ log.tasks.info }} "Creating qwex-minio Docker container."
-              docker run -d -p 9000:9000 -p 9001:9001 --name qwex-minio \
-                  -e "MINIO_ROOT_USER=admin" \
-                  -e "MINIO_ROOT_PASSWORD=password" \
-                  minio/minio server /data --console-address ":9001"
-            fi
+            cd {{ __dir__ }}/config && docker-compose up -d
         - desc: "Check if kind is installed"
           cmd: |
             if ! command -v kind &> /dev/null; then
@@ -127,26 +105,14 @@ tasks:
         {{ log.tasks.warn }} "{{ vars.demo_dir }}: No temp directory info found for cleanup."
       fi
 
-      if docker ps -a | grep qwex-ssh-server; then
-        docker stop qwex-ssh-server
-        docker rm qwex-ssh-server
-        {{ log.tasks.info }} "Stopped and removed qwex-ssh-server Docker container."
-      else
-        {{ log.tasks.warn }} "No qwex-ssh-server Docker container found for cleanup."
-      fi
+      cd {{ __dir__ }}/config && docker-compose down
+      {{ log.tasks.info }} "Stopped and removed Docker containers via docker-compose."
 
       if kind get clusters | grep qwex-cluster; then
         kind delete cluster --name qwex-cluster
         {{ log.tasks.info }} "Deleted k8s cluster 'qwex-cluster'."
       else
         {{ log.tasks.warn }} "No k8s cluster 'qwex-cluster' found for cleanup."
-      fi
-
-      if [ -f "{{ vars.demo_dir }}/config/kubeconfig" ]; then
-        rm "{{ vars.demo_dir }}/config/kubeconfig"
-        {{ log.tasks.info }} "Removed kubeconfig file."
-      else
-        {{ log.tasks.warn }} "No kubeconfig file found for cleanup."
       fi
 
   all:

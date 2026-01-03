@@ -1,0 +1,23 @@
+services:
+  qwex-ssh-server:
+    image: linuxserver/openssh-server
+    container_name: qwex-ssh-server
+    environment:
+      - USER_NAME=qwex_user
+      - USER_PASSWORD=qwex_pass
+      - PASSWORD_ACCESS=true
+    ports:
+      - "2222:2222"
+    restart: unless-stopped
+
+  qwex-minio:
+    image: minio/minio
+    container_name: qwex-minio
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
