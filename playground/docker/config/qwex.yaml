@@ -30,7 +30,7 @@ modules:
           main: ""
           cleanup: ""
         cmd: |
-          docker run --rm -it \
+          docker run --rm \
             -v "$(pwd)":/workspace \
             -w /workspace \
             -e QWEX_JOB_NAME="${QWEX_JOB_NAME:-}" \
