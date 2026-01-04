@@ -37,18 +37,13 @@ modules:
             -e QWEX_INIT_CMD="{{ vars.init | default('') }}" \
             -e QWEX_MAIN_CMD="{{ vars.main | default('') }}" \
             -e QWEX_CLEANUP_CMD="{{ vars.cleanup | default('') }}" \
-            -e SOURCE="$(@source | base64)" \
-            {{ vars.image }} /bin/bash -c '
-              source <(echo "$SOURCE" | base64 --decode)
-              
-              {{
-                 tasks.local.inline({
-                   init: "${QWEX_INIT_CMD:-}",
-                   main: "${QWEX_MAIN_CMD:-}",
-                   cleanup: "${QWEX_CLEANUP_CMD:-}"
-                 })
-              }}
-            '
+            {{ vars.image }} /bin/bash -c "$(printf '%s\n%s' "$(@source)" "{{
+                tasks.local.inline({
+                  init: "${QWEX_INIT_CMD:-}",
+                  main: "${QWEX_MAIN_CMD:-}",
+                  cleanup: "${QWEX_CLEANUP_CMD:-}"
+                }) | escape
+              }}")"
 
       local:
         vars:
@@ -119,7 +114,7 @@ tasks:
         - desc: "Make created_at and status files"
           cmd: |
             date +"%Y-%m-%d %H:%M:%S" > "$QWEX_RUN_DIR/meta/created_at"
-            {{ log.info }} "created" > "$QWEX_RUN_DIR/meta/status"
+            echo "created" > "$QWEX_RUN_DIR/meta/status"
         - desc: "Create logs directory"
           cmd: |
             mkdir -p "$QWEX_RUN_DIR/logs"
@@ -138,7 +133,18 @@ tasks:
           cmd: |
             {{ log.tasks.info }} "QWEX initialization complete."
             date +"%Y-%m-%d %H:%M:%S" > "$QWEX_RUN_DIR/meta/initialized_at"
-            {{ log.info }} "initialized" > "$QWEX_RUN_DIR/meta/status"
+            echo "initialized" > "$QWEX_RUN_DIR/meta/status"
+
+  cleanup:
+    desc: "Cleanup QWEX run status"
+    cmd: |
+      if [ -n "${QWEX_RUN_DIR:-}" ] && [ -d "$QWEX_RUN_DIR" ]; then
+        echo "completed" > "$QWEX_RUN_DIR/meta/status"
+        date +"%Y-%m-%d %H:%M:%S" > "$QWEX_RUN_DIR/meta/completed_at"
+        {{ log.tasks.info }} "QWEX run at $QWEX_RUN_DIR marked as completed."
+      else
+        {{ log.tasks.warn }} "QWEX_RUN_DIR not set or does not exist. Skipping cleanup."
+      fi
 
   run:
     cmd: |
@@ -151,5 +157,5 @@ tasks:
       {{ tasks.adapt.inline({
         init: tasks.init,
         main: "$command",
-        cleanup: ""
+        cleanup: tasks.cleanup
       }) }}
