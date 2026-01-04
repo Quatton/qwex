@@ -3258,3 +3258,13 @@ tasks:
 ```
 
 ```
+
+## Jan 4, 206: Finally
+
+We finally implemented everything.
+
+1. Feature flags -- done
+2. Context blocks -- canceled due to complexity and lack of necessity
+3. Inline file includes -- done
+
+We also made some evals. im tired.
