@@ -1,0 +1,110 @@
+vars:
+  demo_dir: "{{ './demo' | resolvePath(__dir__) }}"
+  steps:
+    - desc: "Create a temp directory called {{ vars.demo_dir }}"
+      cmd: "mkdir -p {{ vars.demo_dir }}"
+      assert: "test -d {{ vars.demo_dir }}"
+      fail_msg: "Fail to detect the created directory at {{ vars.demo_dir }}"
+    - desc: "Initialize uv project in {{ vars.demo_dir }}"
+      cmd: |
+        uv init --no-workspace {{ vars.demo_dir }}
+      assert: "test -f {{ vars.demo_dir }}/pyproject.toml"
+      fail_msg: "Fail to detect pyproject.toml in {{ vars.demo_dir }}"
+    - desc: "Create .venv with uv in {{ vars.demo_dir }}"
+      cmd: |
+        cd {{ vars.demo_dir }}
+        uv venv
+      assert: "test -d {{ vars.demo_dir }}/.venv"
+      fail_msg: "Fail to detect .venv in {{ vars.demo_dir }}"
+    - desc: "Add numpy to the dependencies via uv"
+      cmd: |
+        cd {{ vars.demo_dir }}
+        uv add numpy
+      assert: "grep numpy {{ vars.demo_dir }}/pyproject.toml"
+      fail_msg: "Fail to detect numpy in pyproject.toml in {{ vars.demo_dir }}"
+    - desc: "Write hello.py to print out a numpy array with 3 floats between 0 and 1 with seed 42 and run it"
+      cmd: |
+        cd {{ vars.demo_dir }}
+        echo 'import numpy as np
+        np.random.seed(42)
+        print(np.random.rand(3))' > {{ vars.demo_dir }}/hello.py
+        uv run hello.py
+      assert: "cd {{ vars.demo_dir }} && uv run hello.py | grep '^\\[0\\.37454012 0\\.95071431 0\\.73199394\\]$'"
+      fail_msg: "hello.py did not output the expected numpy array"
+
+modules:
+  steps:
+    uses: std/steps
+  log:
+    uses: std/log
+
+tasks:
+  clean:
+    desc: "Clean up temp directory created during test"
+    cmd: |
+      if [ -d "{{ vars.demo_dir }}" ]; then
+        rm -rf "{{ vars.demo_dir }}"
+        {{ log.info }} "{{ vars.demo_dir }}: Cleaned up temp directory"
+      else
+        {{ log.warn }} "{{ vars.demo_dir }}: No temp directory info found for cleanup."
+      fi
+
+tasks[auto]:
+  eval:
+    desc: "Automated test for uv workspace with numpy"
+    cmd: |
+      {{ modules.steps.tasks.compose.inline({
+        steps: vars.steps
+      }) }}
+
+tasks[interactive]:
+  completion:
+    cmd: |
+      echo "STEP$1=$(date +"%Y-%m-%d%H:%M:%S" )" >> {{ "$QWEX_EVAL_FILE" | resolvePath(__dir__) }}
+  eval:
+    desc: "Interactive test for uv workspace with numpy"
+    cmd: |
+      if [ -d "{{ vars.demo_dir }}" ]; then
+        {{ log.error }} "Please clean up existing demo directory at {{ vars.demo_dir }} before running interactive test."
+        exit 1
+      fi
+
+      export QWEX_EVAL_FILE="$(openssl rand -hex 6)_qwex_eval.log"
+
+      {{ tasks.completion }} 0
+
+      set -o pipefail
+      {{ log.info }} "Please follow the steps below to complete the interactive test."
+      {{ log.info }} "commands: submit to proceed to the next step, exit or Ctrl+D to exit"
+      declare -A steps_desc
+      declare -A steps_assert
+      declare -A steps_fail_msg
+      i=0
+      {% for step in vars.steps %}
+      steps_desc[$i]="{{ step.desc }}"
+      steps_assert[$i]="{{ step.assert }}"
+      steps_fail_msg[$i]="{{ step.fail_msg }}"
+      i=$((i+1))
+      {% endfor %}
+      step_index=0
+      total_steps=$i
+      while [ $step_index -lt $total_steps ]; do
+        {{ log.info }} "Step $((step_index + 1)): ${steps_desc[$step_index]}"
+        while true; do
+          read -p "qwex> " user_input
+          if [ "$user_input" = "submit" ]; then
+            {{ log.info }} "Asserting step: ${steps_desc[$step_index]}"
+            if  eval "${steps_assert[$step_index]}" ; then
+              step_index=$((step_index + 1))
+              {{ tasks.completion }} $step_index
+              break
+            else
+              {{ log.error }} "Assertion failed: ${steps_fail_msg[$step_index]}. Please fix the issue and try again."
+            fi
+          else
+            eval "$user_input" || true
+          fi
+        done
+      done
+
+      {{ log.info }} "Interactive test completed successfully."
