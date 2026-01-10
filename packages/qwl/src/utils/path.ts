@@ -1,7 +1,6 @@
 import path from "node:path";
 
 export function resolvePath(baseDir: string, filePath: string): string {
-  if (path.isAbsolute(filePath)) return filePath;
   return path.resolve(baseDir, filePath);
 }
 

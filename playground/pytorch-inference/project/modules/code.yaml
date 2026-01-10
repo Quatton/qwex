@@ -1,0 +1,75 @@
+modules:
+  log:
+    uses: std/log
+vars:
+  ssh_host: "{{ env.SSH_HOST }}"
+  ssh_user: "{{ env.SSH_USER }}"
+  workspace_dir: "{{ '../' | resolvePath(__dir__) }}"
+  git_dir: |
+    {%- if features.ssh -%}
+      /home/{{ vars.ssh_user }}/.qwex/repos/pytorch-inference.git
+    {%- else -%}
+      "{{ vars.workspace_dir }}/.git"
+    {%- endif -%}
+  remote_name: |
+    {%- if features.ssh -%}
+      ssh
+    {%- else -%}
+      origin
+    {%- endif -%}
+  remote_url: |
+    {%- if features.ssh -%}
+      ssh://{{ [vars.ssh_host, vars.git_dir] | pathJoin }}
+    {%- else -%}
+      https://github.com/Quatton/pytorch-inference.git
+    {%- endif -%}
+tasks:
+  ssh_prepare_git_dir:
+    desc: "Prepare SSH git directory"
+    cmd: |
+      ssh {{ vars.ssh_user }}@{{ vars.ssh_host }} 'mkdir -p "$(dirname "{{ vars.git_dir }}")" && git init --bare "{{ vars.git_dir }}"'
+  set_origin:
+    desc: "Set git remote origin URL"
+    cmd: |
+      cd "{{ vars.workspace_dir }}"
+      echo "{{ vars.remote_url }}"
+      git remote set-url {{ vars.remote_name }} "{{ vars.remote_url }}"
+  push:
+    desc: "Push changes to repository"
+    cmd: |
+      cd "{{ vars.workspace_dir }}"
+      git push
+  pull:
+    desc: "Pull latest code from repository"
+    cmd: |
+      cd "{{ vars.workspace_dir }}"
+      git pull origin main
+  prepare:
+    desc: "Prepare git worktree"
+    cmd: |
+      QWEX_SOURCE_DIR="${QWEX_SOURCE_DIR:-{{ vars.git_dir }}}"
+      if [ -n "$QWEX_SOURCE_DIR" ]; then
+        cd "$QWEX_SOURCE_DIR"
+
+        QWEX_COMMIT_REF=${QWEX_COMMIT_REF:-$(git rev-parse HEAD)}
+        QWEX_WORKSPACE_DIR="${QWEX_WORKSPACE_DIR:-${QWEX_SOURCE_DIR}/.worktrees/${QWEX_COMMIT_REF}}"
+
+        cd "$QWEX_SOURCE_DIR"
+
+        # create worktree directory if it doesn't exist
+        if [ ! -d "$QWEX_WORKSPACE_DIR" ]; then
+          git worktree add -f "$QWEX_WORKSPACE_DIR" "$QWEX_COMMIT_REF"
+        else
+          {{ log:info }} "Worktree already exists at $QWEX_WORKSPACE_DIR, skipping creation."
+        fi
+
+        cd "$QWEX_WORKSPACE_DIR"
+        {{ log.tasks.info }} "Prepared git worktree at $QWEX_WORKSPACE_DIR for commit $QWEX_COMMIT_REF"
+      else
+        {{ log.tasks.warn }} "No workspace_dir specified. Skipping worktree preparation."
+      fi
+  prune:
+    desc: "Prune git worktrees"
+    cmd: |
+      cd "{{ vars.workspace_dir }}"
+      git worktree prune

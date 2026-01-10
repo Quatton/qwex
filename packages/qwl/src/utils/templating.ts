@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import nunjucks from "nunjucks";
 
 import { TASK_FN_PREFIX } from "../constants";
@@ -74,6 +75,9 @@ nj.addFilter("resolvePath", (input: string, baseDir?: string) => {
   return resolvePath(base, input);
 });
 
+nj.addFilter("pathJoin", (paths: string[]) => {
+  return path.join(...paths);
+});
 const color = (text: string, colorInput: string): string => {
   const colorCode = Bun.color(colorInput, "ansi");
   const resetCode = Bun.color("#ffffff", "ansi");

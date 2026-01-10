@@ -1,169 +1,24 @@
-vars:
-  ssh_gitdir: "${QWEX_HOME:-$HOME/.qwex}/repos/pytorch-inference.git"
-
 modules:
-  steps:
-    uses: std/steps
-  log:
-    uses: std/log
-
   code:
-    modules:
-      log:
-        uses: std/log
-    vars:
-      gitdir: |
-        {% if features.ssh %}
-          {{ super.vars.ssh_gitdir }}
-        {% else %}
-          {{ '__dir__/.git' }}
-        {% endif %}
-      remote_name: |
-        {% if features.ssh %}
-          ssh
-        {% else %}
-          origin
-        {% endif %}
-    tasks:
-      push:
-        desc: "Push changes to repository"
-        cmd: |
-          if [ -n "{{ vars.gitdir }}" ]; then
-            git push
-          else
-            {{ log.warn }} "No gitdir specified. Skipping code push."
-          fi
-      pull:
-        desc: "Pull latest code from repository"
-        cmd: |
-          {{ log.info }} "{{ vars.gitdir }}"
-          if [ -n "{{ vars.gitdir }}" ]; then
-            {{ log.info }} "Pulling latest code in {{ vars.gitdir }}"
-            cd "{{ vars.gitdir }}"
-            git pull origin main
-          else
-            {{ log.warn }} "No gitdir specified. Skipping code pull."
-          fi
-      prepare:
-        desc: "Prepare git worktree"
-        cmd: |
-          if [ -n "{{ vars.gitdir }}" ]; then
-            QWEX_COMMIT_REF=${QWEX_COMMIT_REF:-$(git -C "{{ vars.gitdir }}" rev-parse HEAD 2>/dev/null)}
-
-            QWEX_WORKSPACE_DIR=$(mktemp -d {{ vars.gitdir }}/worktrees/XXXXXX)
-
-            cd "{{ vars.gitdir }}"
-            git worktree add "$QWEX_WORKSPACE_DIR" "$QWEX_COMMIT_REF"
-
-            cd "$QWEX_WORKSPACE_DIR"
-            {{ log.tasks.info }} "Prepared git worktree at $QWEX_WORKSPACE_DIR for commit $QWEX_COMMIT_REF"
-          else
-            {{ log.tasks.warn }} "No gitdir specified. Skipping worktree preparation."
-          fi
-
-  tracing:
-    modules:
-      log:
-        uses: std/log
-    tasks:
-      init:
-        desc: "Initialize tracing for qwex adapter"
-        cmd: |
-          export QWEX_HOME="${QWEX_HOME:-$HOME/.qwex}"
-          export QWEX_RUN_ID=$( {{ tasks.generate_run_id }} )
-          export QWEX_RUN_DIR="$QWEX_HOME/runs/$QWEX_RUN_ID"
-          {{ log.tasks.info }} "Tracing initialized with QWEX_RUN_ID: $QWEX_RUN_ID"
-          export QWEX_COMMIT_REF=$(git rev-parse HEAD 2>/dev/null)
-          {{ log.tasks.info }} "Current commit ref: $QWEX_COMMIT_REF"
-
-          mkdir -p "$QWEX_RUN_DIR/meta"
-          mkdir -p "$QWEX_RUN_DIR/logs"
-
-          date +"%Y-%m-%d %H:%M:%S" > "$QWEX_RUN_DIR/meta/created_at"
-          echo "created" > "$QWEX_RUN_DIR/meta/status"
-      generate_run_id:
-        desc: "Generate a unique run ID"
-        cmd: |
-          local timestamp
-          timestamp=$(date +"%Y%m%d%H%M%S")
-          local random_suffix
-          random_suffix=$(openssl rand -hex 4)
-          echo "${timestamp}-${random_suffix}"
-
-  adapter:
-    tasks:
-      local:
-        vars:
-          init: ""
-          main: ""
-          cleanup: ""
-        cmd: |
-          {% if vars.cleanup %}
-          trap '{{ vars.cleanup }}' EXIT
-          {% endif %}
-
-          {% if vars.init %}
-            {{ vars.init }}
-          {% endif %}
-
-          {% if vars.main %}
-            {{ vars.main }}
-          {% else %}
-            {{ log.tasks.warn }} "No main command provided. Nothing to execute."
-          {% endif %}
-
+    uses: ./modules/code.yaml
+  lifecycle:
+    uses: ./modules/lifecycle.yaml
 tasks:
-  setup_ssh_remote:
-    desc: "Set up SSH remote for git"
-    cmd: |
-      git remote remove ssh 2>/dev/null || true
-
-      if [ -z "{{ env.SSH_HOST }}" ] || [ -z "{{ env.SSH_USER }}" ]; then
-        {{ log.error }} "SSH_HOST and SSH_USER environment variables must be set to use SSH feature."
-        exit 1
-      fi
-
-      git remote add ssh ssh://{{ env.SSH_HOST }}/{{ env.SSH_USER }}/repos/pytorch-inference.git
-
-  adapt:
-    uses: adapter.local
-    vars:
-      init: "{{ vars.init | default('') }}"
-      main: "{{ vars.main | default('') }}"
-      cleanup: "{{ vars.cleanup | default('') }}"
-
   init:
-    uses: steps.compose
-    vars:
-      steps:
-        - desc: "Pull latest code"
-          cmd: |
-            {{ code.pull }}
-        - desc: "Prepare worktree"
-          cmd: |
-            {{ code.prepare }}
-        - desc: "Initialize tracing module"
-          cmd: |
-            {{ tracing.init }}
-        - desc: "Check if uv is installed"
-          cmd: |
-            if ! command -v uv &> /dev/null; then
-              {{ log.tasks.error }} "uv could not be found. Please install uv to proceed."
-              exit 1
-            else
-              {{ log.tasks.info }} "uv is installed."
-            fi
-        - desc: "Install dependencies"
-          cmd: |
-            uv sync
+    cmd: |
+      {{ code.prepare }}
+
+      if [ ! -d ".venv" ]; then
+        uv venv
+      fi
+      source .venv/bin/activate
+      uv sync
   run:
     cmd: |
-      QWEX_MAIN_CMD="$@"
-
       {{ code.push }}
 
-      {{ tasks.adapt.inline({
+      {{ lifecycle.submit.inline({
         "init": tasks.init,
-        "main": "$QWEX_MAIN_CMD",
+        "main": "$@",
         "cleanup": ""
       }) }}

@@ -1,0 +1,171 @@
+modules:
+  log:
+    uses: std/log
+  driver:
+    uses: ./driver.yaml
+
+tasks:
+  gen_id:
+    desc: "Generate a unique run ID with timestamp and random suffix"
+    cmd: |
+      local timestamp
+      timestamp=$(date +"%Y%m%d%H%M%S")
+      local random_suffix
+      random_suffix=$(openssl rand -hex 4)
+      local qwex_job_name=${QWEX_JOB_NAME:-job}
+      echo "${timestamp}-${random_suffix}-${qwex_job_name}"
+
+  mkrundir:
+    desc: "Create run directory for the lifecycle manager"
+    cmd: |
+      export QWEX_RUN_DIR="${QWEX_HOME:-$HOME/.qwex}/runs/$QWEX_RUN_ID"
+
+      mkdir -p "$QWEX_RUN_DIR/meta"
+      mkdir -p "$QWEX_RUN_DIR/logs"
+
+  link:
+    desc: "Symlink QWEX_HOME to appear in the current project"
+    cmd: |
+      local qwex_home="${QWEX_HOME:-$HOME/.qwex}"
+      local project_qwex_link="$(pwd)/.qwex"
+      # remove existing link if it exists
+      if [ -L "$project_qwex_link" ]; then
+        rm "$project_qwex_link"
+      fi
+      ln -s "$qwex_home" "$project_qwex_link" 
+      {{ log.tasks.info }} "Created symlink from $project_qwex_link to $qwex_home"
+
+  check_clean:
+    desc: "Check if the git working directory is clean"
+    cmd: |
+      if [ -n "$(git status --porcelain)" ]; then
+        {{ log.tasks.warn }} "Git working directory is not clean. Do you want to proceed?"
+        read -p "Type 'y' to proceed, any other key to abort: " choice
+        echo ""
+        if [ "$choice" != "y" ]; then
+          {{ log.tasks.info }} "Aborting operation due to unclean working directory."
+          exit 1
+        fi
+      else
+        {{ log.tasks.info }} "Git working directory is clean."
+      fi
+
+  submit:
+    desc: "Submit a new run to the lifecycle manager"
+    vars:
+      init: ""
+      main: "${*:-echo 'No main command provided.'}"
+      cleanup: ""
+    cmd: |
+      local run_id
+      run_id=$( {{ tasks.gen_id }} )
+      {{ log.tasks.info }} "Submitting new run with ID: $run_id"
+
+      export QWEX_RUN_ID="$run_id"
+      {{ tasks.mkrundir }}
+
+      {{ tasks.check_clean }}
+
+      local git_ref=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+      if [ "$git_ref" = "unknown" ]; then
+        {{ log.tasks.error }} "Cannot determine git commit reference. Make sure to run this command inside a git repository."
+        exit 1
+      fi
+      echo "$git_ref" > "$QWEX_RUN_DIR/meta/git_ref"
+      {{ log.tasks.info }} "Recorded git commit reference: $git_ref"
+
+      {{ log.tasks.info }} "Run directory created at: $QWEX_RUN_DIR"
+
+      echo "created" > "$QWEX_RUN_DIR/meta/status"
+      date +"%Y-%m-%d %H:%M:%S" > "$QWEX_RUN_DIR/meta/created_at"
+      echo "$run_id"
+
+      export QWEX_MAIN_CMD="{{ vars.main }}"
+
+      echo $QWEX_MAIN_CMD > "$QWEX_RUN_DIR/meta/main_cmd"
+
+      {{ driver.submit.inline(
+        env=["QWEX_RUN_ID", "QWEX_MAIN_CMD"],
+        init=tasks.init.inline(
+          cmd=vars.init
+        ),
+        main=tasks.trace.inline(
+          cmd="eval \"$QWEX_MAIN_CMD\""
+        ),
+        cleanup=tasks.cleanup.inline(
+          cmd=vars.cleanup
+        )
+      ) }}
+
+  trace:
+    desc: "Trace execution of a command within the lifecycle manager"
+    vars:
+      cmd: echo placeholder trace cmd
+    cmd: |
+      if [ -z "$QWEX_RUN_ID" ]; then
+        {{ log.tasks.error }} "QWEX_RUN_ID is not set. Cannot trace command."
+        exit 1
+      fi
+
+      local log_dir="${QWEX_HOME:-$HOME/.qwex}/runs/$QWEX_RUN_ID/logs"
+      mkdir -p "$log_dir"
+
+      (
+        {{ vars.cmd }} 
+      ) 2>&1 | tee "$log_dir/main.log"
+
+  retrieve:
+    desc: "Retrieve run directory for a given run ID"
+    vars:
+      run_id: "${1:-$QWEX_RUN_ID}"
+    cmd: |
+      if [ -z "{{ vars.run_id }}" ]; then
+        {{ log.tasks.error }} "No run ID specified for retrieval."  
+        exit 1
+      fi
+
+      local qwex_home="${QWEX_HOME:-$HOME/.qwex}"
+      local run_id="{{ vars.run_id }}"
+
+      {{ driver.retrieve.inline(
+        remote_path="'${QWEX_HOME:-$HOME/.qwex}/runs/'\"$run_id\"",
+        local_path="${qwex_home}/runs"
+      ) }}
+
+  init:
+    vars:
+      cmd: echo placeholder init cmd
+    desc: "Initialize lifecycle manager for the current run"
+    cmd: |
+      if [ -z "$QWEX_RUN_ID" ]; then
+        {{ log.tasks.error }} "QWEX_RUN_ID is not set. Cannot initialize lifecycle manager."
+        exit 1
+      fi
+
+      export QWEX_RUN_DIR="${QWEX_HOME:-$HOME/.qwex}/runs/$QWEX_RUN_ID"
+
+      {{ tasks.mkrundir }}
+
+      {{ vars.cmd }}
+
+      echo "initialized" > "$QWEX_RUN_DIR/meta/status"
+      date +"%Y-%m-%d %H:%M:%S" > "$QWEX_RUN_DIR/meta/initialized_at"
+      {{ log.tasks.info }} "Lifecycle manager initialized for run ID: $QWEX_RUN_ID"
+
+  cleanup:
+    vars:
+      cmd: echo placeholder cleanup cmd
+    desc: "Cleanup lifecycle manager for the current run"
+    cmd: |
+      if [ -z "$QWEX_RUN_ID" ]; then
+        {{ log.tasks.error }} "QWEX_RUN_ID is not set. Cannot cleanup lifecycle manager."
+        exit 1
+      fi
+
+      export QWEX_RUN_DIR="${QWEX_HOME:-$HOME/.qwex}/runs/$QWEX_RUN_ID"
+
+      {{ vars.cmd }}
+
+      echo "completed" > "$QWEX_RUN_DIR/meta/status"
+      date +"%Y-%m-%d %H:%M:%S" > "$QWEX_RUN_DIR/meta/completed_at"
+      {{ log.tasks.info }} "Lifecycle manager cleaned up for run ID: $QWEX_RUN_ID"
