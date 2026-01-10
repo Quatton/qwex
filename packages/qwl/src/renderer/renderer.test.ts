@@ -1200,7 +1200,7 @@ describe("Renderer", () => {
     it("works in module vars", () => {
       const module: ModuleTemplate = {
         vars: resolveVariableDefs({
-          image: '{% if features.docker %}nginx:latest{% else %}none{% endif %}',
+          image: "{% if features.docker %}nginx:latest{% else %}none{% endif %}",
         }),
         tasks: resolveTaskDefs({
           test: {
@@ -1225,7 +1225,7 @@ describe("Renderer", () => {
         tasks: resolveTaskDefs({
           test: {
             vars: {
-              mode: '{% if features.production %}prod{% else %}dev{% endif %}',
+              mode: "{% if features.production %}prod{% else %}dev{% endif %}",
             },
             cmd: 'echo "Mode: {{ vars.mode }}"',
           },
