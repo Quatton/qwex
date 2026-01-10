@@ -22,3 +22,8 @@ tasks:
         "main": "$@",
         "cleanup": ""
       }) }}
+  retrieve:
+    cmd: |
+      {{ lifecycle.retrieve.inline({
+        "run_id": "$1"
+      }) }}

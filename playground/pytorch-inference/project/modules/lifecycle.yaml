@@ -94,7 +94,8 @@ tasks:
         ),
         cleanup=tasks.cleanup.inline(
           cmd=vars.cleanup
-        )
+        ),
+        oncreate="echo"
       ) }}
 
   trace:

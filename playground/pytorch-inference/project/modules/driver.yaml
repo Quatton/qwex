@@ -10,13 +10,27 @@ tasks:
       init: ""
       main: ""
       cleanup: ""
+      oncreate: "echo"
     cmd: |
-      {% if features.ssh %}
+      {% if features.slurm %}
         {{ tasks.ssh.inline(
           env=vars.env,
-          init=vars.init,
-          main=vars.main,
-          cleanup=vars.cleanup
+          cmd=tasks.slurm.inline(
+            env=[],
+            init=vars.init,
+            main=vars.main,
+            cleanup=vars.cleanup
+          )
+        ) }}
+      {% elif features.ssh %}
+        {{ tasks.ssh.inline(
+          env=vars.env,
+          cmd=tasks.local.inline(
+            env=[],
+            init=vars.init,
+            main=vars.main,
+            cleanup=vars.cleanup
+          )
         ) }}
       {% else %}
         {{ tasks.local.inline(
@@ -33,7 +47,7 @@ tasks:
       remote_path: ""
       local_path: ""
     cmd: |
-      {% if features.ssh %}
+      {% if features.ssh or features.slurm %}
         rsync -avz -e "ssh" {{ vars.ssh_user }}@{{ vars.ssh_host }}:{{ vars.remote_path }} {{ vars.local_path }}
       {% else %}
         cp -r {{ vars.remote_path }} {{ vars.local_path }}
@@ -42,15 +56,13 @@ tasks:
   ssh:
     vars:
       env: []
-      init: ""
-      main: ""
-      cleanup: ""
+      cmd: ""
     cmd: |
       local source_b64
       source_b64=$(@source | base64 -w 0)
 
       local env_b64
-      env_b64=$(cat <<EOF | base64 -w 0
+      env_b64=$(cat <<SSH_ENV_EOF | base64 -w 0
       {% for env_var in vars.env -%}
       {% if '=' in env_var -%}
       export {{ env_var }}
@@ -58,29 +70,73 @@ tasks:
       export {{ env_var }}="{% raw %}${% endraw %}{{ env_var }}"
       {% endif %}
       {% endfor -%}
-      EOF
+      SSH_ENV_EOF
       )
 
       local cmd_b64
-      cmd_b64=$(cat <<'EOF' | base64 -w 0
+      cmd_b64=$(cat <<'SSH_CMD_EOF' | base64 -w 0
       f() {
-      {{ tasks.local.inline(
-        env=vars.env,
-        init=vars.init,
-        main=vars.main,
-        cleanup=vars.cleanup
-      ) }}
+        {{ vars.cmd }}
       }
       f
-      EOF
+      SSH_CMD_EOF
       )
 
       ssh -t {{ vars.ssh_user }}@{{ vars.ssh_host }} \
-        "SOURCE_B64='$source_b64' ENV_B64='$env_b64' CMD_B64='$cmd_b64' bash -c '"'
+        "SOURCE_B64='$source_b64' ENV_B64='$env_b64' SSH_CMD_B64='$cmd_b64' bash -c '"'
           source <(echo "$SOURCE_B64" | base64 -d)
           eval "$(echo "$ENV_B64" | base64 -d)"
-          eval "$(echo "$CMD_B64" | base64 -d)"
+          eval "$(echo "$SSH_CMD_B64" | base64 -d)"
         '"'"
+
+  slurm:
+    vars:
+      env: []
+      init: ""
+      main: ""
+      cleanup: ""
+      oncreate: "echo"
+
+    cmd: |
+      {% if not features.slurm %}
+      {{ log.error }} "Slurm feature is not enabled."
+      exit 1
+      {% endif %}
+
+      {% if vars.init %}
+      {{ vars.init }}
+      {% endif %}
+
+      local source_b64
+      source_b64=$(@source | base64 -w 0)
+
+      local cmd_b64
+      cmd_b64=$(cat <<'SLURM_CMD_EOF' | base64 -w 0
+      f() {
+      {{ tasks.local.inline({
+        "env": vars.env,
+        "main": vars.main,
+        "cleanup": vars.cleanup
+      }) }}
+      }
+      f
+      SLURM_CMD_EOF
+      )
+
+      __oncreate() {
+        {{ vars.oncreate }} "$@"
+      }
+
+      export SLURM_SSH_CMD_B64="$cmd_b64"
+
+      local job_id=$(sbatch --parsable <<'SLURM_SCRIPT_EOF'
+      #!/bin/bash
+      source <(echo "$SOURCE_B64" | base64 -d)
+      eval "$(echo "$SLURM_SSH_CMD_B64" | base64 -d)"
+      SLURM_SCRIPT_EOF
+      )
+
+      __oncreate "$job_id"
 
   local:
     vars:
@@ -90,7 +146,6 @@ tasks:
       cleanup: ""
 
     cmd: |
-
       {% if vars.cleanup %}
       __cleanup() {
       {{ vars.cleanup }}

@@ -60,7 +60,7 @@ tasks:
         if [ ! -d "$QWEX_WORKSPACE_DIR" ]; then
           git worktree add -f "$QWEX_WORKSPACE_DIR" "$QWEX_COMMIT_REF"
         else
-          {{ log:info }} "Worktree already exists at $QWEX_WORKSPACE_DIR, skipping creation."
+          {{ log.info }} "Worktree already exists at $QWEX_WORKSPACE_DIR, skipping creation."
         fi
 
         cd "$QWEX_WORKSPACE_DIR"
