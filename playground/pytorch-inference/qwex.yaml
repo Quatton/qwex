@@ -1,0 +1,29 @@
+vars:
+  demo_dir: "{{ './project' | resolvePath(__dir__) }}"
+
+tasks:
+  test_local:
+    cmd: |
+      cd {{ vars.demo_dir }}
+      QWEX_JOB_NAME="local" qwex run uv run main.py
+  test_ssh:
+    cmd: |
+      cd {{ vars.demo_dir }}
+      QWEX_JOB_NAME="ssh" qwex run --features ssh uv run main.py
+  test_slurm:
+    cmd: |
+      cd {{ vars.demo_dir }}
+      QWEX_JOB_NAME="slurm" qwex run --features ssh,slurm uv run main.py
+  test_all:
+    cmd: |
+      {{ tasks.test_local.inline() }}
+      {{ tasks.test_ssh.inline() }}
+      {{ tasks.test_slurm.inline() }}
+  link:
+    cmd: |
+      cd {{ vars.demo_dir }}
+      qwex link
+  prune:
+    cmd: |
+      cd {{ vars.demo_dir }}
+      rm -rf .qwex/runs

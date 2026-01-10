@@ -1,0 +1,25 @@
+modules:
+  log:
+    uses: std/log
+tasks:
+  compose:
+    vars:
+      tasks:
+        - cmd: ""
+          name: ""
+    cmd: |
+      pids=()
+      {% for task in vars.tasks %}
+      (
+        exec 1> >(sed "s/^/[{{ task.name | escape }}] /" >&2)
+        exec 2> >(sed "s/^/[{{ task.name | escape }}] /" >&2)
+        {{ log.info }} "Starting task: {{ task.name | escape }}"
+        {{ task.cmd }} 
+        {{ log.info }} "Completed task: {{ task.name | escape }}"
+      ) &
+      pids+=($!)
+      {% endfor %}
+
+      for pid in "${pids[@]}"; do
+        wait $pid
+      done

@@ -27,3 +27,6 @@ tasks:
       {{ lifecycle.retrieve.inline({
         "run_id": "$1"
       }) }}
+  link:
+    cmd: |
+      {{ lifecycle.link.inline() }}
