@@ -12,33 +12,16 @@ tasks:
       cleanup: ""
       oncreate: "echo"
     cmd: |
+      {% set kernel = tasks.local.inline(init=vars.init, main=vars.main, cleanup=vars.cleanup) %}
+
       {% if features.slurm %}
-        {{ tasks.ssh.inline(
-          env=vars.env,
-          cmd=tasks.slurm.inline(
-            env=[],
-            init=vars.init,
-            main=vars.main,
-            cleanup=vars.cleanup
-          )
-        ) }}
+        {{ tasks.ssh.inline(env=vars.env, cmd=tasks.slurm.inline(cmd=kernel, oncreate=vars.oncreate)) }}
       {% elif features.ssh %}
-        {{ tasks.ssh.inline(
-          env=vars.env,
-          cmd=tasks.local.inline(
-            env=[],
-            init=vars.init,
-            main=vars.main,
-            cleanup=vars.cleanup
-          )
-        ) }}
+        {{ tasks.ssh.inline(env=vars.env, cmd=kernel) }}
+      {% elif features.docker %}
+        {{ tasks.docker.inline(env=vars.env, cmd=kernel) }}
       {% else %}
-        {{ tasks.local.inline(
-          env=vars.env,
-          init=vars.init,
-          main=vars.main,
-          cleanup=vars.cleanup
-        ) }}
+        {{ kernel }}
       {% endif %}
 
   retrieve:
@@ -50,8 +33,42 @@ tasks:
       {% if features.ssh or features.slurm %}
         rsync -avz -e "ssh" {{ vars.ssh_user }}@{{ vars.ssh_host }}:{{ vars.remote_path }} {{ vars.local_path }}
       {% else %}
-        cp -r {{ vars.remote_path }} {{ vars.local_path }}
+        {{ log.info }} "No remote features enabled; retrieval skipped."
       {% endif %}
+
+  docker:
+    vars:
+      image: "ghcr.io/astral-sh/uv:python3.12-bookworm"
+      env: []
+      cmd: ""
+    cmd: |
+      {% if not features.docker %}
+      {{ log.error }} "Docker feature is not enabled."
+      exit 1
+      {% endif %}
+
+      CMD_BASE_64=$(cat <<'SSH_CMD_EOF' | base64 -w 0
+      f() {
+        {{ vars.cmd }}
+      }
+      f
+      SSH_CMD_EOF
+      )
+
+      docker run --rm -i \
+      -v $HOME/.cache/uv:$HOME/.cache/uv \
+      -v "$(pwd)":/workspace -w /workspace \
+      {% for env_var in vars.env -%}
+        {% if '=' in env_var -%}
+        -e {{ env_var }} \
+        {% else -%}
+        -e {{ env_var }}="{% raw %}${% endraw %}{{ env_var }}" \
+        {% endif -%}
+      {% endfor -%}
+      {{ vars.image }} /bin/bash -c '
+      '"$(@source)"'
+      eval "$(echo '"$CMD_BASE_64"' | base64 -d)"
+      '
 
   ssh:
     vars:

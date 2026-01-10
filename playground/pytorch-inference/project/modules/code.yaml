@@ -8,6 +8,8 @@ vars:
   git_dir: |
     {%- if features.ssh -%}
       /home/{{ vars.ssh_user }}/.qwex/repos/pytorch-inference.git
+    {%- elif features.docker -%}
+      /workspace/.git
     {%- else -%}
       "{{ vars.workspace_dir }}/.git"
     {%- endif -%}
