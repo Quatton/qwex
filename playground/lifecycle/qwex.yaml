@@ -33,18 +33,18 @@ tasks:
             else
               {{ log.tasks.info }} "qwex is installed."
             fi
-        - desc: "Run `qwex run uv run hello.py` in demo_dir"
+        - desc: "Run `qwex run uv run main.py` in demo_dir"
           cmd: |
             cd {{ vars.demo_dir }}
-            QWEX_JOB_NAME="original" qwex run uv run hello.py
-        - desc: "Modify hello.py to say other message"
+            QWEX_JOB_NAME="original" qwex run uv run main.py
+        - desc: "Modify main.py to say other message"
           cmd: |
             cd {{ vars.demo_dir }}
-            echo 'print("Hello from modified hello.py!")' > {{ vars.demo_dir }}/hello.py
-        - desc: "Run `qwex run uv run hello.py` again to see modified output"
+            echo 'print("Hello from modified main.py!")' > {{ vars.demo_dir }}/main.py
+        - desc: "Run `qwex run uv run main.py` again to see modified output"
           cmd: |
             cd {{ vars.demo_dir }}
-            QWEX_JOB_NAME="modified" qwex run uv run hello.py
+            QWEX_JOB_NAME="modified" qwex run uv run main.py
 
   clean:
     desc: "Clean up temp directory created during test"

@@ -1,3 +1,4 @@
+import consola from "consola";
 import { Template } from "nunjucks";
 
 import type { ModuleTemplate, TaskTemplate, VariableTemplate, VariableTemplateValue } from "../ast";
@@ -27,6 +28,7 @@ export class Renderer {
   private ctx!: RenderContext;
   private proxyFactory!: RenderProxyFactory;
   private rootModule!: ModuleTemplate;
+  private features: Set<string> = new Set();
 
   private getModulePrefix(usesPath: string): string {
     const parts = usesPath.split(".");
@@ -137,8 +139,9 @@ export class Renderer {
     };
   }
 
-  renderAllTasks(module: ModuleTemplate): RenderResult {
+  renderAllTasks(module: ModuleTemplate, features?: Set<string>): RenderResult {
     this.rootModule = module;
+    this.features = features ?? new Set();
     this.ctx = new RenderContext();
     this.proxyFactory = new RenderProxyFactory(
       this.ctx,
@@ -149,6 +152,7 @@ export class Renderer {
           this.renderTaskInline(mod, name, prefix, vars),
       },
       module,
+      this.features,
     );
 
     for (const taskName of Object.keys(module.tasks)) {
@@ -245,6 +249,9 @@ export class Renderer {
         bashName: this.toBashName(dedupName),
         hash: `0x${cmdHash.toString(16)}`,
       };
+    } catch (err) {
+      consola.error(`Error rendering task ${fullName}`);
+      throw err;
     } finally {
       this.ctx.pendingTasks.delete(fullName);
     }
@@ -302,15 +309,35 @@ export class Renderer {
       const __dir__ = getDirFromSourcePath(__src__);
       const __cwd__ = process.cwd();
 
-      const proxy = {
+      // Build super proxy by looking up parent from prefix
+      const parentProxy = this.ctx.prefixToParentProxy.get(prefix);
+
+      // Create features proxy
+      const featuresProxy = new Proxy(
+        {},
+        {
+          get: (_target, key: string) => {
+            if (typeof key === "symbol") return undefined;
+            return this.features.has(key) ? true : undefined;
+          },
+        },
+      );
+
+      const proxy: Record<string, unknown> = {
         vars: new Proxy({}, { get: (_, key: string) => this.renderVar(module, key, prefix) }),
         tasks: {},
         modules: {},
+        features: featuresProxy,
         __cwd__,
         __src__,
         __dir__,
         resolvePath: (filePath: string) => resolvePath(__dir__, filePath),
       };
+
+      // Add super reference if we have a parent proxy
+      if (parentProxy) {
+        proxy.super = parentProxy;
+      }
 
       const value = renderVariableTemplateValue(varTemplate.value, proxy);
       this.ctx.renderedVars.set(cacheKey, value);

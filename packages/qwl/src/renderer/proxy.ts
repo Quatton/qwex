@@ -62,6 +62,7 @@ export class RenderProxyFactory {
     private ctx: RenderContext,
     private callbacks: ProxyCallbacks,
     private rootModule: ModuleTemplate,
+    private features: Set<string> = new Set(),
   ) {}
 
   create(
@@ -80,6 +81,9 @@ export class RenderProxyFactory {
     // Look up parent proxy from context if not provided
     const resolvedParentProxy = parentProxy ?? this.ctx.prefixToParentProxy.get(prefix);
 
+    // Create features proxy
+    const featuresProxy = this.createFeaturesProxy();
+
     // Create the current proxy first (without modules/super to avoid circular reference)
     const currentProxy: Record<string, unknown> = {
       vars: varsProxy,
@@ -87,6 +91,7 @@ export class RenderProxyFactory {
       modules: {}, // placeholder, will be replaced
       uses: usesFunction,
       resolvePath: resolvePathFunction,
+      features: featuresProxy,
       __cwd__,
       __src__,
       __dir__,
@@ -170,6 +175,7 @@ export class RenderProxyFactory {
               vars: this.createVarsProxy(module, task, prefix),
               tasks: {},
               modules: {},
+              features: this.createFeaturesProxy(),
               __cwd__,
               __src__: varSrc,
               __dir__: varDir,
@@ -185,12 +191,19 @@ export class RenderProxyFactory {
   }
 
   private createTasksProxy(module: ModuleTemplate, prefix: string): object {
+    const availableTasks = Object.keys(module.tasks);
     return new Proxy(
       {},
       {
         get: (_, key: string | symbol) => {
           if (typeof key === "symbol") return undefined;
-          if (!Object.hasOwn(module.tasks, key)) return undefined;
+          if (!Object.hasOwn(module.tasks, key)) {
+            const fullPath = prefix ? `${prefix}.tasks.${key}` : `tasks.${key}`;
+            throw new QwlError({
+              code: "RENDERER_ERROR",
+              message: `Task not found: '${key}' in ${prefix || "root"} module. Full path: '${fullPath}'. Available tasks: ${availableTasks.length > 0 ? availableTasks.join(", ") : "(none)"}`,
+            });
+          }
           return this.createTaskRef(module, key, prefix);
         },
         has: (_, key: string) => {
@@ -214,12 +227,19 @@ export class RenderProxyFactory {
     prefix: string,
     parentProxy?: Record<string, unknown>,
   ): object {
+    const availableModules = Object.keys(module.modules);
     return new Proxy(
       {},
       {
         get: (_, modName: string) => {
           const subModule = module.modules[modName];
-          if (!subModule) return undefined;
+          if (!subModule) {
+            const fullPath = prefix ? `${prefix}.modules.${modName}` : `modules.${modName}`;
+            throw new QwlError({
+              code: "RENDERER_ERROR",
+              message: `Module not found: '${modName}' in ${prefix || "root"} module. Full path: '${fullPath}'. Available modules: ${availableModules.length > 0 ? availableModules.join(", ") : "(none)"}`,
+            });
+          }
           const newPrefix = prefix ? `${prefix}.${modName}` : modName;
           // Register parent proxy for the submodule prefix
           if (parentProxy) {
@@ -282,5 +302,29 @@ export class RenderProxyFactory {
         });
       }
     };
+  }
+
+  private createFeaturesProxy(): object {
+    return new Proxy(
+      {},
+      {
+        get: (_target, key: string) => {
+          if (typeof key === "symbol") return undefined;
+          return this.features.has(key) ? true : undefined;
+        },
+        has: (_target, key: string) => {
+          return this.features.has(key);
+        },
+        ownKeys: () => {
+          return Array.from(this.features);
+        },
+        getOwnPropertyDescriptor: (_target, key: string) => {
+          if (this.features.has(key)) {
+            return { enumerable: true, configurable: true, value: true };
+          }
+          return undefined;
+        },
+      },
+    );
   }
 }

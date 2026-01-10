@@ -29,10 +29,10 @@ tasks:
             else
               {{ log.tasks.info }} "qwex is installed."
             fi
-        - desc: "Run `uv run hello.py` in demo_dir"
+        - desc: "Run `uv run main.py` in demo_dir"
           cmd: |
             cd {{ vars.demo_dir }}
-            uv run hello.py
+            uv run main.py
 
   clean:
     desc: "Clean up temp directory created during test"

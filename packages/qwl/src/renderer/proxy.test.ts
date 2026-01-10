@@ -180,7 +180,7 @@ describe("RenderProxyFactory", () => {
       expect(result).toBe("[INLINE:greet:{}]");
     });
 
-    it("returns undefined for non-existent tasks", () => {
+    it("throws error for non-existent tasks", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
@@ -188,9 +188,10 @@ describe("RenderProxyFactory", () => {
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
-      const result = (proxy.tasks as Record<string, unknown>).nonexistent;
 
-      expect(result).toBeUndefined();
+      expect(() => (proxy.tasks as Record<string, unknown>).nonexistent).toThrow(
+        /Task not found.*nonexistent/,
+      );
     });
   });
 
@@ -240,7 +241,7 @@ describe("RenderProxyFactory", () => {
       expect(taskRef.toString()).toBe("sub:subTask");
     });
 
-    it("returns undefined for non-existent modules", () => {
+    it("throws error for non-existent modules", () => {
       const module = createTestModule();
       const ctx = new RenderContext();
       const callbacks = createMockCallbacks();
@@ -248,9 +249,10 @@ describe("RenderProxyFactory", () => {
       const task = module.tasks.sayHello!;
 
       const proxy = factory.createForTask(module, task, "");
-      const result = (proxy.modules as Record<string, unknown>).nonexistent;
 
-      expect(result).toBeUndefined();
+      expect(() => (proxy.modules as Record<string, unknown>).nonexistent).toThrow(
+        /Module not found.*nonexistent/,
+      );
     });
   });
 

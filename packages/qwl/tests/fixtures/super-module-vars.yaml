@@ -1,0 +1,14 @@
+vars:
+  repo_dir: "/root/path"
+
+modules:
+  code:
+    vars:
+      repo_dir: "{{ super.vars.repo_dir }}"
+    tasks:
+      showDir:
+        cmd: 'echo "{{ vars.repo_dir }}"'
+
+tasks:
+  main:
+    cmd: "{{ modules.code.tasks.showDir }}"

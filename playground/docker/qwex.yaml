@@ -44,31 +44,43 @@ tasks:
     uses: modules.steps.tasks.compose
     vars:
       steps:
-        - desc: "Run `qwex run uv run hello.py` in demo_dir"
+        - desc: "Run `qwex run uv run main.py` in demo_dir"
           cmd: |
             cd {{ vars.demo_dir }}
-            QWEX_JOB_NAME="original" qwex run uv run hello.py
-        - desc: "Modify hello.py to say other message"
+            QWEX_JOB_NAME="original" qwex run uv run main.py
+        - desc: "Modify main.py to say other message"
           cmd: |
             cd {{ vars.demo_dir }}
-            echo 'print("Hello from modified hello.py!")' > {{ vars.demo_dir }}/hello.py
-        - desc: "Run `qwex run uv run hello.py` again to see modified output"
+            echo 'import subprocess
+
+            info=subprocess.run(["uname", "-a"], capture_output=True)
+
+            print("Hello from modified main.py!")
+            print("System info:")
+            print(info.stdout.decode())' > {{ vars.demo_dir }}/main.py
+        - desc: "Run `qwex run uv run main.py` again to see modified output"
           cmd: |
             cd {{ vars.demo_dir }}
-            QWEX_JOB_NAME="modified" qwex run uv run hello.py
+            QWEX_JOB_NAME="modified" qwex run uv run main.py
 
   test-docker:
     uses: modules.steps.tasks.compose
     vars:
       steps:
-        - desc: "Modify hello.py to say a Docker message"
+        - desc: "Modify main.py to say a Docker message"
           cmd: |
             cd {{ vars.demo_dir }}
-            echo 'print("Hello from Dockerized hello.py!")' > {{ vars.demo_dir }}/hello.py
-        - desc: "Run `qwex run uv run hello.py` again to see Dockerized output"
+            echo 'import subprocess
+
+            info=subprocess.run(["uname", "-a"], capture_output=True)
+
+            print("Hello from Dockerized main.py!")
+            print("System info:")
+            print(info.stdout.decode())' > {{ vars.demo_dir }}/main.py
+        - desc: "Run `qwex run uv run main.py` again to see Dockerized output"
           cmd: |
             cd {{ vars.demo_dir }}
-            QWEX_JOB_NAME="dockerized" qwex -f docker run uv run hello.py
+            QWEX_JOB_NAME="dockerized" qwex -f docker run uv run main.py
 
   test:
     desc: "UV workspace with lifecycle executed with docker using qwex"

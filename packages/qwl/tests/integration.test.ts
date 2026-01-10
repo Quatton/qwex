@@ -262,6 +262,17 @@ describe("Pipeline Integration", () => {
       expect(result.script).not.toContain("{{ vars.file_name }}");
     });
   });
+
+  describe("super.vars in module vars", () => {
+    it("allows module vars to reference parent vars via super", async () => {
+      const pipeline = createPipeline("super-module-vars.yaml");
+
+      const result = await pipeline.run();
+
+      // The code.showDir task should output the root var value
+      expect(result.script).toContain('echo "/root/path"');
+    });
+  });
 });
 
 function normalizeScript(script: string): string {

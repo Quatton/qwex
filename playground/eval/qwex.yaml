@@ -22,15 +22,15 @@ vars:
         uv add numpy
       assert: "grep numpy {{ vars.demo_dir }}/pyproject.toml"
       fail_msg: "Fail to detect numpy in pyproject.toml in {{ vars.demo_dir }}"
-    - desc: "Write hello.py to print out a numpy array with 3 floats between 0 and 1 with seed 42 and run it"
+    - desc: "Write main.py to print out a numpy array with 3 floats between 0 and 1 with seed 42 and run it"
       cmd: |
         cd {{ vars.demo_dir }}
         echo 'import numpy as np
         np.random.seed(42)
-        print(np.random.rand(3))' > {{ vars.demo_dir }}/hello.py
-        uv run hello.py
-      assert: "cd {{ vars.demo_dir }} && uv run hello.py | grep '^\\[0\\.37454012 0\\.95071431 0\\.73199394\\]$'"
-      fail_msg: "hello.py did not output the expected numpy array"
+        print(np.random.rand(3))' > {{ vars.demo_dir }}/main.py
+        uv run main.py
+      assert: "cd {{ vars.demo_dir }} && uv run main.py | grep '^\\[0\\.37454012 0\\.95071431 0\\.73199394\\]$'"
+      fail_msg: "main.py did not output the expected numpy array"
 
 modules:
   steps:

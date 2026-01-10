@@ -1,0 +1,13 @@
+vars:
+  message: 'Hello {% if features.docker %}Docker{% else %}World{% endif %}'
+
+tasks:
+  test:
+    cmd: |
+      echo "{{ vars.message }}"
+      {% if features.docker %}
+      echo "Docker feature is enabled!"
+      {% endif %}
+      {% if features.python %}
+      echo "Python feature is enabled!"
+      {% endif %}

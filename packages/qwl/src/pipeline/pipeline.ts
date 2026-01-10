@@ -41,7 +41,7 @@ export class Pipeline {
 
     const template = await resolver.resolve(entryPath);
     const renderer = new Renderer();
-    const result = renderer.renderAllTasks(template);
+    const result = renderer.renderAllTasks(template, features);
     const emitter = this.options.emitterTemplateStr
       ? new Emitter(this.options.emitterTemplateStr)
       : new Emitter();

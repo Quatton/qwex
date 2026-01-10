@@ -298,6 +298,40 @@ describe("Renderer", () => {
       expect(() => renderer.renderAllTasks(module)).toThrow(/[Cc]ircular/);
     });
 
+    it("throws on invalid task name access", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          test: {
+            cmd: "{{ tasks.nonExistentTask }}",
+          },
+        }),
+        modules: {},
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+
+      expect(() => renderer.renderAllTasks(module)).toThrow(/Task not found.*nonExistentTask/);
+    });
+
+    it("throws on invalid module name access", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          test: {
+            cmd: "{{ modules.nonExistentModule.tasks.foo }}",
+          },
+        }),
+        modules: {},
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+
+      expect(() => renderer.renderAllTasks(module)).toThrow(/Module not found.*nonExistentModule/);
+    });
+
     it("task uses shorthand path", () => {
       const module: ModuleTemplate = {
         vars: resolveVariableDefs({}),
@@ -732,6 +766,74 @@ describe("Renderer", () => {
       expect(childTask?.cmd).toBe('echo "hello from parent"');
     });
 
+    it("allows submodule var to use super.vars and task to use vars", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({
+          rootDir: "/root/path",
+        }),
+        tasks: resolveTaskDefs({
+          main: {
+            cmd: "{{ modules.code.tasks.showDir }}",
+          },
+        }),
+        modules: {
+          code: {
+            vars: resolveVariableDefs({
+              myDir: "{{ super.vars.rootDir }}",
+            }),
+            tasks: resolveTaskDefs({
+              showDir: {
+                cmd: 'echo "{{ vars.myDir }}"',
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const codeTask = result.deps.find((t) => t.key === "code.showDir");
+      expect(codeTask?.cmd).toBe('echo "/root/path"');
+    });
+
+    it("allows submodule var to shadow parent var name via super.vars", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({
+          repoDir: "/root/path",
+        }),
+        tasks: resolveTaskDefs({
+          main: {
+            cmd: "{{ modules.code.tasks.showDir }}",
+          },
+        }),
+        modules: {
+          code: {
+            vars: resolveVariableDefs({
+              repoDir: "{{ super.vars.repoDir }}",
+            }),
+            tasks: resolveTaskDefs({
+              showDir: {
+                cmd: 'echo "{{ vars.repoDir }}"',
+              },
+            }),
+            modules: {},
+            __meta__: { used: new Set() },
+          },
+        },
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const result = renderer.renderAllTasks(module);
+
+      const codeTask = result.deps.find((t) => t.key === "code.showDir");
+      expect(codeTask?.cmd).toBe('echo "/root/path"');
+    });
+
     it("allows submodule to access sibling module via super.modules", () => {
       const module: ModuleTemplate = {
         vars: resolveVariableDefs({}),
@@ -1031,6 +1133,113 @@ describe("Renderer", () => {
 
       const mainTask = result.main.find((t) => t.key === "main");
       expect(mainTask?.cmd).toBe('start; echo "hello"; end');
+    });
+  });
+
+  describe("features global", () => {
+    it("returns true for defined features", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          test: {
+            cmd: 'echo "docker: {{ features.docker }}, python: {{ features.python }}"',
+          },
+        }),
+        modules: {},
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const features = new Set(["docker", "python"]);
+      const result = renderer.renderAllTasks(module, features);
+
+      const testTask = result.main.find((t) => t.key === "test");
+      expect(testTask?.cmd).toBe('echo "docker: true, python: true"');
+    });
+
+    it("returns undefined for non-defined features", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          test: {
+            cmd: 'echo "docker: {{ features.docker }}, notdefined: {{ features.notdefined }}"',
+          },
+        }),
+        modules: {},
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const features = new Set(["docker"]);
+      const result = renderer.renderAllTasks(module, features);
+
+      const testTask = result.main.find((t) => t.key === "test");
+      expect(testTask?.cmd).toBe('echo "docker: true, notdefined: "');
+    });
+
+    it("works in conditional expressions", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          test: {
+            cmd: '{% if features.docker %}echo "docker enabled"{% else %}echo "docker disabled"{% endif %}',
+          },
+        }),
+        modules: {},
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const features = new Set(["docker"]);
+      const result = renderer.renderAllTasks(module, features);
+
+      const testTask = result.main.find((t) => t.key === "test");
+      expect(testTask?.cmd).toBe('echo "docker enabled"');
+    });
+
+    it("works in module vars", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({
+          image: '{% if features.docker %}nginx:latest{% else %}none{% endif %}',
+        }),
+        tasks: resolveTaskDefs({
+          test: {
+            cmd: 'echo "{{ vars.image }}"',
+          },
+        }),
+        modules: {},
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const features = new Set(["docker"]);
+      const result = renderer.renderAllTasks(module, features);
+
+      const testTask = result.main.find((t) => t.key === "test");
+      expect(testTask?.cmd).toBe('echo "nginx:latest"');
+    });
+
+    it("works in task-level vars", () => {
+      const module: ModuleTemplate = {
+        vars: resolveVariableDefs({}),
+        tasks: resolveTaskDefs({
+          test: {
+            vars: {
+              mode: '{% if features.production %}prod{% else %}dev{% endif %}',
+            },
+            cmd: 'echo "Mode: {{ vars.mode }}"',
+          },
+        }),
+        modules: {},
+        __meta__: { used: new Set() },
+      };
+
+      const renderer = new Renderer();
+      const features = new Set(["production"]);
+      const result = renderer.renderAllTasks(module, features);
+
+      const testTask = result.main.find((t) => t.key === "test");
+      expect(testTask?.cmd).toBe('echo "Mode: prod"');
     });
   });
 });
