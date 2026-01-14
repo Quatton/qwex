@@ -10,6 +10,7 @@ ENV PUID=1000 \
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   openssh-server \
   tzdata \
+  rsync \
   && rm -rf /var/lib/apt/lists/*
 
 RUN ssh-keygen -A \

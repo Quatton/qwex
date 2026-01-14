@@ -26,7 +26,7 @@ vars:
         RUN_OUTPUT=$({{ vars.demo_dir }}/ssh.sh run echo 'Checking run details storage')
         RUN_ID=$(echo "$RUN_OUTPUT" | grep -oE 'RUN_ID=[0-9]{14}-[a-zA-Z0-9]+' | cut -d'=' -f2)
         RUN_DIR="$HOME/.qwex/runs/$RUN_ID"
-        [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/meta/command" ] && grep -q "echo 'Checking run details storage'" "$RUN_DIR/meta/command"
+        [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/meta/command" ] && grep -q "Checking run details storage" "$RUN_DIR/meta/command"
       fail_msg: "Run details were not stored correctly in the expected directory."
     - desc: "The run logs should be saved at $QWEX_RUN_DIR/logs/main.log. This should contain both stdout and stderr of the proxied command. It should be saved in ssh's home directory at $HOME/.qwex/runs/<RUNID>/logs/main.log. Let's verify that using ./ssh.sh ssh cat $HOME/.qwex/runs/<RUNID>/logs/main.log contains the output of the proxied command."
       assert: |

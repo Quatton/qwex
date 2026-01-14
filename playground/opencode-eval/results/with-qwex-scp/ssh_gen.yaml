@@ -1,0 +1,92 @@
+vars:
+  key_path: "/Users/quatton/Documents/GitHub/qwex/playground/opencode-eval/demo/.ssh/id_rsa"
+  port: "2345"
+  user: "testuser"
+  host: "localhost"
+
+tasks:
+  ssh:
+    desc: "Connect via SSH and run a command"
+    cmd: |
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ vars.key_path }} -p {{ vars.port }} {{ vars.user }}@{{ vars.host }} "$@"
+
+  retrieve:
+    desc: "Retrieve run artifacts from remote host using scp since rsync is missing"
+    vars:
+      run_id: ""
+    cmd: |
+      run_id="$1"
+      if [ -z "$run_id" ]; then
+        echo "Usage: retrieve <RUNID>"
+        exit 1
+      fi
+      
+      local_run_dir="$HOME/.qwex/runs/$run_id"
+      mkdir -p "$local_run_dir"
+      
+      # Use scp instead of rsync because rsync is not available remotely
+      scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {{ vars.key_path }} -P {{ vars.port }} \
+        {{ vars.user }}@{{ vars.host }}:.qwex/runs/$run_id/* "$local_run_dir/"
+
+  run:
+    desc: "Execute command in a remote git worktree with environment setup"
+    cmd: |
+      # Ensure local repo is clean
+      if [[ -n $(git status --porcelain) ]]; then
+        echo "Error: Git repository is not clean. Please commit or stash changes."
+        exit 1
+      fi
+
+      run_id="$(date +%Y%m%d%H%M%S)-$(uuidgen | cut -c1-8)"
+      echo "RUN_ID=$run_id"
+      
+      # Local storage
+      local_run_dir="$HOME/.qwex/runs/$run_id"
+      mkdir -p "$local_run_dir/meta"
+      cmd_str=""
+      for arg in "$@"; do
+        if [[ "$arg" == *" "* ]]; then
+           cmd_str="$cmd_str '$arg'"
+        else
+           cmd_str="$cmd_str $arg"
+        fi
+      done
+      echo "${cmd_str:1}" > "$local_run_dir/meta/command"
+
+      # Get current commit hash and repo name
+      current_commit=$(git rev-parse HEAD)
+      repo_name=$(basename $(git rev-parse --show-toplevel))
+      
+      remote_repo_dir="\$HOME/.qwex/repos/$repo_name.git"
+      remote_worktree_dir="$remote_repo_dir/worktree/$run_id"
+      remote_run_dir="\$HOME/.qwex/runs/$run_id"
+      remote_log_file="$remote_run_dir/logs/main.log"
+
+      # Sync repo to remote
+      {{ tasks.ssh }} "mkdir -p $remote_repo_dir $remote_run_dir/logs"
+      
+      # Suppress tar warnings about extended headers
+      COPYFILE_DISABLE=1 tar cf - .git | {{ tasks.ssh }} "tar xf - -C $remote_repo_dir"
+      
+      setup_script="
+      cd $remote_repo_dir
+      git --git-dir=.git --work-tree=. worktree add --detach $remote_worktree_dir $current_commit
+      
+      cd $remote_worktree_dir
+      
+      # Install uv if needed
+      if ! command -v uv &> /dev/null; then
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+      fi
+      "
+      
+      {{ tasks.ssh }} "$setup_script"
+
+      quoted_args=""
+      for arg in "$@"; do
+        quoted_args="$quoted_args $(printf %q "$arg")"
+      done
+      
+      # Source cargo env if it exists, otherwise assume uv is in path or just installed
+      # Also run uv sync
+      {{ tasks.ssh }} "cd $remote_worktree_dir && [ -f \$HOME/.cargo/env ] && source \$HOME/.cargo/env; uv sync && $quoted_args 2>&1 | tee $remote_log_file"
