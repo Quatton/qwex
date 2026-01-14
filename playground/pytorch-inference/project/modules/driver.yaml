@@ -56,6 +56,7 @@ tasks:
       )
 
       docker run --rm -i \
+      --platform linux/aarch64 \
       -v $HOME/.cache/uv:$HOME/.cache/uv \
       -v "$(pwd)":/workspace -w /workspace \
       {% for env_var in vars.env -%}
