@@ -75,6 +75,13 @@ nj.addFilter("resolvePath", (input: string, baseDir?: string) => {
   return resolvePath(base, input);
 });
 
+nj.addFilter("base64Encode", (input: string) => {
+  return Buffer.from(input, "utf8").toString("base64");
+});
+nj.addFilter("base64Decode", (input: string) => {
+  return Buffer.from(input, "base64").toString("utf8");
+});
+
 nj.addFilter("pathJoin", (paths: string[]) => {
   return path.join(...paths);
 });

@@ -1,0 +1,217 @@
+modules:
+  log:
+    uses: std/log
+
+vars:
+  demo_dir: "{{ './demo' | resolvePath(__dir__) }}"
+  steps:
+    - desc: "Read @README.md and run one off echo command to test SSH connection. Make sure port and key path are correct."
+      cmd: |
+        ssh -p 2345 -o StrictHostKeyChecking=no -i "{{ vars.demo_dir }}/.ssh/id_rsa" testuser@localhost echo "SSH connection successful"
+      assert: ssh -p 2345 -o StrictHostKeyChecking=no -i "{{ vars.demo_dir }}/.ssh/id_rsa" testuser@localhost echo "SSH connection successful"
+      fail_msg: "Failed to establish SSH connection to localhost using the generated key pair."
+    - desc: "Execute main.py locally using uv run"
+      cmd: |
+        uv run "{{ vars.demo_dir }}/main.py"
+      assert: "uv run {{ vars.demo_dir }}/main.py 2>/dev/null | grep '^Hello from demo!$'"
+      fail_msg: "main.py did not output the expected greeting message."
+    - desc: 'Create ssh.sh script that when run ./ssh.sh ssh echo "Hello from ssh.sh!" connects via SSH and runs the echo command.'
+      assert: "{{ vars.demo_dir }}/ssh.sh ssh whoami | grep '^testuser$'"
+      fail_msg: "Failed to create ssh.sh script with the correct content."
+    - desc: "Extending from previous step, ./ssh.sh should have two functions: ssh, run. The ssh command should connect via SSH, the run command uses that ssh to execute $@ and does the run id creation. At main entry point should accept an argument, match $1 to a command, shift, and pass the rest to the command. Meaning ./ssh.sh ssh echo 'Hello' and ./ssh.sh run echo 'Hello' should both work identically. but ./ssh.sh run should create a run id and output the run details message."
+      assert: "{{ vars.demo_dir }}/ssh.sh run echo 'Another test run ID' | grep -oE 'RUN_ID=[0-9]{14}-[a-zA-Z0-9]+' && {{ vars.demo_dir }}/ssh.sh ssh echo 'Another test run ID' | grep '^Another test run ID$'"
+      fail_msg: "ssh.sh did not correctly implement the ssh and run commands as specified."
+    - desc: "After executing a run, we should be able to see run details stored in $HOME/.qwex/runs/<RUNID>. Let's set $QWEX_RUN_DIR=$HOME/.qwex/runs/<RUNID>. Make sure we see $QWEX_RUN_DIR/meta/command file containing the executed command proxied via run"
+      assert: |
+        RUN_OUTPUT=$({{ vars.demo_dir }}/ssh.sh run echo 'Checking run details storage')
+        RUN_ID=$(echo "$RUN_OUTPUT" | grep -oE 'RUN_ID=[0-9]{14}-[a-zA-Z0-9]+' | cut -d'=' -f2)
+        RUN_DIR="$HOME/.qwex/runs/$RUN_ID"
+        [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/meta/command" ] && grep -q "echo 'Checking run details storage'" "$RUN_DIR/meta/command"
+      fail_msg: "Run details were not stored correctly in the expected directory."
+    - desc: "The run logs should be saved at $QWEX_RUN_DIR/logs/main.log. This should contain both stdout and stderr of the proxied command. It should be saved in ssh's home directory at $HOME/.qwex/runs/<RUNID>/logs/main.log. Let's verify that using ./ssh.sh ssh cat $HOME/.qwex/runs/<RUNID>/logs/main.log contains the output of the proxied command."
+      assert: |
+        RUN_OUTPUT=$({{ vars.demo_dir }}/ssh.sh run echo 'Verifying run logs')
+        RUN_ID=$(echo "$RUN_OUTPUT" | grep -oE 'RUN_ID=[0-9]{14}-[a-zA-Z0-9]+' | cut -d'=' -f2)
+        LOG_CONTENT=$({{ vars.demo_dir }}/ssh.sh ssh cat /home/testuser/.qwex/runs/$RUN_ID/logs/main.log)
+        echo "$LOG_CONTENT" | grep -q 'Verifying run logs'
+      fail_msg: "Run logs were not saved correctly or do not contain the expected output."
+    - desc: "Add a retrieve command to ssh.sh that when run as ./ssh.sh retrieve <RUNID> will rsync the run directory from the remote host to local $HOME/.qwex/runs/<RUNID>. Verify that after running ./ssh.sh retrieve <RUNID>, the local $HOME/.qwex/runs/<RUNID>/logs/main.log matches the remote $HOME/.qwex/runs/<RUNID>/logs/main.log"
+      assert: |
+        RUN_OUTPUT=$({{ vars.demo_dir }}/ssh.sh run echo 'Testing retrieve command')
+        RUN_ID=$(echo "$RUN_OUTPUT" | grep -oE 'RUN_ID=[0-9]{14}-[a-zA-Z0-9]+' | cut -d'=' -f2)
+        {{ vars.demo_dir }}/ssh.sh retrieve $RUN_ID
+        LOCAL_LOG="$HOME/.qwex/runs/$RUN_ID/logs/main.log"
+        REMOTE_LOG_CONTENT=$({{ vars.demo_dir }}/ssh.sh ssh cat /home/testuser/.qwex/runs/$RUN_ID/logs/main.log)
+        grep -q 'Testing retrieve command' "$LOCAL_LOG" && diff -q <(echo "$REMOTE_LOG_CONTENT") "$LOCAL_LOG"
+      fail_msg: "Retrieve command did not correctly sync the run directory or logs do not match."
+    - desc: "Initialize a git repository here in the demo directory add all files and make the initial commit"
+      cmd: |
+        cd "{{ vars.demo_dir }}"
+        git init
+        git add .
+        git commit -m "Initial commit"
+      assert: |
+        cd "{{ vars.demo_dir }}"
+        git log -1 --pretty=%B | grep -q '^Initial commit$'
+      fail_msg: "Git repository was not initialized correctly or initial commit failed."
+    - desc: "uv add numpy to the demo project"
+      cmd: |
+        cd "{{ vars.demo_dir }}"
+        uv add numpy
+      assert: |
+        cd "{{ vars.demo_dir }}"
+        uv pip list | grep -q 'numpy'
+      fail_msg: "Failed to add numpy to the demo project using uv."
+    - desc: "Modify main.py to import numpy and print 3-element numpy array with random number generated by seed 42 in the format [num1 num2 num3]"
+      assert: |
+        cd "{{ vars.demo_dir }}"
+        uv run main.py | grep -q '\[0\.37454012 0\.95071431 0\.73199394\]'
+      fail_msg: "main.py did not output the expected numpy array after modification."
+    - desc: "Everytime we run anything from ./ssh.sh run <command>, it should make sure that repository is clean. Then synchronize any changes from local to remote's $HOME/.qwex/repos/<reponame>.git. Inside that git repo, we create a worktree at $HOME/.qwex/repos/<reponame>.git/worktree/<RUNID> with the same commit hash from local. After that, it should run the command inside that worktree. Make sure that main.log still have the expected output. Then we have a custom init command: check if uv exists, if not install it with curl -LsSf https://astral.sh/uv/install.sh | sh, then run uv sync. This init command should be run after worktree is created but before running the command. This is to ensure that any dependencies are installed in the remote environment."
+      assert: |
+        RUN_OUTPUT=$({{ vars.demo_dir }}/ssh.sh run uv run main.py)
+        RUN_ID=$(echo "$RUN_OUTPUT" | grep -oE 'RUN_ID=[0-9]{14}-[a-zA-Z0-9]+' | cut -d'=' -f2)
+        LOG_CONTENT=$({{ vars.demo_dir }}/ssh.sh ssh cat /home/testuser/.qwex/runs/$RUN_ID/logs/main.log)
+        echo "$LOG_CONTENT" | grep -q '\[0\.37454012 0\.95071431 0\.73199394\]'
+      fail_msg: "The git worktree setup or command execution did not function as expected."
+
+tasks[opencode]:
+  agent:
+    cmd: |
+      cd "{{ vars.demo_dir }}"
+      opencode run "Run 'qwex -c ../qwex.yaml test' to start your mission."
+
+tasks[specialist]:
+  agent:
+    cmd: |
+      cp -r "{{ __dir__ }}/../../.opencode" "{{ vars.demo_dir }}/.opencode"
+      cd "{{ vars.demo_dir }}"
+      opencode run "Run 'qwex -c ../qwex.yaml test' to continue your mission. Focus on using qwex" --agent "qwex-specialist"
+
+tasks:
+  agent:
+    vars:
+      cmd: "echo 'Hello from opencode agent!'"
+    cmd: |
+      {{ vars.cmd }}
+
+  test:
+    cmd: |
+      cd {{ vars.demo_dir }}
+
+      if [ ! -f step ]; then
+        echo '0' > step
+      fi
+
+      step=$(cat step)
+
+      declare -a steps=(
+        {%- for step in vars.steps %} 
+          '{{ step.desc | base64Encode }}'
+        {% endfor %}
+      )
+
+      declare -a asserts=(
+        {%- for step in vars.steps %} 
+          "{{ step.assert | base64Encode }}"
+        {% endfor %}
+      )
+
+      declare -a fail_msgs=(
+        {%- for step in vars.steps %} 
+          '{{ step.fail_msg | base64Encode }}'
+        {% endfor %}
+      )
+
+      if [ $step -ge ${#steps[@]} ]; then
+        echo 'All steps have already been completed successfully!'
+        exit 0
+      fi
+
+      echo "Current step: $step: $(echo ${steps[$step]} | base64 --decode)"
+      echo 'Complete above mission to proceed to next step.'
+
+      echo 'Testing step '"$step"''
+      if ! eval "$(echo ${asserts[$step]} | base64 --decode)"; then
+        echo 'Step '"$step"' failed: '"$(echo ${fail_msgs[$step]} | base64 --decode)"
+        exit 1
+      else
+        echo 'Step '"$step"' passed.'
+        step=$((step + 1))
+        echo $step > step
+        if [ $step -ge ${#steps[@]} ]; then
+          echo 'All steps completed successfully!'
+        else
+          echo 'Proceed to the next step. By running: qwex -c ../qwex.yaml test.'
+        fi
+      fi
+
+  reset:
+    desc: "Reset the demo directory"
+    cmd: |
+      if [ -d "{{ vars.demo_dir }}" ]; then
+        rm -rf "{{ vars.demo_dir }}"
+      fi
+
+      mkdir -p "{{ vars.demo_dir }}"
+      uv init --no-workspace "{{ vars.demo_dir }}"
+      {{ log.info }} "Reset demo directory at {{ vars.demo_dir }}"
+
+      {{ tasks.generate_key_pair }}
+
+      mkdir -p "{{ vars.demo_dir }}/.ssh" 
+      cp -r "{{ __dir__ }}/.ssh" "{{ vars.demo_dir }}"
+      {{ log.info }} "Copied public SSH key to demo directory"
+
+      echo 'Welcome to the demo environment! You can access ssh via testuser@localhost:2345 using the generated SSH key pair located in {{ vars.demo_dir }}/.ssh/
+
+      Happy coding!
+      ' > "{{ vars.demo_dir }}/README.md"
+      {{ log.info }} "Created README.md in {{ vars.demo_dir }}"
+
+      echo '.venv
+      __pycache__
+      .qwex
+      step
+      .ssh
+      ssh.sh
+      ' > "{{ vars.demo_dir }}/.gitignore"
+      {{ log.info }} "Created .gitignore in {{ vars.demo_dir }}"
+
+  generate_key_pair:
+    desc: "Generate a new SSH key pair in the demo directory"
+    cmd: |
+      cd "{{ __dir__ }}"
+
+      if [ -d ".ssh" ]; then
+        return
+      fi
+
+      mkdir -p ".ssh"
+      ssh-keygen -t rsa -b 2048 -f ".ssh/id_rsa" -N ""
+
+      chmod 600 ".ssh/id_rsa"
+      chmod 644 ".ssh/id_rsa.pub"
+
+      {{ log.info }} "Generated SSH key pair in .ssh/"
+
+  up:
+    desc: "Docker compose up for the demo environment"
+    cmd: |
+      cd "{{ __dir__ }}"
+
+      if [ ! -f "{{ vars.demo_dir }}/.ssh/id_rsa.pub" ]; then
+        {{ tasks.generate_key_pair }}
+        cp "{{ __dir__ }}/.ssh/id_rsa" "{{ vars.demo_dir }}/.ssh/id_rsa"
+      fi
+
+      docker-compose -f docker-compose.yaml up --build -d
+
+      {{ log.info }} "Docker containers are up and running."
+
+  down:
+    desc: "Docker compose down for the demo environment"
+    cmd: |
+      cd "{{ __dir__ }}"
+      docker-compose -f docker-compose.yaml down
+      {{ log.info }} "Docker containers have been stopped and removed."

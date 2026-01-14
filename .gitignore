@@ -68,3 +68,5 @@ target/
 
 # demo dir
 playground/*/**/demo/
+
+.ssh

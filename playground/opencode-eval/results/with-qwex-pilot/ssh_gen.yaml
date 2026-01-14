@@ -1,0 +1,87 @@
+vars:
+  ssh_key: "/Users/quatton/Documents/GitHub/qwex/playground/opencode-eval/demo/.ssh/id_rsa"
+  ssh_port: "2345"
+  ssh_user: "testuser"
+  ssh_host: "localhost"
+
+tasks:
+  ssh:
+    desc: "Run a command on the remote server via SSH"
+    cmd: |
+      ssh -i {{ vars.ssh_key }} -p {{ vars.ssh_port }} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null {{ vars.ssh_user }}@{{ vars.ssh_host }} "$@"
+
+  run:
+    desc: "Run command via SSH with Run ID, logging, and Git Worktree"
+    cmd: |
+      # Check for clean git repo
+      if [ -n "$(git status --porcelain)" ]; then
+        echo "Error: Git repository is not clean. Please commit or stash changes." >&2
+        exit 1
+      fi
+
+      RUN_ID="$(date +%Y%m%d%H%M%S)-$(openssl rand -hex 4)"
+      REPO_NAME=$(basename $(git rev-parse --show-toplevel))
+      COMMIT_HASH=$(git rev-parse HEAD)
+
+      QWEX_RUN_DIR="$HOME/.qwex/runs/$RUN_ID"
+      mkdir -p "$QWEX_RUN_DIR/meta"
+
+      cmd_str=""
+      for arg in "$@"; do
+        if [[ "$arg" == *" "* ]]; then
+          cmd_str="$cmd_str '$arg'"
+        else
+          cmd_str="$cmd_str $arg"
+        fi
+      done
+      echo "${cmd_str:1}" > "$QWEX_RUN_DIR/meta/command"
+
+      REMOTE_REPO_DIR="\$HOME/.qwex/repos/$REPO_NAME.git"
+      REMOTE_WORKTREE_DIR="\$HOME/.qwex/repos/$REPO_NAME.git/worktree/$RUN_ID"
+      REMOTE_RUN_DIR="\$HOME/.qwex/runs/$RUN_ID"
+
+      REMOTE_SCRIPT="
+      set -e
+      mkdir -p $REMOTE_WORKTREE_DIR
+      "
+      ssh -q -i {{ vars.ssh_key }} -p {{ vars.ssh_port }} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null {{ vars.ssh_user }}@{{ vars.ssh_host }} "$REMOTE_SCRIPT" >/dev/null 2>&1
+
+      tar cf - . | ssh -q -i {{ vars.ssh_key }} -p {{ vars.ssh_port }} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null {{ vars.ssh_user }}@{{ vars.ssh_host }} "tar xf - -C $REMOTE_WORKTREE_DIR" >/dev/null 2>&1
+
+      # Execute command
+      REMOTE_EXEC_SCRIPT="
+      set -e
+      cd $REMOTE_WORKTREE_DIR
+
+      # Install uv if needed
+      if ! command -v uv &> /dev/null; then
+        if [ ! -f \"\$HOME/.local/bin/uv\" ]; then
+          curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1
+        fi
+        export PATH=\"\$HOME/.local/bin:\$PATH\"
+      fi
+
+      uv sync >/dev/null 2>&1
+
+      mkdir -p \"$REMOTE_RUN_DIR/logs\"
+      { ${cmd_str:1} 2>&1 | tee \"$REMOTE_RUN_DIR/logs/main.log\"; }
+      "
+
+      # Execute remote script (use -q for ssh)
+      ssh -q -i {{ vars.ssh_key }} -p {{ vars.ssh_port }} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null {{ vars.ssh_user }}@{{ vars.ssh_host }} "$REMOTE_EXEC_SCRIPT"
+
+      echo "RUN_ID=$RUN_ID"
+
+  retrieve:
+    desc: "Retrieve run directory from remote host"
+    cmd: |
+      RUN_ID="$1"
+      if [ -z "$RUN_ID" ]; then
+        echo "Usage: ./ssh.sh retrieve <RUNID>"
+        exit 1
+      fi
+
+      LOCAL_RUN_DIR="$HOME/.qwex/runs/$RUN_ID"
+      mkdir -p "$LOCAL_RUN_DIR"
+
+      scp -q -r -P {{ vars.ssh_port }} -i {{ vars.ssh_key }} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null {{ vars.ssh_user }}@{{ vars.ssh_host }}:.qwex/runs/$RUN_ID/* "$LOCAL_RUN_DIR/"
