@@ -18,7 +18,7 @@ vars:
     - desc: 'Create ssh.sh script that when run ./ssh.sh ssh echo "Hello from ssh.sh!" connects via SSH and runs the echo command.'
       assert: "{{ vars.demo_dir }}/ssh.sh ssh whoami | grep '^testuser$'"
       fail_msg: "Failed to create ssh.sh script with the correct content."
-    - desc: "Extending from previous step, ./ssh.sh should have two functions: ssh, run. The ssh command should connect via SSH, the run command uses that ssh to execute $@ and does the run id creation. At main entry point should accept an argument, match $1 to a command, shift, and pass the rest to the command. Meaning ./ssh.sh ssh echo 'Hello' and ./ssh.sh run echo 'Hello' should both work identically. but ./ssh.sh run should create a run id and output the run details message."
+    - desc: "Extending from previous step, ./ssh.sh should have two functions: ssh, run. The ssh command should connect via SSH, the run command uses that ssh to execute $@ and does the run id creation. At main entry point should accept an argument, match $1 to a command, shift, and pass the rest to the command. Meaning ./ssh.sh ssh echo 'Hello' and ./ssh.sh run echo 'Hello' should both work identically. but ./ssh.sh run should create a run id and output the run details message. ./ssh.sh run should output RUN_ID=<YYYYMMDDHHMM>-<RANDOMSTRING> after execution."
       assert: "{{ vars.demo_dir }}/ssh.sh run echo 'Another test run ID' | grep -oE 'RUN_ID=[0-9]{14}-[a-zA-Z0-9]+' && {{ vars.demo_dir }}/ssh.sh ssh echo 'Another test run ID' | grep '^Another test run ID$'"
       fail_msg: "ssh.sh did not correctly implement the ssh and run commands as specified."
     - desc: "After executing a run, we should be able to see run details stored in $HOME/.qwex/runs/<RUNID>. Let's set $QWEX_RUN_DIR=$HOME/.qwex/runs/<RUNID>. Make sure we see $QWEX_RUN_DIR/meta/command file containing the executed command proxied via run"
@@ -86,7 +86,7 @@ tasks[specialist]:
     cmd: |
       cp -r "{{ __dir__ }}/../../.opencode" "{{ vars.demo_dir }}/.opencode"
       cd "{{ vars.demo_dir }}"
-      opencode run "Run 'qwex -c ../qwex.yaml test' to continue your mission. Focus on using qwex" --agent "qwex-specialist"
+      opencode run "Run 'qwex -c ../qwex.yaml test' to continue your mission. Focus on using qwex. Do not read parent's qwex.yaml" --agent "qwex-specialist"
 
 tasks:
   agent:
