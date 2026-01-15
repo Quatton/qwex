@@ -11,6 +11,8 @@ def parse_stats(path):
 
     # per-step output tokens mapped by step number
     step_tokens = {}
+    # count of tries (occurrences) per step
+    step_tries = {}
     # list of bash tool calls with step info
     bash_calls = []
     # overall output tokens (assistant outputs)
@@ -45,7 +47,9 @@ def parse_stats(path):
 
                 # attribute tokens for this message to the step if known
                 if step_num is not None:
+                    print(f"{step_num}: {step_tokens.get(step_num, 0)}")
                     step_tokens[step_num] = step_tokens.get(step_num, 0) + out_tokens
+                    step_tries[step_num] = step_tries.get(step_num, 0) + 1
 
                 bash_calls.append(
                     {
@@ -58,6 +62,7 @@ def parse_stats(path):
 
     return {
         "step_tokens": step_tokens,
+        "step_tries": step_tries,
         "bash_calls": bash_calls,
         "overall_output_tokens": overall_output_tokens,
     }
@@ -89,7 +94,7 @@ def plot_comparison(a_stats, b_stats, a_label, b_label, out_dir: Path):
     fig.savefig(p)
 
     # overall comparison
-    fig2, ax2 = plt.subplots(figsize=(4, 4))
+    fig2, ax2 = plt.subplots(figsize=(8, 4))
     ax2.bar(
         [a_label, b_label],
         [a_stats["overall_output_tokens"], b_stats["overall_output_tokens"]],
@@ -101,13 +106,31 @@ def plot_comparison(a_stats, b_stats, a_label, b_label, out_dir: Path):
     p2 = out_dir / "total_output_tokens.png"
     fig2.savefig(p2)
 
-    return p, p2
+    # retries
+
+    fig3, ax3 = plt.subplots(figsize=(10, 5))
+
+    a_retries = [a_stats["step_tries"].get(s, 0) for s in steps]
+    b_retries = [b_stats["step_tries"].get(s, 0) for s in steps]
+    ax3.bar([xi - width / 2 for xi in x], a_retries, width, label=a_label)
+    ax3.bar([xi + width / 2 for xi in x], b_retries, width, label=b_label)
+    ax3.set_xticks(x)
+    ax3.set_xticklabels([str(s) for s in steps])
+    ax3.set_xlabel("Step number")
+    ax3.set_ylabel("Number of tries")
+    ax3.set_title("Per-step tries: {} vs {}".format(a_label, b_label))
+    ax3.legend()
+    fig3.tight_layout()
+    p3 = out_dir / "per_step_tries_comparison.png"
+    fig3.savefig(p3)
+
+    return p, p2, p3
 
 
 def main():
     base = Path(__file__).resolve().parent
-    without = base / "without-qwex-pilot" / "stats.json"
-    with_ = base / "with-qwex-pilot" / "stats.json"
+    without = base / "without-qwex" / "stats.json"
+    with_ = base / "with-qwex" / "stats.json"
 
     assert without.exists(), f"Missing {without}"
     assert with_.exists(), f"Missing {with_}"
@@ -117,7 +140,9 @@ def main():
 
     out_dir = base
 
-    p1, p2 = plot_comparison(s_with, s_without, "with-qwex", "without-qwex", out_dir)
+    p1, p2, p3 = plot_comparison(
+        s_with, s_without, "with-qwex", "without-qwex", out_dir
+    )
 
     # print summary
     print("Summary:")
@@ -135,6 +160,7 @@ def main():
     print()
     print("Saved per-step plot to:", p1)
     print("Saved total tokens plot to:", p2)
+    print("Saved per-step tries plot to:", p3)
 
 
 if __name__ == "__main__":

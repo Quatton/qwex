@@ -15,27 +15,27 @@ vars:
         uv run "{{ vars.demo_dir }}/main.py"
       assert: "uv run {{ vars.demo_dir }}/main.py 2>/dev/null | grep '^Hello from demo!$'"
       fail_msg: "main.py did not output the expected greeting message."
-    - desc: 'Create ssh.sh script that when run ./ssh.sh ssh echo "Hello from ssh.sh!" connects via SSH and runs the echo command.'
+    - desc: 'Create ./ssh.sh script with a subcommand ssh that when executed with arguments, it connects to the remote SSH server and runs the provided arguments as a command. When run ./ssh.sh ssh echo "Hello from ssh.sh!" connects via SSH and runs the echo command.'
       assert: "{{ vars.demo_dir }}/ssh.sh ssh whoami | grep '^testuser$'"
       fail_msg: "Failed to create ssh.sh script with the correct content."
-    - desc: "Extending from previous step, ./ssh.sh should have two functions: ssh, run. The ssh command should connect via SSH, the run command uses that ssh to execute $@ and does the run id creation. At main entry point should accept an argument, match $1 to a command, shift, and pass the rest to the command. Meaning ./ssh.sh ssh echo 'Hello' and ./ssh.sh run echo 'Hello' should both work identically. but ./ssh.sh run should create a run id and output the run details message. ./ssh.sh run should output RUN_ID=<YYYYMMDDHHMM>-<RANDOMSTRING> after execution."
+    - desc: "Create ./ssh.sh run subcommand that internally uses ssh subcommand, generate a run id, execute the command via SSH, and output RUN_ID=<run-id> to stdout. ./ssh.sh run should output RUN_ID=<YYYYMMDDHHMM>-<RANDOMSTRING USING OPENSSL> after execution."
       assert: "{{ vars.demo_dir }}/ssh.sh run echo 'Another test run ID' | grep -oE 'RUN_ID=[0-9]{14}-[a-zA-Z0-9]+' && {{ vars.demo_dir }}/ssh.sh ssh echo 'Another test run ID' | grep '^Another test run ID$'"
       fail_msg: "ssh.sh did not correctly implement the ssh and run commands as specified."
-    - desc: "After executing a run, we should be able to see run details stored in $HOME/.qwex/runs/<RUNID>. Let's set $QWEX_RUN_DIR=$HOME/.qwex/runs/<RUNID>. Make sure we see $QWEX_RUN_DIR/meta/command file containing the executed command proxied via run"
+    - desc: "After executing a run, we should be able to see run details stored in $HOME/.qwex/runs/<RUNID>. Let's set $QWEX_RUN_DIR=$HOME/.qwex/runs/<RUNID>.  Update ./ssh.sh run subcommand to log the executed command at $QWEX_RUN_DIR/meta/command file before executing it."
       assert: |
         RUN_OUTPUT=$({{ vars.demo_dir }}/ssh.sh run echo 'Checking run details storage')
         RUN_ID=$(echo "$RUN_OUTPUT" | grep -oE 'RUN_ID=[0-9]{14}-[a-zA-Z0-9]+' | cut -d'=' -f2)
         RUN_DIR="$HOME/.qwex/runs/$RUN_ID"
         [ -d "$RUN_DIR" ] && [ -f "$RUN_DIR/meta/command" ] && grep -q "Checking run details storage" "$RUN_DIR/meta/command"
       fail_msg: "Run details were not stored correctly in the expected directory."
-    - desc: "The run logs should be saved at $QWEX_RUN_DIR/logs/main.log. This should contain both stdout and stderr of the proxied command. It should be saved in ssh's home directory at $HOME/.qwex/runs/<RUNID>/logs/main.log. Let's verify that using ./ssh.sh ssh cat $HOME/.qwex/runs/<RUNID>/logs/main.log contains the output of the proxied command."
+    - desc: "Update ./ssh.sh run subcommand to multiplex stdout and stderr to $HOME/.qwex/<run-id>/logs/main.log| file while also displaying them in the terminal using tee. Verify that after running ./ssh.sh run <command>, the log file contains both stdout and stderr of the proxied command in the remote's HOME"
       assert: |
         RUN_OUTPUT=$({{ vars.demo_dir }}/ssh.sh run echo 'Verifying run logs')
         RUN_ID=$(echo "$RUN_OUTPUT" | grep -oE 'RUN_ID=[0-9]{14}-[a-zA-Z0-9]+' | cut -d'=' -f2)
         LOG_CONTENT=$({{ vars.demo_dir }}/ssh.sh ssh cat /home/testuser/.qwex/runs/$RUN_ID/logs/main.log)
         echo "$LOG_CONTENT" | grep -q 'Verifying run logs'
       fail_msg: "Run logs were not saved correctly or do not contain the expected output."
-    - desc: "Add a retrieve command to ssh.sh that when run as ./ssh.sh retrieve <RUNID> will rsync the run directory from the remote host to local $HOME/.qwex/runs/<RUNID>. Verify that after running ./ssh.sh retrieve <RUNID>, the local $HOME/.qwex/runs/<RUNID>/logs/main.log matches the remote $HOME/.qwex/runs/<RUNID>/logs/main.log"
+    - desc: "Create ./ssh.sh retrieve subcommand that retrieves the run directory from remote to local $HOME/.qwex/runs/<RUNID>. After running ./ssh.sh retrieve <RUNID>, verify that the local log file matches the remote log file."
       assert: |
         RUN_OUTPUT=$({{ vars.demo_dir }}/ssh.sh run echo 'Testing retrieve command')
         RUN_ID=$(echo "$RUN_OUTPUT" | grep -oE 'RUN_ID=[0-9]{14}-[a-zA-Z0-9]+' | cut -d'=' -f2)
@@ -44,7 +44,7 @@ vars:
         REMOTE_LOG_CONTENT=$({{ vars.demo_dir }}/ssh.sh ssh cat /home/testuser/.qwex/runs/$RUN_ID/logs/main.log)
         grep -q 'Testing retrieve command' "$LOCAL_LOG" && diff -q <(echo "$REMOTE_LOG_CONTENT") "$LOCAL_LOG"
       fail_msg: "Retrieve command did not correctly sync the run directory or logs do not match."
-    - desc: "Initialize a git repository here in the demo directory add all files and make the initial commit"
+    - desc: "Initialize a git repository here in the demo directory add all files and make initial commit called 'Initial commit'"
       cmd: |
         cd "{{ vars.demo_dir }}"
         git init
@@ -62,12 +62,15 @@ vars:
         cd "{{ vars.demo_dir }}"
         uv pip list | grep -q 'numpy'
       fail_msg: "Failed to add numpy to the demo project using uv."
-    - desc: "Modify main.py to import numpy and print 3-element numpy array with random number generated by seed 42 in the format [num1 num2 num3]"
+    - desc: "Modify main.py to import numpy, set the seed to 42, and generate an array of shape (3, ) with random values. Print the generated array to stdout."
       assert: |
         cd "{{ vars.demo_dir }}"
         uv run main.py | grep -q '\[0\.37454012 0\.95071431 0\.73199394\]'
       fail_msg: "main.py did not output the expected numpy array after modification."
-    - desc: "Everytime we run anything from ./ssh.sh run <command>, it should make sure that repository is clean. Then synchronize any changes from local to remote's $HOME/.qwex/repos/<reponame>.git. Inside that git repo, we create a worktree at $HOME/.qwex/repos/<reponame>.git/worktree/<RUNID> with the same commit hash from local. After that, it should run the command inside that worktree. Make sure that main.log still have the expected output. Then we have a custom init command: check if uv exists, if not install it with curl -LsSf https://astral.sh/uv/install.sh | sh, then run uv sync. This init command should be run after worktree is created but before running the command. This is to ensure that any dependencies are installed in the remote environment."
+    - desc: |
+        Modify ./ssh.sh run subcommand to check if the git working tree is clean before executing the command. If not, output an error message and exit with non-zero status code. Then, make sure the repository is up-to-date with remote's .qwex/repos/<repo-name>.git. 
+        After that, in the remote host, create a temporary git worktree directory using git worktree add -d <temp-dir> <latest-commit-hash>,
+        Finally, execute the commaind inside the temporary worktree directory. After execution, make sure that we can still retrieve the logs via ./ssh.sh retrieve subcommand.
       assert: |
         RUN_OUTPUT=$({{ vars.demo_dir }}/ssh.sh run uv run main.py)
         RUN_ID=$(echo "$RUN_OUTPUT" | grep -oE 'RUN_ID=[0-9]{14}-[a-zA-Z0-9]+' | cut -d'=' -f2)
@@ -86,7 +89,7 @@ tasks[specialist]:
     cmd: |
       cp -r "{{ __dir__ }}/../../.opencode" "{{ vars.demo_dir }}/.opencode"
       cd "{{ vars.demo_dir }}"
-      opencode run "Run 'qwex -c ../qwex.yaml test' to continue your mission. Focus on using qwex. Do not read parent's qwex.yaml" --agent "qwex-specialist"
+      opencode run "Run 'qwex -c ../qwex.yaml test' to continue your mission. Focus on using qwex." --agent "qwex-specialist"
 
 tasks:
   agent:
