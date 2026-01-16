@@ -11,7 +11,6 @@ import (
 var namespaceListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all available namespaces",
-	Long:  "List all available namespaces",
 	Run: func(cmd *cobra.Command, args []string) {
 		service := cmd.Context().Value("service").(*Service)
 		res, err := service.K8s.Clientset.CoreV1().Namespaces().List(cmd.Context(), metav1.ListOptions{})

@@ -7,7 +7,6 @@ import (
 var namespaceCmd = &cobra.Command{
 	Use:   "namespace",
 	Short: "Subcommand for namespace operations",
-	Long:  "Subcommand for namespace operations",
 }
 
 func init() {

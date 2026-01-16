@@ -14,6 +14,7 @@ import (
 // K8sClient from KUBECONFIG
 type K8sClient struct {
 	Clientset *kubernetes.Clientset
+	Config    *rest.Config
 }
 
 // NewK8sClient creates a new Kubernetes client from in-cluster config if failed, tries from .kube/config
@@ -40,5 +41,6 @@ func NewK8sClient() (*K8sClient, error) {
 
 	return &K8sClient{
 		Clientset: clientset,
+		Config:    config,
 	}, nil
 }

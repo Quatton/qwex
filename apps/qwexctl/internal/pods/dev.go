@@ -39,6 +39,7 @@ func makeContainers(mode DevelopmentMode) []corev1.Container {
 					MountPath: WorkspaceMountPath,
 				},
 			},
+			WorkingDir: WorkspaceMountPath,
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -61,6 +62,7 @@ func makeContainers(mode DevelopmentMode) []corev1.Container {
 					MountPath: WorkspaceMountPath,
 				},
 			},
+			WorkingDir: WorkspaceMountPath,
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -87,14 +89,14 @@ func (s *Service) buildDesiredDeployment(mode DevelopmentMode) *appsv1.Deploymen
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				PodTypeLabel: DevelopmentTypeLabel,
+				DeploymentLabel: name,
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replica,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					PodTypeLabel: DevelopmentTypeLabel,
+					DeploymentLabel: name,
 				},
 			},
 			Strategy: appsv1.DeploymentStrategy{
@@ -103,7 +105,7 @@ func (s *Service) buildDesiredDeployment(mode DevelopmentMode) *appsv1.Deploymen
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						PodTypeLabel: DevelopmentTypeLabel,
+						DeploymentLabel: name,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -122,11 +124,11 @@ func (s *Service) buildDesiredDeployment(mode DevelopmentMode) *appsv1.Deploymen
 							Name:            InitContainerName,
 							Image:           SyncImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
+							WorkingDir:      WorkspaceMountPath,
 							Command: []string{
 								"/bin/sh",
 								"-c",
-								// TODO: This is hardcoded for demo purposes
-								"if [ ! -d /workspace/.git ]; then git init /workspace; echo 'Repo initialized'; else echo 'Repo exists'; fi",
+								"if [ ! -d ./.git ]; then git init; echo 'Repo initialized'; else echo 'Repo exists'; fi",
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
@@ -146,6 +148,26 @@ func (s *Service) buildDesiredDeployment(mode DevelopmentMode) *appsv1.Deploymen
 	return dep
 }
 
+func (s *Service) GetPodFromDeployment(ctx context.Context, deployment *appsv1.Deployment) (*corev1.Pod, error) {
+	log.Printf("Getting pod for deployment %s...", deployment.Name)
+
+	podList, err := s.K8s.CoreV1().Pods(s.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("%s=%s", DeploymentLabel, deployment.Name),
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pods for deployment %s: %w", deployment.Name, err)
+	}
+
+	for _, pod := range podList.Items {
+		if pod.Status.Phase == corev1.PodRunning {
+			return &pod, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no running pod found for deployment %s", deployment.Name)
+}
+
 func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context) (*appsv1.Deployment, error) {
 
 	// Ensure PVC exists
@@ -163,7 +185,8 @@ func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context) (*appsv1
 	name := makeDevelopmentName(s.Namespace)
 
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		current, getErr := s.K8s.AppsV1().Deployments(s.Namespace).Get(ctx, name, metav1.GetOptions{})
+		var getErr error
+		current, getErr = s.K8s.AppsV1().Deployments(s.Namespace).Get(ctx, name, metav1.GetOptions{})
 		if getErr != nil {
 			if k8serrors.IsNotFound(getErr) {
 				created, createErr := s.K8s.AppsV1().Deployments(s.Namespace).Create(ctx, desired, metav1.CreateOptions{})
@@ -174,6 +197,10 @@ func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context) (*appsv1
 				return nil
 			}
 			return getErr
+		}
+
+		if isDeploymentEqual(current, desired) {
+			return nil
 		}
 
 		desired.ResourceVersion = current.ResourceVersion
@@ -187,6 +214,10 @@ func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context) (*appsv1
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconcile deployment %s: %w", name, err)
+	}
+
+	if current == nil {
+		return desired, nil
 	}
 
 	log.Printf("Development deployment %s reconciled, waiting for ready...", name)
@@ -246,4 +277,22 @@ func (s *Service) DestroyDevelopment(ctx context.Context, namespace string) erro
 		return err
 	}
 	return nil
+}
+
+func isDeploymentEqual(a, b *appsv1.Deployment) bool {
+	if a == nil || b == nil {
+		return false
+	}
+
+	if len(a.Spec.Template.Spec.Containers) != len(b.Spec.Template.Spec.Containers) {
+		return false
+	}
+	for i, containerA := range a.Spec.Template.Spec.Containers {
+		containerB := b.Spec.Template.Spec.Containers[i]
+		if containerA.Name != containerB.Name || containerA.Image != containerB.Image {
+			return false
+		}
+	}
+
+	return true
 }

@@ -3,7 +3,7 @@ package pods
 import "fmt"
 
 const (
-	PodTypeLabel = "qwex.dev/pod-type"
+	DeploymentLabel = "qwex.dev/deployment"
 
 	WorkspaceVolumeName    = "workspace"
 	WorkspaceMountPath     = "/workspace"
@@ -11,7 +11,6 @@ const (
 
 	InitContainerName = "init-synccontainer"
 
-	DevelopmentTypeLabel        = "dev"
 	DevelopmentDeploymentSuffix = "dev"
 	DevContainerName            = "devcontainer"
 
