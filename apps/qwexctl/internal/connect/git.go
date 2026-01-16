@@ -16,10 +16,8 @@ func (s *Service) GetRemoteHead(ctx context.Context) (string, error) {
 
 	if err != nil {
 		if output != nil {
-			log.Printf("Remote HEAD fetch failed: %v | Stdout: %s | Stderr: %s", err, output.Stdout, output.Stderr)
-			return "", err
+			return "", fmt.Errorf("remote HEAD fetch failed: %s", output.Stderr)
 		} else {
-			log.Printf("Remote HEAD fetch failed to start: %v", err)
 			return "", err
 		}
 	}
@@ -32,8 +30,6 @@ func (s *Service) GetRemoteHead(ctx context.Context) (string, error) {
 }
 
 func (s *Service) SendBundle(ctx context.Context, bundlePath string, targetHash string) error {
-	log.Printf("Syncing to %s...", targetHash)
-
 	file, err := os.Open(bundlePath)
 	if err != nil {
 		return err
@@ -70,8 +66,7 @@ func (s *Service) CreateGitBundle(fromHash string) (string, string, error) {
 	out, err := stashOutput.Output()
 	if err != nil {
 		stdErr := stashOutput.Stderr
-		log.Printf("Error creating stash: %s", stdErr)
-		return "", "", err
+		return "", "", fmt.Errorf("failed to create git stash: %s", stdErr)
 	}
 
 	targetHash := strings.TrimSpace(string(out))

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -45,7 +44,6 @@ func (s *Service) RemoteExec(ctx context.Context, cmd []string, stdin io.Reader)
 	exec, err := remotecommand.NewSPDYExecutor(s.Config, "POST", req.URL())
 
 	if err != nil {
-		log.Printf("failed to create SPDY executor: %v", err)
 		return nil, err
 	}
 
@@ -58,7 +56,6 @@ func (s *Service) RemoteExec(ctx context.Context, cmd []string, stdin io.Reader)
 	})
 
 	if err != nil {
-		log.Printf("remote exec stream failed: %v", err)
 		return nil, err
 	}
 
