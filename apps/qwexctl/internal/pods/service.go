@@ -1,13 +1,17 @@
 package pods
 
-import "github.com/Quatton/qwex/apps/qwexctl/internal/k8s"
+import (
+	"k8s.io/client-go/kubernetes"
+)
 
 type Service struct {
-	K8s *k8s.K8sClient
+	K8s       kubernetes.Interface
+	Namespace string
 }
 
-func NewService(k8sClient *k8s.K8sClient) *Service {
+func NewService(k8sClient kubernetes.Interface, namespace string) *Service {
 	return &Service{
-		K8s: k8sClient,
+		K8s:       k8sClient,
+		Namespace: namespace,
 	}
 }

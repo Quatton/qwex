@@ -10,10 +10,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func (s *Service) GetOrCreatePVC(ctx context.Context, namespace string) (*corev1.PersistentVolumeClaim, error) {
-	pvcName := makePVCName(namespace)
+func (s *Service) GetOrCreatePVC(ctx context.Context) (*corev1.PersistentVolumeClaim, error) {
+	pvcName := makePVCName(s.Namespace)
 
-	pvc, err := s.K8s.Clientset.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{})
+	pvc, err := s.K8s.CoreV1().PersistentVolumeClaims(s.Namespace).Get(ctx, pvcName, metav1.GetOptions{})
 
 	if err == nil {
 		return pvc, nil
@@ -39,7 +39,7 @@ func (s *Service) GetOrCreatePVC(ctx context.Context, namespace string) (*corev1
 		},
 	}
 
-	createdPVC, err := s.K8s.Clientset.CoreV1().PersistentVolumeClaims(namespace).Create(ctx, pvcSpec, metav1.CreateOptions{})
+	createdPVC, err := s.K8s.CoreV1().PersistentVolumeClaims(s.Namespace).Create(ctx, pvcSpec, metav1.CreateOptions{})
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create PVC %s: %w", pvcName, err)

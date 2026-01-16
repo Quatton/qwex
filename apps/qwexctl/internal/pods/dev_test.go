@@ -26,11 +26,10 @@ func TestCreateDevPod(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Expected no error creating k8s client, got %v", err)
 	}
-	service := Service{
-		K8s: k8sClient,
-	}
 
-	res, err := service.GetOrCreateDevelopmentDeployment(ctx, testNamespace)
+	service := NewService(k8sClient.Clientset, testNamespace)
+
+	res, err := service.GetOrCreateDevelopmentDeployment(ctx)
 
 	if err != nil {
 		t.Fatalf("Expected no error creating dev pod, got %v", err)
@@ -59,7 +58,7 @@ func TestDestroyDevPod(t *testing.T) {
 		t.Fatalf("Expected no error creating k8s client, got %v", err)
 	}
 	service := Service{
-		K8s: k8sClient,
+		K8s: k8sClient.Clientset,
 	}
 
 	err = service.DestroyDevelopment(t.Context(), testNamespace)

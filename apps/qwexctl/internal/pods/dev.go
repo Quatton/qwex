@@ -79,8 +79,8 @@ func makeContainers(mode DevelopmentMode) []corev1.Container {
 	return containers
 }
 
-func (s *Service) buildDesiredDeployment(namespace string, mode DevelopmentMode) *appsv1.Deployment {
-	name := makeDevelopmentName(namespace)
+func (s *Service) buildDesiredDeployment(mode DevelopmentMode) *appsv1.Deployment {
+	name := makeDevelopmentName(s.Namespace)
 	replica := int32(1)
 
 	dep := &appsv1.Deployment{
@@ -112,7 +112,7 @@ func (s *Service) buildDesiredDeployment(namespace string, mode DevelopmentMode)
 							Name: WorkspaceVolumeName,
 							VolumeSource: corev1.VolumeSource{
 								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: makePVCName(namespace),
+									ClaimName: makePVCName(s.Namespace),
 								},
 							},
 						},
@@ -146,27 +146,27 @@ func (s *Service) buildDesiredDeployment(namespace string, mode DevelopmentMode)
 	return dep
 }
 
-func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context, namespace string) (*appsv1.Deployment, error) {
+func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context) (*appsv1.Deployment, error) {
 
 	// Ensure PVC exists
-	_, err := s.GetOrCreatePVC(ctx, namespace)
+	_, err := s.GetOrCreatePVC(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to ensure PVC exists in namespace %s: %w", namespace, err)
+		return nil, fmt.Errorf("failed to ensure PVC exists in namespace %s: %w", s.Namespace, err)
 	}
 
 	// TODO: Hibernate mode support
-	desired := s.buildDesiredDeployment(namespace, Active)
+	desired := s.buildDesiredDeployment(Active)
 
 	var current *appsv1.Deployment
 
-	name := makeDevelopmentName(namespace)
+	name := makeDevelopmentName(s.Namespace)
 
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		current, getErr := s.K8s.Clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+		current, getErr := s.K8s.AppsV1().Deployments(s.Namespace).Get(ctx, name, metav1.GetOptions{})
 		if getErr != nil {
 			if k8serrors.IsNotFound(getErr) {
-				created, createErr := s.K8s.Clientset.AppsV1().Deployments(namespace).Create(ctx, desired, metav1.CreateOptions{})
+				created, createErr := s.K8s.AppsV1().Deployments(s.Namespace).Create(ctx, desired, metav1.CreateOptions{})
 				if createErr != nil {
 					return createErr
 				}
@@ -177,7 +177,7 @@ func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context, namespac
 		}
 
 		desired.ResourceVersion = current.ResourceVersion
-		updated, updateErr := s.K8s.Clientset.AppsV1().Deployments(namespace).Update(ctx, desired, metav1.UpdateOptions{})
+		updated, updateErr := s.K8s.AppsV1().Deployments(s.Namespace).Update(ctx, desired, metav1.UpdateOptions{})
 		if updateErr != nil {
 			return updateErr
 		}
@@ -190,7 +190,7 @@ func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context, namespac
 	}
 
 	log.Printf("Development deployment %s reconciled, waiting for ready...", name)
-	return current, s.waitForDeploymentReady(ctx, namespace, name)
+	return current, s.waitForDeploymentReady(ctx, s.Namespace, name)
 }
 
 func (s *Service) waitForDeploymentReady(ctx context.Context, namespace, name string) error {
@@ -200,7 +200,7 @@ func (s *Service) waitForDeploymentReady(ctx context.Context, namespace, name st
 	log.Printf("Waiting for a Ready pod in deployment %s/%s...", namespace, name)
 
 	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
-		dep, err := s.K8s.Clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+		dep, err := s.K8s.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
 
 		if err != nil {
 			return false, err
@@ -238,7 +238,7 @@ func (s *Service) DestroyDevelopment(ctx context.Context, namespace string) erro
 	name := makeDevelopmentName(namespace)
 	prop := metav1.DeletePropagationBackground
 
-	err := s.K8s.Clientset.AppsV1().Deployments(namespace).Delete(ctx, name, metav1.DeleteOptions{
+	err := s.K8s.AppsV1().Deployments(namespace).Delete(ctx, name, metav1.DeleteOptions{
 		PropagationPolicy: &prop,
 	})
 

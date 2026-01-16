@@ -11,11 +11,10 @@ var connectCmd = &cobra.Command{
 	Long:  "Connect to a development instance",
 	Run: func(cmd *cobra.Command, args []string) {
 		service := cmd.Context().Value("service").(*Service)
-		podService := pods.NewService(service.K8s)
-
 		namespace := args[0]
+		podService := pods.NewService(service.K8s.Clientset, namespace)
 
-		podService.GetOrCreateDevelopmentDeployment(cmd.Context(), namespace)
+		podService.GetOrCreateDevelopmentDeployment(cmd.Context())
 	},
 }
 
