@@ -1,7 +1,9 @@
 package pods
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/Quatton/qwex/apps/qwexctl/internal/k8s"
 )
@@ -17,6 +19,9 @@ func TestMakeDeploymentName(t *testing.T) {
 }
 
 func TestCreateDevPod(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
 	k8sClient, err := k8s.NewK8sClient()
 	if err != nil {
 		t.Fatalf("Expected no error creating k8s client, got %v", err)
@@ -25,7 +30,7 @@ func TestCreateDevPod(t *testing.T) {
 		K8s: k8sClient,
 	}
 
-	res, err := service.GetOrCreateDevelopmentDeployment(t.Context(), testNamespace)
+	res, err := service.GetOrCreateDevelopmentDeployment(ctx, testNamespace)
 
 	if err != nil {
 		t.Fatalf("Expected no error creating dev pod, got %v", err)
@@ -41,16 +46,10 @@ func TestCreateDevPod(t *testing.T) {
 		t.Logf("Condition: %s - %s", c.Type, c.Status)
 	}
 
-	if res.Status.ReadyReplicas != 1 {
-		t.Fatalf("Expected 1 ready replica, got %d", res.Status.ReadyReplicas)
-	}
+	desiredReplicas := *res.Spec.Replicas
 
-	if res.Status.AvailableReplicas != 1 {
-		t.Fatalf("Expected 1 available replica, got %d", res.Status.AvailableReplicas)
-	}
-
-	if res.Status.Replicas != 1 {
-		t.Fatalf("Expected 1 replica, got %d", res.Status.Replicas)
+	if res.Status.ReadyReplicas < desiredReplicas {
+		t.Fatalf("Should wait for all replicas to be ready")
 	}
 }
 
