@@ -1,0 +1,83 @@
+vars:
+  current_dir: "{{ __dir__ }}"
+
+modules:
+  steps:
+    uses: std/steps
+  log:
+    uses: std/log
+
+tasks:
+  clean:
+    desc: "Wipe the failed RustFS pods to allow for fresh restarts"
+    cmd: |
+      kubectl -n qwex delete pods --field-selector status.phase!=Running
+  setup:
+    uses: steps.compose
+    vars:
+      steps:
+        - desc: "Make sure kind cluster is running"
+          cmd: |
+            if ! kind get clusters | grep -q qwex-cluster; then
+              kind create cluster --name qwex-cluster --config {{ vars.current_dir }}/kind-config.yaml
+            else
+              {{ log.info }} "Kind cluster 'qwex-cluster' already exists."
+            fi
+        - desc: "Create rustfs namespace"
+          cmd: |
+            if ! kubectl get namespace rustfs >/dev/null 2>&1; then
+              kubectl create namespace rustfs
+            else
+              {{ log.info }} "Namespace 'rustfs' already exists."
+            fi
+        - desc: "Create demo namespace"
+          cmd: |
+            if ! kubectl get namespace qwex-demo >/dev/null 2>&1; then
+              kubectl create namespace qwex-demo
+            else
+              {{ log.info }} "Namespace 'qwex-demo' already exists."
+            fi
+        - desc: "Check if secrets are set in .env"
+          cmd: |
+            if [[ -z "$RUSTFS_ACCESS_KEY" || -z "$RUSTFS_SECRET_KEY" ]]; then
+              echo "Error: RUSTFS_ACCESS_KEY and RUSTFS_SECRET_KEY must be set in the .env file."
+              exit 1
+            fi
+        - desc: "Create credentials for RustFS (client use)"
+          cmd: |
+            # client
+            kubectl -n qwex-demo create secret generic rustfs-credentials \
+              --from-literal=access_key="$RUSTFS_ACCESS_KEY" \
+              --from-literal=secret_key="$RUSTFS_SECRET_KEY" \
+              --from-literal=endpoint="http://rustfs.qwex.svc.cluster.local:9000" \
+              --dry-run=client -o yaml | kubectl apply -f -
+        - desc: "Helm"
+          cmd: |
+            helm repo add rustfs https://charts.rustfs.com
+            helm repo update
+        - desc: "Create RustFS Deployment"
+          cmd: |
+            helm upgrade --install rustfs rustfs/rustfs \
+              --namespace rustfs \
+              --create-namespace \
+              -f {{ vars.current_dir }}/k8s/rustfs/values.yaml \
+              --set secret.rustfs.access_key="$RUSTFS_ACCESS_KEY" \
+              --set secret.rustfs.secret_key="$RUSTFS_SECRET_KEY"
+        - desc: "Wait for RustFS to be ready"
+          cmd: |
+            kubectl -n rustfs wait --for=condition=available --timeout=60s deployment/rustfs
+        - desc: "Setup Local Host Entry for RustFS"
+          cmd: |
+            {{ tasks.port_forward }}
+
+  port_forward:
+    desc: "Port forward RustFS service to localhost"
+    cmd: |
+      {{ log.info }} "To access RustFS console locally, run: kubectl -n rustfs  port-forward svc/rustfs-svc 9000:9000 9001:9001"
+
+      read -p "Would you like to set this up now? (y/n): " port_forward_choice
+      if [[ "$port_forward_choice" == "y" || "$port_forward_choice" == "Y" ]]; then
+        kubectl -n rustfs port-forward svc/rustfs-svc 9000:9000 9001:9001
+      else
+        {{ log.info }} "Skipping port forwarding setup."
+      fi

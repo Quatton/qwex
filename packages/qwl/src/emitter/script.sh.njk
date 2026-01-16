@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-QWEX_PREAMBLE="set -uo{{ 'x' if env.DEBUG }} pipefail
+QWEX_PREAMBLE="set -o{{ 'x' if env.DEBUG }} pipefail
 shopt -s expand_aliases
 {{ 'export DEBUG=1' if env.DEBUG else '' }}
 ORIGINAL_PWD=\$(pwd)"
