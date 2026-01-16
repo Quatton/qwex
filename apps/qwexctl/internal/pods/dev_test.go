@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/Quatton/qwex/apps/qwexctl/internal/k8s"
-	v1 "k8s.io/api/apps/v1"
 )
 
 const testNamespace = "qwex-demo"
@@ -38,8 +37,20 @@ func TestCreateDevPod(t *testing.T) {
 		t.Fatalf("Expected pod name %s, got %s", makeDevelopmentName(testNamespace), res.Name)
 	}
 
-	if res.Status.Conditions[len(res.Status.Conditions)-1].Type != v1.DeploymentAvailable {
-		t.Fatalf("Expected deployment to be available, got %s", res.Status.Conditions[len(res.Status.Conditions)-1].Type)
+	for _, c := range res.Status.Conditions {
+		t.Logf("Condition: %s - %s", c.Type, c.Status)
+	}
+
+	if res.Status.ReadyReplicas != 1 {
+		t.Fatalf("Expected 1 ready replica, got %d", res.Status.ReadyReplicas)
+	}
+
+	if res.Status.AvailableReplicas != 1 {
+		t.Fatalf("Expected 1 available replica, got %d", res.Status.AvailableReplicas)
+	}
+
+	if res.Status.Replicas != 1 {
+		t.Fatalf("Expected 1 replica, got %d", res.Status.Replicas)
 	}
 }
 
