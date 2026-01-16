@@ -10,13 +10,21 @@ import (
 )
 
 func (s *Service) GetRemoteHead(ctx context.Context) (string, error) {
-	// Command: git -C /workspace rev-parse HEAD
 	cmd := []string{"git", "-C", "/workspace", "rev-parse", "HEAD"}
 
 	output, err := s.RemoteExec(ctx, cmd, nil)
 
 	if err != nil {
-		log.Printf("Remote head is empty")
+		if output != nil {
+			log.Printf("Remote HEAD fetch failed: %v | Stdout: %s | Stderr: %s", err, output.Stdout, output.Stderr)
+			return "", err
+		} else {
+			log.Printf("Remote HEAD fetch failed to start: %v", err)
+			return "", err
+		}
+	}
+
+	if strings.Contains(output.Stdout, "HEAD") {
 		return "", nil
 	}
 
@@ -24,7 +32,6 @@ func (s *Service) GetRemoteHead(ctx context.Context) (string, error) {
 }
 
 func (s *Service) SendBundle(ctx context.Context, bundlePath string, targetHash string) error {
-
 	log.Printf("Syncing to %s...", targetHash)
 
 	file, err := os.Open(bundlePath)
@@ -47,8 +54,11 @@ echo "Sync Successful"
 	output, err := s.RemoteExec(ctx, cmd, file)
 
 	if err != nil {
-		log.Printf("remote sync failed: %s | %s", output.Stdout, output.Stderr)
-		return err
+		if output != nil {
+			log.Printf("Remote sync failed: %v | Stdout: %s | Stderr: %s", err, output.Stdout, output.Stderr)
+		} else {
+			log.Printf("Remote sync failed to start: %v", err)
+		}
 	}
 
 	return nil
@@ -98,26 +108,4 @@ func (s *Service) CreateGitBundle(fromHash string) (string, string, error) {
 	}
 
 	return bundleFilePath, targetHash, nil
-}
-
-func (s *Service) Sync(ctx context.Context) error {
-	remoteHash, err := s.GetRemoteHead(ctx)
-	if err != nil {
-		log.Fatalf("Error getting remote HEAD: %v\n", err)
-		return err
-	}
-
-	bundleFile, targetHash, err := s.CreateGitBundle(remoteHash)
-	if err != nil {
-		log.Fatalf("Error creating git bundle: %v\n", err)
-		return err
-	}
-
-	err = s.SendBundle(ctx, bundleFile, targetHash)
-	if err != nil {
-		log.Fatalf("Error sending git bundle: %v\n", err)
-		return err
-	}
-
-	return nil
 }

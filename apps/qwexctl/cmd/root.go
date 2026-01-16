@@ -24,22 +24,30 @@ var rootCmd = &cobra.Command{
 	Use:   "qwexctl",
 	Short: "Queued Workspace-aware EXecutor",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		ns := viper.GetString("namespace")
-
-		k8sClient, err := k8s.NewK8sClient()
+		globalService, err := initServiceManual()
 		if err != nil {
 			return err
 		}
-
-		globalService := &Service{
-			K8s:       k8sClient,
-			Namespace: ns,
-		}
-
 		ctx := context.WithValue(cmd.Context(), "service", globalService)
 		cmd.SetContext(ctx)
 		return nil
 	},
+}
+
+func initServiceManual() (*Service, error) {
+	ns := viper.GetString("namespace")
+
+	k8sClient, err := k8s.NewK8sClient()
+	if err != nil {
+		return nil, err
+	}
+
+	globalService := &Service{
+		K8s:       k8sClient,
+		Namespace: ns,
+	}
+
+	return globalService, nil
 }
 
 func Execute() {

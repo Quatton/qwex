@@ -9,14 +9,14 @@ import (
 )
 
 var connectCmd = &cobra.Command{
-	Use:   "connect",
-	Short: "Connect to the development environment",
+	Use:   "sync",
+	Short: "Sync local code to the development pod",
 	Run: func(cmd *cobra.Command, args []string) {
 		service := cmd.Context().Value("service").(*Service)
 		namespace := cmd.Flag("namespace").Value.String()
 		podService := pods.NewService(service.K8s.Clientset, namespace)
 
-		dep, err := podService.GetOrCreateDevelopmentDeployment(cmd.Context())
+		dep, err := podService.GetOrCreateDevelopmentDeployment(cmd.Context(), pods.Active)
 		if err != nil {
 			fmt.Printf("Error getting or creating development deployment: %v\n", err)
 			return
@@ -33,7 +33,7 @@ var connectCmd = &cobra.Command{
 
 		connectService := connect.NewService(service.K8s.Clientset, service.K8s.Config, namespace, pod.Name, pods.SyncContainerName, localRepoPath)
 
-		err = connectService.Sync(cmd.Context())
+		err = connectService.SyncOnce(cmd.Context())
 		if err != nil {
 			fmt.Printf("Error during sync: %v\n", err)
 			return

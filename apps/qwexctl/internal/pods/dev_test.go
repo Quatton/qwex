@@ -29,7 +29,7 @@ func TestCreateDevPod(t *testing.T) {
 
 	service := NewService(k8sClient.Clientset, testNamespace)
 
-	res, err := service.GetOrCreateDevelopmentDeployment(ctx)
+	res, err := service.GetOrCreateDevelopmentDeployment(ctx, Active)
 
 	if err != nil {
 		t.Fatalf("Expected no error creating dev pod, got %v", err)

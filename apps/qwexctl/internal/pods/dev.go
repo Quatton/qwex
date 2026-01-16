@@ -51,7 +51,6 @@ func makeContainers(mode DevelopmentMode) []corev1.Container {
 
 	if mode == Active {
 		devContainer := corev1.Container{
-
 			Name:            DevContainerName,
 			Image:           DevelopmentDemoImage,
 			ImagePullPolicy: corev1.PullIfNotPresent,
@@ -168,7 +167,7 @@ func (s *Service) GetPodFromDeployment(ctx context.Context, deployment *appsv1.D
 	return nil, fmt.Errorf("no running pod found for deployment %s", deployment.Name)
 }
 
-func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context) (*appsv1.Deployment, error) {
+func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context, mode DevelopmentMode) (*appsv1.Deployment, error) {
 
 	// Ensure PVC exists
 	_, err := s.GetOrCreatePVC(ctx)
@@ -187,8 +186,10 @@ func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context) (*appsv1
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		var getErr error
 		current, getErr = s.K8s.AppsV1().Deployments(s.Namespace).Get(ctx, name, metav1.GetOptions{})
+
 		if getErr != nil {
 			if k8serrors.IsNotFound(getErr) {
+				log.Printf("Development deployment %s not found, creating...", name)
 				created, createErr := s.K8s.AppsV1().Deployments(s.Namespace).Create(ctx, desired, metav1.CreateOptions{})
 				if createErr != nil {
 					return createErr
@@ -214,10 +215,6 @@ func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context) (*appsv1
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconcile deployment %s: %w", name, err)
-	}
-
-	if current == nil {
-		return desired, nil
 	}
 
 	log.Printf("Development deployment %s reconciled, waiting for ready...", name)

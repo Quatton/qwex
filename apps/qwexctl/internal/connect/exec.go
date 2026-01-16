@@ -3,7 +3,9 @@ package connect
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"log"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -16,6 +18,10 @@ type Output struct {
 }
 
 func (s *Service) RemoteExec(ctx context.Context, cmd []string, stdin io.Reader) (*Output, error) {
+	if s.Client == nil || s.Config == nil {
+		return nil, errors.New("kubernetes client or config is not initialized")
+	}
+
 	req := s.Client.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(s.PodName).
@@ -39,6 +45,7 @@ func (s *Service) RemoteExec(ctx context.Context, cmd []string, stdin io.Reader)
 	exec, err := remotecommand.NewSPDYExecutor(s.Config, "POST", req.URL())
 
 	if err != nil {
+		log.Printf("failed to create SPDY executor: %v", err)
 		return nil, err
 	}
 
@@ -51,6 +58,7 @@ func (s *Service) RemoteExec(ctx context.Context, cmd []string, stdin io.Reader)
 	})
 
 	if err != nil {
+		log.Printf("remote exec stream failed: %v", err)
 		return nil, err
 	}
 
