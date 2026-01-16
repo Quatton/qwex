@@ -56,12 +56,14 @@ echo "Sync Successful"
 
 func (s *Service) CreateGitBundle(fromHash string) (string, string, error) {
 	stashOutput := exec.Command("git", "-C", s.LocalRepoPath, "stash", "create", "--include-untracked")
+
 	out, err := stashOutput.Output()
 	if err != nil {
 		stdErr := stashOutput.Stderr
 		log.Printf("Error creating stash: %s", stdErr)
 		return "", "", err
 	}
+
 	targetHash := strings.TrimSpace(string(out))
 
 	if targetHash == "" {
