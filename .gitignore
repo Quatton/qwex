@@ -72,3 +72,5 @@ playground/*/**/demo/
 .ssh
 
 ./qwex-data
+
+go.work
