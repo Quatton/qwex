@@ -9,24 +9,34 @@ import (
 	"strings"
 )
 
-func (s *Service) GetRemoteHead(ctx context.Context) (string, error) {
-	cmd := []string{"git", "-C", "/workspace", "rev-parse", "HEAD"}
+type RemoteState struct {
+	CommitHash string
+	TreeHash   string
+}
+
+func (s *Service) GetRemoteHead(ctx context.Context) (*RemoteState, error) {
+	cmd := []string{"git", "-C", "/workspace", "rev-parse", "HEAD", "HEAD^{tree}"}
 
 	output, err := s.RemoteExec(ctx, cmd, nil)
 
+	if output == nil {
+		return nil, err
+	}
+
 	if err != nil {
-		if output != nil {
-			return "", fmt.Errorf("remote HEAD fetch failed: %s", output.Stderr)
-		} else {
-			return "", err
-		}
+		return nil, fmt.Errorf("remote HEAD fetch failed: %s", output.Stderr)
 	}
 
-	if strings.Contains(output.Stdout, "HEAD") {
-		return "", nil
+	lines := strings.Fields(output.Stdout)
+
+	if len(lines) < 2 {
+		return nil, nil
 	}
 
-	return strings.TrimSpace(output.Stdout), nil
+	return &RemoteState{
+		CommitHash: lines[0],
+		TreeHash:   lines[1],
+	}, nil
 }
 
 func (s *Service) SendBundle(ctx context.Context, bundlePath string, targetHash string) error {
@@ -56,11 +66,34 @@ echo "Sync Successful"
 			log.Printf("Remote sync failed to start: %v", err)
 		}
 	}
-
 	return nil
 }
 
-func (s *Service) CreateGitBundle(fromHash string) (string, string, error) {
+func (s *Service) forceCreateBundle(targetHash, remoteHash string) (string, error) {
+	bundleFilePath := "/tmp/repo.bundle"
+	tempRef := "refs/qwex/temp-sync"
+	if err := exec.Command("git", "update-ref", tempRef, targetHash).Run(); err != nil {
+		return "", fmt.Errorf("failed to create temp ref: %w", err)
+	}
+	defer exec.Command("git", "update-ref", "-d", tempRef).Run()
+
+	var args []string
+	args = append(args, "-C", s.LocalRepoPath, "bundle", "create", bundleFilePath, tempRef)
+
+	if remoteHash != "" {
+		args = append(args, fmt.Sprintf("^%s", remoteHash))
+	}
+
+	out, err := exec.Command("git", args...).CombinedOutput()
+
+	if err != nil {
+		return "", fmt.Errorf("failed to create git bundle: %s", string(out))
+	}
+
+	return bundleFilePath, nil
+}
+
+func (s *Service) CreateGitBundle(remote *RemoteState) (string, string, error) {
 	stashOutput := exec.Command("git", "-C", s.LocalRepoPath, "stash", "create", "--include-untracked")
 
 	out, err := stashOutput.Output()
@@ -76,31 +109,24 @@ func (s *Service) CreateGitBundle(fromHash string) (string, string, error) {
 		targetHash = strings.TrimSpace(string(out))
 	}
 
-	if fromHash == targetHash {
-		return "", "", nil
+	treeCmd := exec.Command("git", "rev-parse", fmt.Sprintf("%s^{tree}", targetHash))
+	out, err = treeCmd.Output()
+	localTreeHash := strings.TrimSpace(string(out))
+
+	if remote != nil && localTreeHash == remote.TreeHash {
+		return "", "", fmt.Errorf("up_to_date")
 	}
 
-	bundleFilePath := "/tmp/repo.bundle"
-
-	tempRef := "refs/qwex/temp-sync"
-
-	if err := exec.Command("git", "update-ref", tempRef, targetHash).Run(); err != nil {
-		return "", "", fmt.Errorf("failed to create temp ref: %w", err)
+	remoteHash := ""
+	if remote != nil {
+		remoteHash = remote.CommitHash
 	}
 
-	defer exec.Command("git", "update-ref", "-d", tempRef).Run()
+	bundlePath, err := s.forceCreateBundle(targetHash, remoteHash)
 
-	var args []string
-	args = append(args, "-C", s.LocalRepoPath, "bundle", "create", bundleFilePath, tempRef)
-	if fromHash != "" {
-		args = append(args, fmt.Sprintf("^%s", fromHash))
-	}
-
-	out, err = exec.Command("git", args...).CombinedOutput()
 	if err != nil {
-		log.Printf("Error creating git bundle: %s", string(out))
 		return "", "", err
 	}
 
-	return bundleFilePath, targetHash, nil
+	return bundlePath, targetHash, nil
 }
