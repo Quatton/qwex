@@ -4,15 +4,16 @@ import (
 	"testing"
 
 	"github.com/Quatton/qwex/apps/qwexctl/internal/k8s"
+	v1 "k8s.io/api/apps/v1"
 )
 
 const testNamespace = "qwex-demo"
 
-func TestMakeDevPodName(t *testing.T) {
-	expected := "qwex-demo-dev-pod"
-	actual := makeDevelopmentPodName(testNamespace)
+func TestMakeDeploymentName(t *testing.T) {
+	expected := "qwex-demo-dev"
+	actual := makeDevelopmentName(testNamespace)
 	if actual != expected {
-		panic("makeDevelopmentPodName did not return expected value")
+		panic("makeDevelopmentName did not return expected value")
 	}
 }
 
@@ -25,7 +26,7 @@ func TestCreateDevPod(t *testing.T) {
 		K8s: k8sClient,
 	}
 
-	res, err := service.GetOrCreateDevelopmentPod(t.Context(), testNamespace)
+	res, err := service.GetOrCreateDevelopmentDeployment(t.Context(), testNamespace)
 
 	if err != nil {
 		t.Fatalf("Expected no error creating dev pod, got %v", err)
@@ -33,12 +34,12 @@ func TestCreateDevPod(t *testing.T) {
 
 	t.Logf("Created/Retrieved dev pod: %s", res.Name)
 
-	if res.Name != makeDevelopmentPodName(testNamespace) {
-		t.Fatalf("Expected pod name %s, got %s", makeDevelopmentPodName(testNamespace), res.Name)
+	if res.Name != makeDevelopmentName(testNamespace) {
+		t.Fatalf("Expected pod name %s, got %s", makeDevelopmentName(testNamespace), res.Name)
 	}
 
-	if res.Status.Phase != "Running" {
-		t.Fatalf("CreateDevelopmentPod should wait until pod is running, got status %s", res.Status.Phase)
+	if res.Status.Conditions[len(res.Status.Conditions)-1].Type != v1.DeploymentAvailable {
+		t.Fatalf("Expected deployment to be available, got %s", res.Status.Conditions[len(res.Status.Conditions)-1].Type)
 	}
 }
 
@@ -51,7 +52,7 @@ func TestDestroyDevPod(t *testing.T) {
 		K8s: k8sClient,
 	}
 
-	err = service.DestroyDevelopmentPod(t.Context(), testNamespace)
+	err = service.DestroyDevelopment(t.Context(), testNamespace)
 
 	if err != nil {
 		t.Fatalf("Expected no error destroying dev pod, got %v", err)

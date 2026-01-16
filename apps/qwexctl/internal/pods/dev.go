@@ -7,17 +7,11 @@ import (
 	"time"
 
 	"github.com/Quatton/qwex/apps/qwexctl/internal/k8s"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-)
-
-// TODO: Move to config
-const (
-	DemoImage          = "ghcr.io/astral-sh/uv:0.9.13-python3.12-bookworm"
-	PodTypeLabel       = "qwex.dev/pod-type"
-	PodTypeDevelopment = "development"
 )
 
 type Service struct {
@@ -30,106 +24,100 @@ func NewService(k8sClient *k8s.K8sClient) *Service {
 	}
 }
 
-/*
-GetOrCreateDevelopmentPod ensures a running development pod exists.
-1. Checks if it exists.
-2. If it exists but is dead (Failed/Succeeded), deletes it.
-3. If it doesn't exist, creates it.
-4. Waits for it to be Running.
-*/
-func (s *Service) GetOrCreateDevelopmentPod(ctx context.Context, namespace string) (*corev1.Pod, error) {
-	podName := makeDevelopmentPodName(namespace)
+// TODO: Move to config
+const (
+	DemoImage             = "ghcr.io/astral-sh/uv:0.9.13-python3.12-bookworm"
+	PodTypeLabel          = "qwex.dev/pod-type"
+	PodTypeDevelopment    = "development"
+	DevelopmentDeployment = "dev"
+)
 
-	existingPod, err := s.K8s.Clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
-
-	if err == nil {
-		if existingPod.Status.Phase == corev1.PodSucceeded || existingPod.Status.Phase == corev1.PodFailed {
-			log.Printf("Found dead pod %s (Phase: %s), recreating...", podName, existingPod.Status.Phase)
-			if err := s.DestroyDevelopmentPod(ctx, namespace); err != nil {
-				return nil, fmt.Errorf("failed to clean up dead pod: %w", err)
-			}
-		} else {
-			return s.waitForPodRunning(ctx, namespace, podName)
-		}
-	} else if !k8serrors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to check existing pod: %w", err)
-	}
-
-	return s.createDevelopmentPod(ctx, namespace)
+func makeDevelopmentName(namespace string) string {
+	return fmt.Sprintf("%s-%s", namespace, DevelopmentDeployment)
 }
 
-/*
-createDevelopmentPod constructs the pod manifest and submits it.
-*/
-func (s *Service) createDevelopmentPod(ctx context.Context, namespace string) (*corev1.Pod, error) {
-	podName := makeDevelopmentPodName(namespace)
+func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context, namespace string) (*appsv1.Deployment, error) {
+	name := makeDevelopmentName(namespace)
 
-	pod := &corev1.Pod{
+	existing, err := s.K8s.Clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err == nil {
+		return existing, s.waitForDeploymentReady(ctx, namespace, name)
+	}
+	if !k8serrors.IsNotFound(err) {
+		return nil, fmt.Errorf("failed to check existing deployment: %w", err)
+	}
+
+	replica := int32(1)
+
+	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: podName,
+			Name: name,
 			Labels: map[string]string{
 				PodTypeLabel: PodTypeDevelopment,
 			},
 		},
-		Spec: corev1.PodSpec{
-			RestartPolicy: corev1.RestartPolicyOnFailure,
-			Containers: []corev1.Container{
-				{
-					Name:            "dev-container",
-					Image:           DemoImage,
-					ImagePullPolicy: corev1.PullIfNotPresent,
-					Command:         []string{"/bin/sh", "-c", "tail -f /dev/null"},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replica,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					PodTypeLabel: PodTypeDevelopment,
+					"app":        "dev",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						PodTypeLabel: PodTypeDevelopment,
+						"app":        "dev",
+					},
+				},
+				Spec: corev1.PodSpec{
+					RestartPolicy: corev1.RestartPolicyAlways,
+					Containers: []corev1.Container{
+						{
+							Name:            "devcontainer",
+							Image:           DemoImage,
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Command:         []string{"/bin/sh", "-c", "tail -f /dev/null"},
+						},
+					},
 				},
 			},
 		},
 	}
 
-	_, err := s.K8s.Clientset.CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
+	created, err := s.K8s.Clientset.AppsV1().Deployments(namespace).Create(ctx, dep, metav1.CreateOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create pod: %w", err)
+		return nil, fmt.Errorf("failed to create deployment: %w", err)
 	}
 
-	log.Printf("Development pod %s created, waiting for status Running...", podName)
-	return s.waitForPodRunning(ctx, namespace, podName)
+	log.Printf("Development deployment %s created, waiting for ready...", name)
+	return created, s.waitForDeploymentReady(ctx, namespace, name)
 }
 
-/*
-waitForPodRunning blocks until the pod phase is Running.
-Uses k8s.io/apimachinery/pkg/util/wait for robust polling.
-*/
-func (s *Service) waitForPodRunning(ctx context.Context, namespace, podName string) (*corev1.Pod, error) {
-	var readyPod *corev1.Pod
-
-	// Poll every 1 second, timeout after 5 minutes
-	err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
-		p, err := s.K8s.Clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+func (s *Service) waitForDeploymentReady(ctx context.Context, namespace, name string) error {
+	return wait.PollUntilContextTimeout(ctx, 2*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		dep, err := s.K8s.Clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
-			// If pod disappears while waiting, stop and return error
 			return false, err
 		}
 
-		if p.Status.Phase == corev1.PodRunning {
-			readyPod = p
-			return true, nil // Done
+		for _, cond := range dep.Status.Conditions {
+			if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
+				log.Printf("Deployment %s is ready", name)
+				return true, nil
+			}
 		}
 
-		// Continue waiting if Pending/ContainerCreating
 		return false, nil
 	})
-
-	if err != nil {
-		return nil, fmt.Errorf("timed out waiting for pod %s to be running: %w", podName, err)
-	}
-
-	return readyPod, nil
 }
 
-func (s *Service) DestroyDevelopmentPod(ctx context.Context, namespace string) error {
-	podName := makeDevelopmentPodName(namespace)
-	// Use DeletePropagationBackground to ensure cleanup doesn't block needlessly
+func (s *Service) DestroyDevelopment(ctx context.Context, namespace string) error {
+	name := makeDevelopmentName(namespace)
 	prop := metav1.DeletePropagationBackground
 
-	err := s.K8s.Clientset.CoreV1().Pods(namespace).Delete(ctx, podName, metav1.DeleteOptions{
+	err := s.K8s.Clientset.AppsV1().Deployments(namespace).Delete(ctx, name, metav1.DeleteOptions{
 		PropagationPolicy: &prop,
 	})
 
@@ -137,10 +125,4 @@ func (s *Service) DestroyDevelopmentPod(ctx context.Context, namespace string) e
 		return err
 	}
 	return nil
-}
-
-func makeDevelopmentPodName(namespace string) string {
-	// Naming suggestion: Don't repeat the namespace in the name if possible,
-	// but keeping your convention for now.
-	return fmt.Sprintf("%s-dev-pod", namespace)
 }
