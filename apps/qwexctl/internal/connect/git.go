@@ -39,12 +39,19 @@ func (s *Service) GetRemoteHead(ctx context.Context) (*RemoteState, error) {
 	}
 
 	if err != nil {
+		if strings.Contains(output.Stderr, "fatal") || strings.Contains(output.Stderr, "unknown revision") {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("remote HEAD fetch failed: %s", output.Stderr)
 	}
 
 	lines := strings.Fields(output.Stdout)
 
 	if len(lines) < 2 {
+		return nil, nil
+	}
+
+	if strings.Contains(output.Stdout, "fatal") {
 		return nil, nil
 	}
 

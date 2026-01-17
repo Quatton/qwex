@@ -68,8 +68,8 @@ func makeContainers(mode DevelopmentMode) []corev1.Container {
 					corev1.ResourceMemory: resource.MustParse("512Mi"),
 				},
 				Limits: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("2000m"),
-					corev1.ResourceMemory: resource.MustParse("4Gi"),
+					corev1.ResourceCPU:    resource.MustParse("1000m"),
+					corev1.ResourceMemory: resource.MustParse("8Gi"),
 				},
 			},
 		}

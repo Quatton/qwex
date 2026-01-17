@@ -155,7 +155,7 @@ func (s *Service) buildBatchJobSpec(sha string) (*v1.Job, error) {
 								},
 								Limits: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("4000m"),
-									corev1.ResourceMemory: resource.MustParse("8Gi"),
+									corev1.ResourceMemory: resource.MustParse("16Gi"),
 								},
 							},
 						},

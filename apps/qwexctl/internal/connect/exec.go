@@ -60,7 +60,10 @@ func (s *Service) RemoteExecContainer(ctx context.Context, cmd []string, stdin i
 	})
 
 	if err != nil {
-		return nil, err
+		return &Output{
+			Stdout: stdout.String(),
+			Stderr: stderr.String(),
+		}, err
 	}
 
 	return &Output{
