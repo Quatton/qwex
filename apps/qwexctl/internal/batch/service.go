@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -287,13 +288,12 @@ func (s *Service) GetRunLogs(ctx context.Context, runID string) (string, error) 
 		return "", fmt.Errorf("error waiting for pod to be running: %w", err)
 	}
 
-	var buf []byte
-	writer := &bytesWriter{buf: &buf}
-	err = s.streamLogsFromPod(ctx, podName, writer, false)
+	var buf bytes.Buffer
+	err = s.streamLogsFromPod(ctx, podName, &buf, false)
 	if err != nil {
 		return "", err
 	}
-	return string(buf), nil
+	return buf.String(), nil
 }
 
 type bytesWriter struct {
