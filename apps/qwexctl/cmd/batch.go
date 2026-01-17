@@ -44,7 +44,7 @@ The job will sync your current commit and execute the specified command.`,
 		connectService := connect.NewService(svc.K8s.Clientset, svc.K8s.Config, namespace, pod.Name, pods.SyncContainerName, localRepoPath)
 
 		// Make this configurable later?
-		targetWorkDir := "/worktree"
+		targetWorkDir := batch.BatchWorkDir
 
 		targetImage := image
 		if targetImage == "" {
