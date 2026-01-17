@@ -2,11 +2,12 @@ package pods
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
-	"reflect"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -90,7 +91,7 @@ func makeContainers(mode DevelopmentMode) []corev1.Container {
 				},
 				Limits: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("1000m"),
-					corev1.ResourceMemory: resource.MustParse("8Gi"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				},
 			},
 		}
@@ -105,11 +106,69 @@ func (s *Service) buildDesiredDeployment(mode DevelopmentMode) *appsv1.Deploymen
 	name := makeDevelopmentName(s.Namespace)
 	replica := int32(1)
 
+	hashSource := struct {
+		C  []corev1.Container
+		IC []corev1.Container
+		V  []corev1.Volume
+	}{
+		C: makeContainers(mode),
+		IC: []corev1.Container{
+			{
+				Name:            InitContainerName,
+				Image:           SyncImage,
+				ImagePullPolicy: corev1.PullIfNotPresent,
+				WorkingDir:      WorkspaceMountPath,
+				Command: []string{
+					"/bin/sh",
+					"-c",
+					"if [ ! -d ./.git ]; then git init; echo 'Repo initialized'; else echo 'Repo exists'; fi",
+				},
+				VolumeMounts: []corev1.VolumeMount{
+					{
+						Name:      WorkspaceVolumeName,
+						MountPath: WorkspaceMountPath,
+					},
+					{
+						Name:      CacheVolumeName,
+						MountPath: CacheMountPath,
+					},
+				},
+				Env: []corev1.EnvVar{
+					{
+						Name:  "XDG_CACHE_HOME",
+						Value: CacheMountPath,
+					},
+				},
+			},
+		},
+		V: []corev1.Volume{
+			{
+				Name: WorkspaceVolumeName,
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: MakePVCName(s.Namespace),
+					},
+				},
+			},
+			{
+				Name: CacheVolumeName,
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: MakeCachePVCName(s.Namespace),
+					},
+				},
+			},
+		},
+	}
+
+	specHash, _ := calculateHash(hashSource)
+
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
-				DeploymentLabel: name,
+				DeploymentLabel:      name,
+				"qwex.dev/spec-hash": fmt.Sprintf("%d", specHash),
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -119,9 +178,6 @@ func (s *Service) buildDesiredDeployment(mode DevelopmentMode) *appsv1.Deploymen
 					DeploymentLabel: name,
 				},
 			},
-			Strategy: appsv1.DeploymentStrategy{
-				Type: appsv1.RecreateDeploymentStrategyType,
-			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -129,60 +185,13 @@ func (s *Service) buildDesiredDeployment(mode DevelopmentMode) *appsv1.Deploymen
 					},
 				},
 				Spec: corev1.PodSpec{
-					Volumes: []corev1.Volume{
-						{
-							Name: WorkspaceVolumeName,
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: MakePVCName(s.Namespace),
-								},
-							},
-						},
-						{
-							Name: CacheVolumeName,
-							VolumeSource: corev1.VolumeSource{
-								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: MakeCachePVCName(s.Namespace),
-								},
-							},
-						},
-					},
-					InitContainers: []corev1.Container{
-						{
-							Name:            InitContainerName,
-							Image:           SyncImage,
-							ImagePullPolicy: corev1.PullIfNotPresent,
-							WorkingDir:      WorkspaceMountPath,
-							Command: []string{
-								"/bin/sh",
-								"-c",
-								"if [ ! -d ./.git ]; then git init; echo 'Repo initialized'; else echo 'Repo exists'; fi",
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      WorkspaceVolumeName,
-									MountPath: WorkspaceMountPath,
-								},
-								{
-									Name:      CacheVolumeName,
-									MountPath: CacheMountPath,
-								},
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name:  "XDG_CACHE_HOME",
-									Value: CacheMountPath,
-								},
-							},
-						},
-					},
-					RestartPolicy: corev1.RestartPolicyAlways,
-					Containers:    makeContainers(mode),
+					Containers:     hashSource.C,
+					InitContainers: hashSource.IC,
+					Volumes:        hashSource.V,
 				},
 			},
 		},
 	}
-
 	return dep
 }
 
@@ -328,10 +337,17 @@ func isDeploymentEqual(a, b *appsv1.Deployment) bool {
 		return false
 	}
 
-	aSpec := a.Spec.Template.Spec
-	bSpec := b.Spec.Template.Spec
+	aHash := a.Labels["qwex.dev/spec-hash"]
+	bHash := b.Labels["qwex.dev/spec-hash"]
 
-	return reflect.DeepEqual(aSpec.Containers, bSpec.Containers) &&
-		reflect.DeepEqual(aSpec.InitContainers, bSpec.InitContainers) &&
-		reflect.DeepEqual(aSpec.Volumes, bSpec.Volumes)
+	return aHash == bHash
+}
+
+func calculateHash(data any) (uint64, error) {
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return 0, err
+	}
+	hash := xxhash.Sum64(bytes)
+	return hash, nil
 }

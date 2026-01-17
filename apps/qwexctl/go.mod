@@ -3,6 +3,7 @@ module github.com/Quatton/qwex/apps/qwexctl
 go 1.25.1
 
 require (
+	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/creack/pty v1.1.9
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-git/go-billy/v5 v5.6.2
