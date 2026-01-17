@@ -94,28 +94,61 @@ func (s *Service) forceCreateBundle(targetHash, remoteHash string) (string, erro
 }
 
 func (s *Service) CreateGitBundle(remote *RemoteState) (string, string, error) {
-	stashOutput := exec.Command("git", "-C", s.LocalRepoPath, "stash", "create", "--include-untracked")
-
-	out, err := stashOutput.Output()
+	tmpIndex, err := os.CreateTemp("", "qwex-git-index-*")
 	if err != nil {
-		stdErr := stashOutput.Stderr
-		return "", "", fmt.Errorf("failed to create git stash: %s", stdErr)
+		return "", "", err
+	}
+	tmpIndexPath := tmpIndex.Name()
+	tmpIndex.Close()
+	defer os.Remove(tmpIndexPath)
+
+	env := os.Environ()
+	env = append(env, fmt.Sprintf("GIT_INDEX_FILE=%s", tmpIndexPath))
+
+	cmd := exec.Command("git", "-C", s.LocalRepoPath, "read-tree", "HEAD")
+	cmd.Env = env
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", "", fmt.Errorf("read-tree failed: %s %v", out, err)
+	}
+
+	cmd = exec.Command("git", "-C", s.LocalRepoPath, "add", "-A")
+	cmd.Env = env
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", "", fmt.Errorf("git add -A failed: %s %v", out, err)
+	}
+
+	cmd = exec.Command("git", "-C", s.LocalRepoPath, "write-tree")
+	cmd.Env = env
+	out, err := cmd.Output()
+	if err != nil {
+		return "", "", fmt.Errorf("write-tree failed: %v", err)
+	}
+	treeHash := strings.TrimSpace(string(out))
+
+	// NOTE: very rare fallback. this is to be consistent with previous behavior
+	if treeHash == "" {
+		out, _ = exec.Command("git", "rev-parse", "HEAD").Output()
+		treeHash = strings.TrimSpace(string(out))
+
+		treeCmd := exec.Command("git", "rev-parse", fmt.Sprintf("%s^{tree}", treeHash))
+		out, err = treeCmd.Output()
+		treeHash = strings.TrimSpace(string(out))
+	}
+
+	if remote != nil && treeHash == remote.TreeHash {
+		return "", "", fmt.Errorf("up_to_date")
+	}
+
+	commitMsg := "Qwex snapshot: WIP changes with untracked files"
+
+	cmd = exec.Command("git", "-C", s.LocalRepoPath, "commit-tree", treeHash, "-p", "HEAD", "-m", commitMsg)
+	out, err = cmd.Output()
+	if err != nil {
+		return "", "", fmt.Errorf("commit-tree failed: %v", err)
 	}
 
 	targetHash := strings.TrimSpace(string(out))
-
-	if targetHash == "" {
-		out, _ = exec.Command("git", "rev-parse", "HEAD").Output()
-		targetHash = strings.TrimSpace(string(out))
-	}
-
-	treeCmd := exec.Command("git", "rev-parse", fmt.Sprintf("%s^{tree}", targetHash))
-	out, err = treeCmd.Output()
-	localTreeHash := strings.TrimSpace(string(out))
-
-	if remote != nil && localTreeHash == remote.TreeHash {
-		return "", "", fmt.Errorf("up_to_date")
-	}
 
 	remoteHash := ""
 	if remote != nil {

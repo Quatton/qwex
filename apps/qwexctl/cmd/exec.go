@@ -139,6 +139,7 @@ func init() {
 }
 
 func startWatcher(dir string) {
+	log.Printf("Starting file watcher on %s...", dir)
 	w := watcher.New()
 	w.SetMaxEvents(1)
 	w.FilterOps(watcher.Write, watcher.Create, watcher.Remove, watcher.Rename, watcher.Move, watcher.Chmod)
@@ -146,7 +147,15 @@ func startWatcher(dir string) {
 	go func() {
 		for {
 			select {
-			case <-w.Event:
+			case event := <-w.Event:
+				if event.IsDir() {
+					if event.Op&watcher.Remove == watcher.Remove {
+						w.RemoveRecursive(event.Path)
+					}
+					if event.Op&watcher.Create == watcher.Create {
+						w.AddRecursive(event.Path)
+					}
+				}
 				mu.Lock()
 				isDirty = true
 				mu.Unlock()
