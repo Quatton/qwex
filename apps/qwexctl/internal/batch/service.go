@@ -104,6 +104,14 @@ func (s *Service) buildBatchJobSpec(sha string) (*v1.Job, error) {
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
 						},
+						{
+							Name: pods.CacheVolumeName,
+							VolumeSource: corev1.VolumeSource{
+								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: pods.MakeCachePVCName(s.connector.Namespace),
+								},
+							},
+						},
 					},
 					InitContainers: []corev1.Container{
 						{
@@ -147,15 +155,25 @@ func (s *Service) buildBatchJobSpec(sha string) (*v1.Job, error) {
 									Name:      BatchVolumeName,
 									MountPath: BatchWorkDir,
 								},
+								{
+									Name:      pods.CacheVolumeName,
+									MountPath: pods.CacheMountPath,
+								},
 							},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("1000m"),
+									corev1.ResourceCPU:    resource.MustParse("4000m"),
 									corev1.ResourceMemory: resource.MustParse("8Gi"),
 								},
 								Limits: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("4000m"),
 									corev1.ResourceMemory: resource.MustParse("16Gi"),
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name:  "XDG_CACHE_HOME",
+									Value: pods.CacheMountPath,
 								},
 							},
 						},

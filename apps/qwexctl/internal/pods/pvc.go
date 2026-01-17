@@ -17,15 +17,13 @@ func shouldPatchPVC(existing, desired *corev1.PersistentVolumeClaim) bool {
 	return existingStorage.Cmp(desiredStorage) < 0
 }
 
-func (s *Service) GetOrCreatePVC(ctx context.Context) (*corev1.PersistentVolumeClaim, error) {
-	pvcName := MakePVCName(s.Namespace)
-
-	pvc, err := s.K8s.CoreV1().PersistentVolumeClaims(s.Namespace).Get(ctx, pvcName, metav1.GetOptions{})
-
+func createPVCSpec(
+	namespace, suffix string,
+	storageSize string) *corev1.PersistentVolumeClaim {
 	pvcSpec := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      pvcName,
-			Namespace: s.Namespace,
+			Name:      fmt.Sprintf("%s-%s", namespace, suffix),
+			Namespace: namespace,
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{
@@ -33,14 +31,24 @@ func (s *Service) GetOrCreatePVC(ctx context.Context) (*corev1.PersistentVolumeC
 			},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse("2Gi"),
-				},
-				Limits: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse("10Gi"),
+					corev1.ResourceStorage: resource.MustParse(storageSize),
 				},
 			},
 		},
 	}
+	return pvcSpec
+}
+
+func (s *Service) GetOrCreatePVC(ctx context.Context,
+	pvcSpec *corev1.PersistentVolumeClaim,
+) (*corev1.PersistentVolumeClaim, error) {
+	pvcName := pvcSpec.Name
+
+	if pvcName == "" {
+		return nil, fmt.Errorf("PVC spec must have a name")
+	}
+
+	pvc, err := s.K8s.CoreV1().PersistentVolumeClaims(s.Namespace).Get(ctx, pvcName, metav1.GetOptions{})
 
 	if err != nil {
 		if !k8serrors.IsNotFound(err) {

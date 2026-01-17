@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"reflect"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -38,6 +39,16 @@ func makeContainers(mode DevelopmentMode) []corev1.Container {
 					Name:      WorkspaceVolumeName,
 					MountPath: WorkspaceMountPath,
 				},
+				{
+					Name:      CacheVolumeName,
+					MountPath: CacheMountPath,
+				},
+			},
+			Env: []corev1.EnvVar{
+				{
+					Name:  "XDG_CACHE_HOME",
+					Value: CacheMountPath,
+				},
 			},
 			WorkingDir: WorkspaceMountPath,
 			Resources: corev1.ResourceRequirements{
@@ -60,12 +71,22 @@ func makeContainers(mode DevelopmentMode) []corev1.Container {
 					Name:      WorkspaceVolumeName,
 					MountPath: WorkspaceMountPath,
 				},
+				{
+					Name:      CacheVolumeName,
+					MountPath: CacheMountPath,
+				},
+			},
+			Env: []corev1.EnvVar{
+				{
+					Name:  "XDG_CACHE_HOME",
+					Value: CacheMountPath,
+				},
 			},
 			WorkingDir: WorkspaceMountPath,
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("100m"),
-					corev1.ResourceMemory: resource.MustParse("512Mi"),
+					corev1.ResourceCPU:    resource.MustParse("500m"),
+					corev1.ResourceMemory: resource.MustParse("2Gi"),
 				},
 				Limits: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("1000m"),
@@ -117,6 +138,14 @@ func (s *Service) buildDesiredDeployment(mode DevelopmentMode) *appsv1.Deploymen
 								},
 							},
 						},
+						{
+							Name: CacheVolumeName,
+							VolumeSource: corev1.VolumeSource{
+								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+									ClaimName: MakeCachePVCName(s.Namespace),
+								},
+							},
+						},
 					},
 					InitContainers: []corev1.Container{
 						{
@@ -133,6 +162,16 @@ func (s *Service) buildDesiredDeployment(mode DevelopmentMode) *appsv1.Deploymen
 								{
 									Name:      WorkspaceVolumeName,
 									MountPath: WorkspaceMountPath,
+								},
+								{
+									Name:      CacheVolumeName,
+									MountPath: CacheMountPath,
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name:  "XDG_CACHE_HOME",
+									Value: CacheMountPath,
 								},
 							},
 						},
@@ -170,10 +209,18 @@ func (s *Service) GetPodFromDeployment(ctx context.Context, deployment *appsv1.D
 func (s *Service) GetOrCreateDevelopmentDeployment(ctx context.Context, mode DevelopmentMode) (*appsv1.Deployment, error) {
 
 	// Ensure PVC exists
-	_, err := s.GetOrCreatePVC(ctx)
+	workspacePVC := createPVCSpec(s.Namespace, WorkspacePVCNameSuffix, "2Gi")
+	cachePVC := createPVCSpec(s.Namespace, CachePVCNameSuffix, "20Gi")
+
+	_, err := s.GetOrCreatePVC(ctx, workspacePVC)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to ensure PVC exists in namespace %s: %w", s.Namespace, err)
+		return nil, fmt.Errorf("failed to ensure workspace PVC exists in namespace %s: %w", s.Namespace, err)
+	}
+	_, err = s.GetOrCreatePVC(ctx, cachePVC)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to ensure cache PVC exists in namespace %s: %w", s.Namespace, err)
 	}
 
 	// TODO: Hibernate mode support
@@ -227,16 +274,16 @@ func (s *Service) waitForDeploymentReady(ctx context.Context, namespace, name st
 
 	log.Printf("Waiting for a Ready pod in deployment %s/%s...", namespace, name)
 
+	loggedObservedGeneration := false
+	loggedUpdatedReplicas := false
+	loggedReadyReplicas := false
+
 	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
 		dep, err := s.K8s.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
 
 		if err != nil {
 			return false, err
 		}
-
-		loggedObservedGeneration := false
-		loggedUpdatedReplicas := false
-		loggedReadyReplicas := false
 
 		if dep.Generation > dep.Status.ObservedGeneration && !loggedObservedGeneration {
 			log.Printf("Deployment %s/%s not observed yet (generation %d > observed %d)", namespace, name, dep.Generation, dep.Status.ObservedGeneration)
@@ -281,15 +328,10 @@ func isDeploymentEqual(a, b *appsv1.Deployment) bool {
 		return false
 	}
 
-	if len(a.Spec.Template.Spec.Containers) != len(b.Spec.Template.Spec.Containers) {
-		return false
-	}
-	for i, containerA := range a.Spec.Template.Spec.Containers {
-		containerB := b.Spec.Template.Spec.Containers[i]
-		if containerA.Name != containerB.Name || containerA.Image != containerB.Image {
-			return false
-		}
-	}
+	aSpec := a.Spec.Template.Spec
+	bSpec := b.Spec.Template.Spec
 
-	return true
+	return reflect.DeepEqual(aSpec.Containers, bSpec.Containers) &&
+		reflect.DeepEqual(aSpec.InitContainers, bSpec.InitContainers) &&
+		reflect.DeepEqual(aSpec.Volumes, bSpec.Volumes)
 }

@@ -9,6 +9,10 @@ const (
 	WorkspaceMountPath     = "/workspace"
 	WorkspacePVCNameSuffix = "workspace-pvc"
 
+	CachePVCNameSuffix = "cache-pvc"
+	CacheVolumeName    = "cache"
+	CacheMountPath     = "/cache"
+
 	InitContainerName = "init-synccontainer"
 
 	DevelopmentDeploymentSuffix = "dev"
@@ -27,4 +31,8 @@ func makeDevelopmentName(namespace string) string {
 
 func MakePVCName(namespace string) string {
 	return fmt.Sprintf("%s-%s", namespace, WorkspacePVCNameSuffix)
+}
+
+func MakeCachePVCName(namespace string) string {
+	return fmt.Sprintf("%s-%s", namespace, CachePVCNameSuffix)
 }
