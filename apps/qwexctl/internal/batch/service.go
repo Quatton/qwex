@@ -16,7 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-const DemoImage = "ghcr.io/astral-sh/uv:0.9.13-python3.12-alpine"
+const DemoImage = "ghcr.io/astral-sh/uv:0.9.13-python3.12-bookworm"
 
 const BatchWorkDir = "/batch"
 const BatchContainerName = "batchcontainer"
