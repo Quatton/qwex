@@ -17,10 +17,10 @@ import (
 
 const DemoImage = "ghcr.io/astral-sh/uv:0.9.13-python3.12-alpine"
 
-const BatchWorkDir = "/worktree"
+const BatchWorkDir = "/batch"
 const BatchContainerName = "batchcontainer"
 const InitContainerName = pods.InitContainerName
-const WorktreeVolumeName = "worktree"
+const BatchVolumeName = "batch"
 
 type Service struct {
 	connector *connect.Service
@@ -98,7 +98,7 @@ func (s *Service) buildBatchJobSpec(sha string) (*v1.Job, error) {
 							},
 						},
 						{
-							Name: WorktreeVolumeName,
+							Name: BatchVolumeName,
 							VolumeSource: corev1.VolumeSource{
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
@@ -110,7 +110,12 @@ func (s *Service) buildBatchJobSpec(sha string) (*v1.Job, error) {
 							Image:   pods.SyncImage,
 							Command: []string{"/bin/sh", "-c"},
 							Args: []string{
-								fmt.Sprintf("git --git-dir=%s/.git worktree add %s %s", pods.WorkspaceMountPath, s.WorkDir, shortSha(sha)),
+								fmt.Sprintf(
+									"git --git-dir=%s/.git archive --format=tar %s | tar -x -C %s",
+									pods.WorkspaceMountPath,
+									sha,
+									BatchWorkDir,
+								),
 							},
 							WorkingDir: s.WorkDir,
 							VolumeMounts: []corev1.VolumeMount{
@@ -119,7 +124,7 @@ func (s *Service) buildBatchJobSpec(sha string) (*v1.Job, error) {
 									MountPath: pods.WorkspaceMountPath,
 								},
 								{
-									Name:      WorktreeVolumeName,
+									Name:      BatchVolumeName,
 									MountPath: BatchWorkDir,
 								},
 							},
@@ -138,7 +143,7 @@ func (s *Service) buildBatchJobSpec(sha string) (*v1.Job, error) {
 									MountPath: pods.WorkspaceMountPath,
 								},
 								{
-									Name:      WorktreeVolumeName,
+									Name:      BatchVolumeName,
 									MountPath: BatchWorkDir,
 								},
 							},
