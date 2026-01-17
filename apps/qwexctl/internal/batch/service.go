@@ -210,11 +210,11 @@ func (s *Service) WaitForRunReady(ctx context.Context, runID string, timeout tim
 		pod := &podList.Items[0]
 
 		if pod.Status.Phase == corev1.PodFailed {
-			return true, fmt.Errorf("pod %s has failed", pod.Name)
+			return true, nil
 		}
 
 		if pod.Status.Phase == corev1.PodSucceeded {
-			return true, fmt.Errorf("pod %s has already succeeded", pod.Name)
+			return true, nil
 		}
 
 		if pod.Status.Phase == corev1.PodRunning {
