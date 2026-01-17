@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	v1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -145,6 +146,16 @@ func (s *Service) buildBatchJobSpec(sha string) (*v1.Job, error) {
 								{
 									Name:      BatchVolumeName,
 									MountPath: BatchWorkDir,
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("4000m"),
+									corev1.ResourceMemory: resource.MustParse("8Gi"),
 								},
 							},
 						},
