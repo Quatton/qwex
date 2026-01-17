@@ -153,7 +153,7 @@ func (s *Service) buildBatchJobSpec(sha string) (*v1.Job, error) {
 }
 
 func (s *Service) EnsureSyncAndSubmitJob(ctx context.Context) (*v1.Job, error) {
-	clean, err := s.connector.IsStatusClean(ctx)
+	clean, err := s.connector.IsLocalStatusClean(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check sync status: %w", err)
 	}
@@ -204,8 +204,12 @@ func (s *Service) WaitForRunReady(ctx context.Context, runID string, timeout tim
 		podName = podList.Items[0].Name
 		pod := &podList.Items[0]
 
-		if pod.Status.Phase == corev1.PodFailed || pod.Status.Phase == corev1.PodSucceeded {
-			return true, nil
+		if pod.Status.Phase == corev1.PodFailed {
+			return true, fmt.Errorf("pod %s has failed", pod.Name)
+		}
+
+		if pod.Status.Phase == corev1.PodSucceeded {
+			return true, fmt.Errorf("pod %s has already succeeded", pod.Name)
 		}
 
 		if pod.Status.Phase == corev1.PodRunning {

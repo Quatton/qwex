@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Quatton/qwex/apps/qwexctl/internal/batch"
@@ -52,12 +51,15 @@ The job will sync your current commit and execute the specified command.`,
 			targetImage = batch.DemoImage
 		}
 
-		command := []string{"/bin/sh", "-c"}
-		cmdString := args[0]
-		if len(args) > 1 {
-			cmdString = fmt.Sprintf("%s %s", args[0], shellJoin(args[1:]))
+		if args[0] == "--" {
+			args = args[1:]
 		}
-		cmdArgs := []string{cmdString}
+
+		command := []string{args[0]}
+		var cmdArgs []string
+		if len(args) > 1 {
+			cmdArgs = args[1:]
+		}
 
 		batchService := batch.NewService(connectService, "", targetImage, command, cmdArgs, targetWorkDir, batchName)
 
@@ -91,8 +93,4 @@ func init() {
 	batchCmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow job logs after submission")
 	batchCmd.Flags().StringVarP(&batchName, "job", "j", "job", "Job name prefix")
 	batchCmd.Flags().StringVarP(&image, "image", "i", "", "Container image to use (default: uv alpine or whatever that full name is idk)")
-}
-
-func shellJoin(args []string) string {
-	return strings.Join(args, " ")
 }
