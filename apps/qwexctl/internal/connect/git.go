@@ -179,6 +179,12 @@ func (s *Service) CreateGitBundle(remote *RemoteState) (string, string, error) {
 
 	bundlePath, err := s.forceCreateBundle(targetHash, remoteHash)
 
+	if err != nil && remoteHash != "" {
+		if strings.Contains(err.Error(), "bad object") {
+			bundlePath, err = s.forceCreateBundle(targetHash, "")
+		}
+	}
+
 	if err != nil {
 		return "", "", err
 	}
