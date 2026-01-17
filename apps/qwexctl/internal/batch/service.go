@@ -162,12 +162,12 @@ func (s *Service) buildBatchJobSpec(sha string) (*v1.Job, error) {
 							},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("4000m"),
-									corev1.ResourceMemory: resource.MustParse("8Gi"),
+									corev1.ResourceCPU:    resource.MustParse("2000m"),
+									corev1.ResourceMemory: resource.MustParse("4Gi"),
 								},
 								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("4000m"),
-									corev1.ResourceMemory: resource.MustParse("16Gi"),
+									corev1.ResourceCPU:    resource.MustParse("2000m"),
+									corev1.ResourceMemory: resource.MustParse("8Gi"),
 								},
 							},
 							Env: []corev1.EnvVar{
@@ -223,7 +223,7 @@ func (s *Service) EnsureSyncAndSubmitJob(ctx context.Context) (*v1.Job, error) {
 
 func (s *Service) WaitForRunReady(ctx context.Context, runID string, timeout time.Duration) (string, error) {
 	interval := 2 * time.Second
-	var podName string
+	var pod *corev1.Pod
 	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
 		podList, err := s.connector.Client.CoreV1().Pods(s.connector.Namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: fmt.Sprintf("qwex.dev/run-id=%s", runID),
@@ -235,8 +235,7 @@ func (s *Service) WaitForRunReady(ctx context.Context, runID string, timeout tim
 			return false, nil
 		}
 
-		podName = podList.Items[0].Name
-		pod := &podList.Items[0]
+		pod = &podList.Items[0]
 
 		if pod.Status.Phase == corev1.PodFailed {
 			return true, nil
@@ -265,10 +264,12 @@ func (s *Service) WaitForRunReady(ctx context.Context, runID string, timeout tim
 
 		return false, nil
 	})
+
 	if err != nil {
 		return "", err
 	}
-	return podName, nil
+
+	return pod.Name, nil
 }
 
 func (s *Service) FollowRunLogs(ctx context.Context, runID string, writer io.Writer) error {
