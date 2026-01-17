@@ -25,6 +25,6 @@ func makeDevelopmentName(namespace string) string {
 	return fmt.Sprintf("%s-%s", namespace, DevelopmentDeploymentSuffix)
 }
 
-func makePVCName(namespace string) string {
+func MakePVCName(namespace string) string {
 	return fmt.Sprintf("%s-%s", namespace, WorkspacePVCNameSuffix)
 }

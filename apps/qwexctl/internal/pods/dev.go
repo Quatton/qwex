@@ -113,7 +113,7 @@ func (s *Service) buildDesiredDeployment(mode DevelopmentMode) *appsv1.Deploymen
 							Name: WorkspaceVolumeName,
 							VolumeSource: corev1.VolumeSource{
 								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: makePVCName(s.Namespace),
+									ClaimName: MakePVCName(s.Namespace),
 								},
 							},
 						},

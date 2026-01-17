@@ -34,10 +34,12 @@ var connectCmd = &cobra.Command{
 		connectService := connect.NewService(service.K8s.Clientset, service.K8s.Config, namespace, pod.Name, pods.SyncContainerName, localRepoPath)
 
 		err = connectService.SyncOnce(cmd.Context())
-		if err != nil {
+		if err != nil && err.Error() != "up_to_date" {
 			fmt.Printf("Error during sync: %v\n", err)
 			return
 		}
+
+		fmt.Println("Sync completed successfully.")
 	},
 }
 

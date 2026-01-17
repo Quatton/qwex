@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Service) GetOrCreatePVC(ctx context.Context) (*corev1.PersistentVolumeClaim, error) {
-	pvcName := makePVCName(s.Namespace)
+	pvcName := MakePVCName(s.Namespace)
 
 	pvc, err := s.K8s.CoreV1().PersistentVolumeClaims(s.Namespace).Get(ctx, pvcName, metav1.GetOptions{})
 

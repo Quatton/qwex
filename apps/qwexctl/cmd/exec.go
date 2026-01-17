@@ -32,9 +32,8 @@ var (
 )
 
 var execCmd = &cobra.Command{
-	Use:                "exec -- [command]",
-	Short:              "Execute a command on the remote workspace (Syncs first)",
-	DisableFlagParsing: true,
+	Use:   "exec -- [command]",
+	Short: "Execute a command on the remote workspace (Syncs first)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		localRepoPath := connect.GetLocalRepoPath(cfgFile)
 
@@ -44,10 +43,7 @@ var execCmd = &cobra.Command{
 		}
 		defer watcher.Close()
 
-		svc, err := initServiceManual()
-		if err != nil {
-			return err
-		}
+		svc := cmd.Context().Value("service").(*Service)
 		ctx := cmd.Context()
 
 		podService := &pods.Service{K8s: svc.K8s.Clientset, Namespace: svc.Namespace}

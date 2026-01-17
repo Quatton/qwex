@@ -17,6 +17,10 @@ type Output struct {
 }
 
 func (s *Service) RemoteExec(ctx context.Context, cmd []string, stdin io.Reader) (*Output, error) {
+	return s.RemoteExecContainer(ctx, cmd, stdin, s.ContainerName)
+}
+
+func (s *Service) RemoteExecContainer(ctx context.Context, cmd []string, stdin io.Reader, containerName string) (*Output, error) {
 	if s.Client == nil || s.Config == nil {
 		return nil, errors.New("kubernetes client or config is not initialized")
 	}
@@ -28,7 +32,7 @@ func (s *Service) RemoteExec(ctx context.Context, cmd []string, stdin io.Reader)
 		SubResource("exec")
 
 	option := &corev1.PodExecOptions{
-		Container: s.ContainerName,
+		Container: containerName,
 		Command:   cmd,
 		Stdin:     stdin != nil,
 		Stdout:    true,

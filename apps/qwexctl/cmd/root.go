@@ -24,6 +24,8 @@ var rootCmd = &cobra.Command{
 	Use:   "qwexctl",
 	Short: "Queued Workspace-aware EXecutor",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		cmd.Flags().SetInterspersed(false)
+
 		globalService, err := initServiceManual()
 		if err != nil {
 			return err

@@ -14,6 +14,21 @@ type RemoteState struct {
 	TreeHash   string
 }
 
+func (s *Service) IsStatusClean(ctx context.Context) (bool, error) {
+	cmd := []string{"git", "-C", "/workspace", "status", "--porcelain"}
+
+	output, err := s.RemoteExec(ctx, cmd, nil)
+	if err != nil {
+		return false, fmt.Errorf("remote git status failed: %s", output.Stderr)
+	}
+
+	if strings.TrimSpace(output.Stdout) == "" {
+		return true, nil
+	}
+
+	return false, nil
+}
+
 func (s *Service) GetRemoteHead(ctx context.Context) (*RemoteState, error) {
 	cmd := []string{"git", "-C", "/workspace", "rev-parse", "HEAD", "HEAD^{tree}"}
 
