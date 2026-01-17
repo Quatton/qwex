@@ -3,10 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -14,8 +17,13 @@ import (
 
 	"github.com/Quatton/qwex/apps/qwexctl/internal/connect"
 	"github.com/Quatton/qwex/apps/qwexctl/internal/pods"
-	"github.com/radovskyb/watcher"
+	"github.com/fsnotify/fsnotify"
+	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
 	"github.com/spf13/cobra"
+
+	"github.com/creack/pty"
+	"golang.org/x/term"
 )
 
 var (
@@ -29,7 +37,12 @@ var execCmd = &cobra.Command{
 	DisableFlagParsing: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		localRepoPath := connect.GetLocalRepoPath(cfgFile)
-		go startWatcher(localRepoPath)
+
+		watcher, err := startWatcher(localRepoPath)
+		if err != nil {
+			return err
+		}
+		defer watcher.Close()
 
 		svc, err := initServiceManual()
 		if err != nil {
@@ -86,50 +99,93 @@ var execCmd = &cobra.Command{
 
 		child := exec.Command("kubectl", kubectlArgs...)
 
-		child.Stdin = os.Stdin
-		child.Stdout = os.Stdout
-		child.Stderr = os.Stderr
+		// We have to manually open PTY and not use pty.Start because
+		// kubectl will complain that Setctty set but Ctty not valid in child
+		ptmx, tty, err := pty.Open()
+		if err != nil {
+			return fmt.Errorf("failed to open pty: %w", err)
+		}
+		defer func() { _ = ptmx.Close() }()
+
+		child.Stderr = tty
+		child.Stdout = tty
+		child.Stdin = tty
+
+		if err := child.Start(); err != nil {
+			tty.Close()
+			return fmt.Errorf("failed to start child: %w", err)
+		}
 
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		done := make(chan struct{})
+		// (apparently? told by mr gemini pro)
+		// CRITICAL: Close the slave TTY in the parent immediately after Start.
+		// The child process now owns it. If we don't close it here,
+		// the process might never exit correctly.
+		_ = tty.Close()
 
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		ch := make(chan os.Signal, 1)
+		signal.Notify(ch, syscall.SIGWINCH)
 		go func() {
-			select {
-			case <-c:
-				child.Process.Kill()
-				os.Exit(1)
-			case <-done:
-				return
+			for range ch {
+				if err := pty.InheritSize(os.Stdin, ptmx); err != nil {
+					log.Printf("error resizing pty: %s", err)
+				}
 			}
 		}()
+		ch <- syscall.SIGWINCH
 
-		if err := child.Start(); err != nil {
-			log.Fatal(err)
+		oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+		if err != nil {
+			return fmt.Errorf("failed to set raw mode: %w", err)
 		}
+		defer func() { _ = term.Restore(int(os.Stdin.Fd()), oldState) }()
 
 		go func() {
-			mu.Lock()
-			dirty := isDirty
-			mu.Unlock()
+			buf := make([]byte, 1024)
+			for {
+				n, err := os.Stdin.Read(buf)
+				if err != nil {
+					return
+				}
 
-			if dirty {
-				err := connectService.SyncOnce(ctx)
-				if err != nil && err.Error() != "up_to_date" {
-				} else {
+				input := buf[:n]
+
+				isEnter := slices.Contains(input, '\r')
+
+				if isEnter {
 					mu.Lock()
-					isDirty = false
+					dirty := isDirty
 					mu.Unlock()
+
+					if dirty {
+						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+						err := connectService.SyncOnce(ctx)
+						cancel()
+
+						if err != nil && err.Error() != "up_to_date" {
+							fmt.Fprintf(os.Stdout, "\r\n[qwex] Sync Error: %v\r\n", err)
+						} else {
+							mu.Lock()
+							isDirty = false
+							mu.Unlock()
+						}
+					}
+				}
+
+				_, err = ptmx.Write(input)
+				if err != nil {
+					return
 				}
 			}
 		}()
 
-		err = child.Wait()
-		close(done)
+		_, _ = io.Copy(os.Stdout, ptmx)
+
+		_ = child.Wait()
+
 		return nil
 	},
 }
@@ -138,51 +194,109 @@ func init() {
 	rootCmd.AddCommand(execCmd)
 }
 
-func startWatcher(dir string) {
-	log.Printf("Starting file watcher on %s...", dir)
-	w := watcher.New()
-	w.SetMaxEvents(1)
-	w.FilterOps(watcher.Write, watcher.Create, watcher.Remove, watcher.Rename, watcher.Move, watcher.Chmod)
+func startWatcher(root string) (*fsnotify.Watcher, error) {
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create watcher: %v", err)
+	}
+
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		w.Close()
+		return nil, err
+	}
+
+	err = watchRecursive(w, absRoot, []gitignore.Matcher{})
+	if err != nil {
+		w.Close()
+		return nil, err
+	}
 
 	go func() {
 		for {
 			select {
-			case event := <-w.Event:
-				if event.IsDir() {
-					if event.Op&watcher.Remove == watcher.Remove {
-						w.RemoveRecursive(event.Path)
-					}
-					if event.Op&watcher.Create == watcher.Create {
-						w.AddRecursive(event.Path)
+			case event, ok := <-w.Events:
+				if !ok {
+					return
+				}
+
+				if event.Op&fsnotify.Create == fsnotify.Create {
+					info, err := os.Stat(event.Name)
+					if err == nil && info.IsDir() {
+						_ = watchRecursive(w, event.Name, []gitignore.Matcher{})
 					}
 				}
-				mu.Lock()
-				isDirty = true
-				mu.Unlock()
-			case err := <-w.Error:
-				log.Fatalln("Watcher error:", err)
-			case <-w.Closed:
-				return
+
+				if event.Op&fsnotify.Write == fsnotify.Write ||
+					event.Op&fsnotify.Create == fsnotify.Create ||
+					event.Op&fsnotify.Remove == fsnotify.Remove ||
+					event.Op&fsnotify.Rename == fsnotify.Rename {
+
+					mu.Lock()
+					isDirty = true
+					mu.Unlock()
+				}
+
+			case err, ok := <-w.Errors:
+				if !ok {
+					return
+				}
+				log.Printf("Watcher error: %v", err)
 			}
 		}
 	}()
 
-	w.Ignore(".git")
-	ignoreFiles := []string{".qwexignore", ".gitignore", ".dockerignore"}
-	for _, fname := range ignoreFiles {
-		data, err := os.ReadFile(fname)
+	return w, nil
+}
+
+func watchRecursive(watcher *fsnotify.Watcher, dir string, parentMatchers []gitignore.Matcher) error {
+	matchers := parentMatchers
+
+	ignoreFile := filepath.Join(dir, ".gitignore")
+	if _, err := os.Stat(ignoreFile); err == nil {
+		ps, err := gitignore.ReadPatterns(osfs.New(dir), []string{".gitignore"})
 		if err == nil {
-			for _, line := range strings.FieldsFunc(string(data), func(r rune) bool { return r == '\n' || r == '\r' }) {
-				w.Ignore(strings.TrimSpace(line))
-			}
+			m := gitignore.NewMatcher(ps)
+			matchers = append(matchers, m)
 		}
 	}
 
-	if err := w.AddRecursive(dir); err != nil {
-		log.Fatalln("Failed to add directory to watcher:", err)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
 	}
 
-	if err := w.Start(500 * time.Millisecond); err != nil {
-		log.Fatalln("Failed to start watcher:", err)
+	for _, entry := range entries {
+		name := entry.Name()
+		fullPath := filepath.Join(dir, name)
+		isDir := entry.IsDir()
+
+		if name == ".git" {
+			continue
+		}
+
+		if isIgnoredStack(matchers, fullPath, isDir) {
+			continue
+		}
+
+		if isDir {
+			err := watcher.Add(fullPath)
+			if err != nil {
+				// log.Printf("Failed to watch %s: %v", fullPath, err)
+			}
+			_ = watchRecursive(watcher, fullPath, matchers)
+		}
 	}
+
+	return watcher.Add(dir)
+}
+
+func isIgnoredStack(matchers []gitignore.Matcher, path string, isDir bool) bool {
+	pathParts := strings.Split(filepath.ToSlash(path), "/")
+	for _, m := range matchers {
+		if m.Match(pathParts, isDir) {
+			return true
+		}
+	}
+	return false
 }
